@@ -219,6 +219,33 @@ async function main() {
     "fileAppsInFolder with a dirty id is 400",
     (await bad({ action: "fileAppsInFolder", appIds: ["ok", "../nope"] })) === 400,
   );
+
+  // The only limit on which credential `createApp` can install is APP_SECRETS.
+  const withSecrets = (secrets: unknown) => ({ action: "createApp", prompt: "hi", secrets });
+  check(
+    "createApp with an unregistered secret name is 400",
+    (await bad(withSecrets(["OPENAI_API_KEY"]))) === 400,
+  );
+  check(
+    "...including the workspace key, which must never reach an app",
+    (await bad(withSecrets(["BASE44_SVC_KEY"]))) === 400,
+  );
+  check(
+    "...and inherited keys are not registry hits",
+    (await bad(withSecrets(["constructor"]))) === 400,
+  );
+  check(
+    "createApp cannot be handed a secret value to install",
+    (await bad(withSecrets([{ SUNNY_API_TOKEN: "attacker-controlled" }]))) === 400,
+  );
+  check("...nor a bare object of them", (await bad(withSecrets({ X: "y" }))) === 400);
+  const rejectedSecret = await platform(withSecrets(["BASE44_SVC_KEY"]), USER);
+  check(
+    "...and the rejection names no value, only names",
+    !JSON.stringify(rejectedSecret.body).includes(process.env.SUNNY_API_TOKEN ?? "\0") &&
+      !JSON.stringify(rejectedSecret.body).includes("b44k_"),
+    JSON.stringify(rejectedSecret.body).slice(0, 140),
+  );
   const listed = await platform({ action: "deleteEverything" }, USER);
   check(
     "the rejection lists the allowed actions",

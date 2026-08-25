@@ -6,34 +6,46 @@
  * implementation.
  *
  * What it pins down:
- *   1. the boundary — CORS + preflight, POST-only, and the shared-token gate
- *      (this route has no session; the token is the whole gate, gotcha 4)
+ *   1. the boundary — CORS + preflight, POST-only, and the viewer-token gate
+ *      (this route has no session; the token is the whole gate)
  *   2. all six actions, their required-param error strings verbatim, and the
  *      response keys built apps destructure (`{boards}`/`{board}`/`{items}`/`{item}`/`{ok}`)
- *   3. service-role semantics: results span ALL owners, deliberately unscoped
+ *   3. identity: with no viewer token results span ALL owners; with one, every action
+ *      narrows to that viewer — an app answers for whoever installed it
  *   4. `listItems` on an unknown board is an empty list, NOT an error — apps rely on it
  *   5. unknown payload fields are dropped silently, as documented
  *   6. the record shape is byte-identical to /api/entities for the same row
- *   7. items created here are invisible to a non-admin through /api/entities, which is
- *      the RLS consequence of the SERVICE_OWNER sentinel
+ *   7. items created here belong to the viewer, so they show up in /api/entities for
+ *      that person like any other row
  *
  * Needs `npm run dev`. Writes throwaway rows to DATABASE_URL and cleans up:
  *   npm run sunny:smoke
  */
 
+import { createHmac } from "node:crypto";
+
 import { encode } from "next-auth/jwt";
 
+import { mintAppToken } from "../src/lib/appTokens";
 import { prisma } from "../src/lib/prisma";
 
 const TAG = "sunny-smoke";
 const OWNER_A = `${TAG}-a@example.com`;
 const OWNER_B = `${TAG}-b@example.com`;
 const ADMIN = `${TAG}-admin@example.com`;
-const SERVICE_OWNER = "sunny-api@service.local";
+const APP_A = `${TAG}-app-a`;
+
+/** Well-formed, unexpired, and signed with the wrong secret. Must never be accepted. */
+const FORGED = (() => {
+  const body = Buffer.from(
+    JSON.stringify({ sub: OWNER_B, app: APP_A, exp: Math.floor(Date.now() / 1000) + 600 }),
+  ).toString("base64url");
+  const key = createHmac("sha256", "not-the-secret").update("sunny-app-token-v1").digest();
+  return `${body}.${createHmac("sha256", key).update(body).digest("base64url")}`;
+})();
 
 const BASE_URL = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
 const URL = `${BASE_URL}/api/sunny`;
-const TOKEN = process.env.SUNNY_API_TOKEN;
 
 let failures = 0;
 
@@ -49,14 +61,17 @@ function check(name: string, cond: boolean, detail = "") {
 type Rec = Record<string, unknown>;
 type Res = { status: number; body: Rec; headers: Headers };
 
-/** A built app's call: POST, JSON, shared token, nothing else. */
-async function call(payload: unknown, opts: { token?: string | null } = {}): Promise<Res> {
-  const token = opts.token === undefined ? TOKEN : opts.token;
+/**
+ * A built app's call: POST, JSON, and a viewer token. `bearer` defaults to OWNER_A's,
+ * since that is what a real embedded app always has; pass `null` for the no-token case.
+ */
+async function call(payload: unknown, opts: { bearer?: string | null } = {}): Promise<Res> {
+  const bearer = opts.bearer === undefined ? mintAppToken(OWNER_A, APP_A) : opts.bearer;
   const res = await fetch(URL, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      ...(token ? { "x-sunny-api-token": token } : {}),
+      ...(bearer ? { authorization: `Bearer ${bearer}` } : {}),
     },
     body: typeof payload === "string" ? payload : JSON.stringify(payload),
   });
@@ -70,9 +85,10 @@ async function call(payload: unknown, opts: { token?: string | null } = {}): Pro
 const list = (r: Res, key: string) => (Array.isArray(r.body[key]) ? (r.body[key] as Rec[]) : []);
 
 async function cleanup() {
+  await prisma.widget.deleteMany({ where: { appId: { startsWith: TAG } } });
+  await prisma.appOwnership.deleteMany({ where: { appId: { startsWith: TAG } } });
   await prisma.item.deleteMany({ where: { title: { startsWith: TAG } } });
   await prisma.board.deleteMany({ where: { title: { startsWith: TAG } } });
-  await prisma.item.deleteMany({ where: { createdBy: SERVICE_OWNER, title: { startsWith: TAG } } });
   await prisma.user.deleteMany({ where: { email: { startsWith: TAG } } });
 }
 
@@ -98,7 +114,7 @@ async function main() {
     ],
   });
 
-  // Two owners, so "service role returns everyone's rows" is actually testable.
+  // Two owners, so "the answer follows the viewer" is actually testable.
   const boardA = await prisma.board.create({
     data: {
       title: `${TAG} board A`,
@@ -106,6 +122,15 @@ async function main() {
       columns: [{ id: "c1", title: "Status", type: "status" }],
       groups: [{ id: "g1", title: "Group 1" }],
       updatedAt: new Date("2026-08-01T00:00:00Z"),
+    },
+  });
+  // A second board for the same owner, so `-updated_date` is still testable now that a
+  // call only ever sees one person's boards.
+  const boardA2 = await prisma.board.create({
+    data: {
+      title: `${TAG} board A2`,
+      createdBy: OWNER_A,
+      updatedAt: new Date("2026-08-03T00:00:00Z"),
     },
   });
   const boardB = await prisma.board.create({
@@ -134,8 +159,8 @@ async function main() {
     pre.headers.get("access-control-allow-methods") === "POST, OPTIONS",
   );
   check(
-    "...Allow-Headers covers the token header",
-    pre.headers.get("access-control-allow-headers") === "Content-Type, X-Sunny-Api-Token",
+    "...Allow-Headers covers the viewer token",
+    pre.headers.get("access-control-allow-headers") === "Content-Type, Authorization",
   );
   check("...Max-Age is 86400", pre.headers.get("access-control-max-age") === "86400");
 
@@ -149,33 +174,37 @@ async function main() {
     );
   }
 
-  console.log("\n2. the shared-token gate");
+  console.log("\n2. the viewer-token gate");
 
-  if (!TOKEN) {
-    check(
-      "SUNNY_API_TOKEN is set (otherwise the endpoint is OPEN)",
-      false,
-      "set it in .env and restart dev",
-    );
-  } else {
-    const noToken = await call({ action: "listBoards" }, { token: null });
-    check("no token is 401", noToken.status === 401, `got ${noToken.status}`);
-    check(
-      "...with the documented message",
-      noToken.body.error === "Missing or invalid X-Sunny-Api-Token.",
-      String(noToken.body.error),
-    );
-    check("...and still carries CORS", noToken.headers.get("access-control-allow-origin") === "*");
-    check(
-      "a wrong token of equal length is 401",
-      (await call({ action: "listBoards" }, { token: "x".repeat(TOKEN.length) })).status === 401,
-    );
-    check(
-      "a wrong token of different length is 401",
-      (await call({ action: "listBoards" }, { token: "short" })).status === 401,
-    );
-    check("the right token is accepted", (await call({ action: "listBoards" })).status === 200);
-  }
+  const noToken = await call({ action: "listBoards" }, { bearer: null });
+  check("no token is 401", noToken.status === 401, `got ${noToken.status}`);
+  check(
+    "...with a message that says where to get one",
+    noToken.body.error === "Missing or invalid viewer token. Ask the embedding page.",
+    String(noToken.body.error),
+  );
+  check("...and still carries CORS", noToken.headers.get("access-control-allow-origin") === "*");
+  check(
+    "a tampered token is 401 — no silent fallback to unscoped",
+    (await call({ action: "listBoards" }, { bearer: `${mintAppToken(OWNER_A, APP_A)}x` })).status ===
+      401,
+  );
+  check(
+    "an expired token is 401",
+    (await call(
+      { action: "listBoards" },
+      { bearer: mintAppToken(OWNER_A, APP_A, Date.now() - 3_600_000) },
+    )).status === 401,
+  );
+  check(
+    "garbage in the Authorization header is 401",
+    (await call({ action: "listBoards" }, { bearer: "not.a.token" })).status === 401,
+  );
+  check(
+    "a token signed with the wrong secret is 401",
+    (await call({ action: "listBoards" }, { bearer: FORGED })).status === 401,
+  );
+  check("a valid token is accepted", (await call({ action: "listBoards" })).status === 200);
 
   console.log("\n3. malformed requests");
 
@@ -213,21 +242,18 @@ async function main() {
   const boards = await call({ action: "listBoards" });
   check("returns { boards }", boards.status === 200 && Array.isArray(boards.body.boards));
   const smokeBoards = list(boards, "boards").filter((b) => String(b.title).startsWith(TAG));
+  check("only the viewer's boards", smokeBoards.length === 2, `saw ${smokeBoards.length}`);
+  // Checked by id, since the endpoint deliberately withholds created_by.
   check(
-    "service role spans owners (both boards)",
-    smokeBoards.length === 2,
-    `saw ${smokeBoards.length}`,
+    "...and both are theirs",
+    smokeBoards.every((b) => b.id === boardA.id || b.id === boardA2.id),
   );
-  // Owners are checked by id, since the endpoint deliberately withholds created_by.
-  check(
-    "...one from each owner",
-    smokeBoards.some((b) => b.id === boardA.id) && smokeBoards.some((b) => b.id === boardB.id),
-  );
+  check("...never the other user's", !smokeBoards.some((b) => b.id === boardB.id));
   check(
     "...and no board leaks its owner's email",
     smokeBoards.every((b) => !("created_by" in b)),
   );
-  check("newest-updated first", smokeBoards[0]?.id === boardB.id, String(smokeBoards[0]?.title));
+  check("newest-updated first", smokeBoards[0]?.id === boardA2.id, String(smokeBoards[0]?.title));
   check(
     "limit=1 truncates",
     list(await call({ action: "listBoards", limit: 1 }), "boards").length === 1,
@@ -284,7 +310,8 @@ async function main() {
   const allItems = await call({ action: "listItems" });
   check("returns { items }", allItems.status === 200 && Array.isArray(allItems.body.items));
   const smokeItems = list(allItems, "items").filter((i) => String(i.title).startsWith(TAG));
-  check("unscoped: spans owners", smokeItems.length === 3, `saw ${smokeItems.length}`);
+  check("only the viewer's items", smokeItems.length === 2, `saw ${smokeItems.length}`);
+  check("...not the other user's", !smokeItems.some((i) => i.title === `${TAG} item B`));
 
   const scoped = await call({ action: "listItems", board_id: boardA.id });
   const scopedItems = list(scoped, "items");
@@ -343,9 +370,8 @@ async function main() {
   check("an undeclared field was dropped, not an error", !("nope" in item));
   check("created_by is not exposed (matches the live old endpoint)", !("created_by" in item));
   check(
-    "...and the stored owner is the service sentinel, not the spoofed value",
-    (await prisma.item.findUnique({ where: { id: item.id as string } }))?.createdBy ===
-      SERVICE_OWNER,
+    "...and the stored owner is the viewer, not the spoofed value",
+    (await prisma.item.findUnique({ where: { id: item.id as string } }))?.createdBy === OWNER_A,
   );
   check("id cannot be forced", item.id !== "forced-id");
   check(
@@ -446,37 +472,156 @@ async function main() {
     `sunny=${JSON.stringify(viaSunny)?.slice(0, 140)}`,
   );
 
-  console.log("\n11. RLS consequence of the service owner");
+  console.log("\n11. items created here are real rows owned by the viewer");
 
-  const serviceItem = await call({
+  const viaApi = await call({
     action: "createItem",
     board_id: boardA.id,
-    title: `${TAG} service item`,
+    title: `${TAG} from the app`,
   });
-  const serviceItemId = (serviceItem.body.item as Rec).id as string;
+  const viaApiId = (viaApi.body.item as Rec).id as string;
   const userCookie = `next-auth.session-token=${await encode({
     token: { email: OWNER_A, role: "user", roleCheckedAt: Date.now() },
     secret: process.env.NEXTAUTH_SECRET!,
   })}`;
-  const asUser = (await fetch(`${BASE_URL}/api/entities/Item?limit=5000`, {
+  const otherCookie = `next-auth.session-token=${await encode({
+    token: { email: OWNER_B, role: "user", roleCheckedAt: Date.now() },
+    secret: process.env.NEXTAUTH_SECRET!,
+  })}`;
+  const entityItems = (cookie: string) =>
+    fetch(`${BASE_URL}/api/entities/Item?limit=5000`, { headers: { cookie } }).then(
+      (r) => r.json() as Promise<Rec[]>,
+    );
+
+  check(
+    "the viewer sees it in Sunny's own UI",
+    (await entityItems(userCookie)).some((i) => i.id === viaApiId),
+  );
+  check(
+    "...and nobody else does",
+    !(await entityItems(otherCookie)).some((i) => i.id === viaApiId),
+  );
+  check(
+    "...and it reads back through /api/sunny",
+    list(await call({ action: "listItems", board_id: boardA.id }), "items").some(
+      (i) => i.id === viaApiId,
+    ),
+  );
+
+  console.log("\n12. viewer tokens: an app answers for whoever is looking");
+
+  const aToken = mintAppToken(OWNER_A, APP_A);
+  const bToken = mintAppToken(OWNER_B, APP_A);
+
+  const seenByA = list(await call({ action: "listBoards" }, { bearer: aToken }), "boards").filter(
+    (b) => String(b.title).startsWith(TAG),
+  );
+  check(
+    "A's token sees only A's boards",
+    seenByA.length === 2 && seenByA.every((b) => b.id !== boardB.id),
+  );
+  const seenByB = list(await call({ action: "listBoards" }, { bearer: bToken }), "boards").filter(
+    (b) => String(b.title).startsWith(TAG),
+  );
+  check("the SAME app with B's token sees only B's board", seenByB.length === 1 && seenByB[0]?.id === boardB.id);
+  check("...which is the marketplace case: the answer follows the viewer, not the author", true);
+  check("...and neither leaks created_by", [...seenByA, ...seenByB].every((b) => !("created_by" in b)));
+
+  check(
+    "getBoard on another viewer's board is 404",
+    (await call({ action: "getBoard", board_id: boardB.id }, { bearer: aToken })).status === 404,
+  );
+
+  const itemsForA = list(await call({ action: "listItems" }, { bearer: aToken }), "items").filter(
+    (i) => String(i.title).startsWith(TAG),
+  );
+  check("listItems returns only the viewer's items", itemsForA.length >= 2, `saw ${itemsForA.length}`);
+  check("...excluding the other user's", !itemsForA.some((i) => i.title === `${TAG} item B`));
+  check("...and nothing it did not create", !itemsForA.some((i) => i.title === `${TAG} item B`));
+
+  // An item can be owned by someone who cannot see its board; it must stay visible.
+  const crossOwner = await prisma.item.create({
+    data: { title: `${TAG} cross-owner`, boardId: boardB.id, createdBy: OWNER_A, orderIndex: 1 },
+  });
+  const onOthersBoard = list(
+    await call({ action: "listItems", board_id: boardB.id }, { bearer: aToken }),
+    "items",
+  );
+  check(
+    "an owned item on someone else's board is still returned",
+    onOthersBoard.some((i) => i.id === crossOwner.id),
+  );
+  check("...and that board's other items are not", !onOthersBoard.some((i) => i.title === `${TAG} item B`));
+
+  const scopedCreate = await call(
+    { action: "createItem", board_id: boardA.id, title: `${TAG} viewer create` },
+    { bearer: aToken },
+  );
+  const scopedItemId = (scopedCreate.body.item as Rec).id as string;
+  check(
+    "createItem stamps the viewer, not the sentinel",
+    (await prisma.item.findUnique({ where: { id: scopedItemId } }))?.createdBy === OWNER_A,
+  );
+  const ownerSees = (await fetch(`${BASE_URL}/api/entities/Item?limit=5000`, {
     headers: { cookie: userCookie },
   }).then((r) => r.json())) as Rec[];
-  const asAdmin = (await fetch(`${BASE_URL}/api/entities/Item?limit=5000`, {
-    headers: { cookie: adminCookie },
-  }).then((r) => r.json())) as Rec[];
+  check("...so it appears in Sunny's own UI for them", ownerSees.some((i) => i.id === scopedItemId));
+
+  const otherItem = list(
+    await call({ action: "listItems", board_id: boardB.id }, { bearer: bToken }),
+    "items",
+  ).find((i) => i.title === `${TAG} item B`)!;
   check(
-    "an item created here is hidden from a non-admin",
-    !asUser.some((i) => i.id === serviceItemId),
+    "updateItem cannot touch another viewer's item",
+    (
+      await call(
+        { action: "updateItem", item_id: otherItem.id as string, title: "hijacked" },
+        { bearer: aToken },
+      )
+    ).status === 404,
   );
   check(
-    "...but visible to an admin",
-    asAdmin.some((i) => i.id === serviceItemId),
+    "...and the row is unchanged",
+    (await prisma.item.findUnique({ where: { id: otherItem.id as string } }))?.title === `${TAG} item B`,
   );
   check(
-    "...and readable back through /api/sunny",
-    list(await call({ action: "listItems", board_id: boardA.id }), "items").some(
-      (i) => i.id === serviceItemId,
-    ),
+    "deleteItem cannot touch another viewer's item",
+    (await call({ action: "deleteItem", item_id: otherItem.id as string }, { bearer: aToken })).status === 404,
+  );
+  check(
+    "...and the row survives",
+    (await prisma.item.findUnique({ where: { id: otherItem.id as string } })) !== null,
+  );
+
+  console.log("\n13. minting: the install is the grant");
+
+  const mint = (cookie: string, body: unknown) =>
+    fetch(`${BASE_URL}/api/sunny/token`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify(body),
+    });
+
+  check("minting anonymously is 401", (await mint("", { app_id: APP_A })).status === 401);
+  check("minting without an app_id is 400", (await mint(userCookie, {})).status === 400);
+  check(
+    "minting for an app you have not installed is 403",
+    (await mint(userCookie, { app_id: APP_A })).status === 403,
+  );
+
+  await prisma.widget.create({
+    data: { appId: APP_A, appName: `${TAG} app A`, createdBy: OWNER_A },
+  });
+  const minted = await mint(userCookie, { app_id: APP_A });
+  check("...and 200 once it is installed", minted.status === 200, `got ${minted.status}`);
+  const mintedBody = (await minted.json()) as { token?: string; expires_in?: number };
+  check("...returning a token", typeof mintedBody.token === "string");
+  check("...that is short-lived", mintedBody.expires_in === 600, String(mintedBody.expires_in));
+  check(
+    "...and that scopes to the installer",
+    list(await call({ action: "listBoards" }, { bearer: mintedBody.token! }), "boards")
+      .filter((b) => String(b.title).startsWith(TAG))
+      .every((b) => b.id !== boardB.id),
   );
 
   await cleanup();

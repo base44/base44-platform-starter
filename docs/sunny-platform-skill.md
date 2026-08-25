@@ -6,7 +6,7 @@ data. `src/lib/builderInstructions.ts` carries the always-on instructions that r
 the long document those instructions point at.
 
 To use it, install it as a skill in your Base44 workspace, replacing `<SUNNY_HOST>` with your
-deployed host and telling the operator the `X-Sunny-Api-Token` value out of band.
+deployed host. There is no secret to hand over — the app asks the page embedding it for a token.
 
 Read it for the shape rather than the contents — what earns its place in a skill for a code-writing
 agent is the endpoint, the actions, the field names, the enum values, and the failure modes that are
@@ -18,7 +18,9 @@ not guessable from the happy path:
    (`getBoard` / `updateItem` / `deleteItem` vs. `listItems`).
 4. That `createItem` with a non-existent `board_id` is a `400` — the foreign key is real, so the API
    cannot create orphan items.
-5. That records omit `created_by`, because the endpoint is unscoped.
+5. That records omit `created_by`.
+6. How the app gets a token for the person using it — without that handshake it sees every
+   user's rows, which is wrong for any app that says "my".
 
 ---
 
@@ -41,13 +43,62 @@ endpoint is the only way in.
 ```
 POST https://<SUNNY_HOST>/api/sunny
 Content-Type: application/json
-X-Sunny-Api-Token: <token>
+Authorization: Bearer <viewer token>
 { "action": "<action>", ...params }
 ```
 
 CORS is open and OPTIONS is handled, so browser `fetch` works. POST only (else
-`405 "Use POST."`). The token is **required**: a 401 means it is missing or
-wrong — ask the user, keep it configurable, never commit it.
+`405 "Use POST."`).
+
+## Get a viewer token first
+
+This app runs on its own origin, so its requests carry no Sunny session — Sunny
+cannot tell who is looking at it. Ask the page embedding you, which can:
+
+```js
+function getSunnyToken({ timeout = 5000 } = {}) {
+  return new Promise((resolve, reject) => {
+    function done(fn, arg) {
+      window.removeEventListener("message", onMessage);
+      clearInterval(retry);
+      clearTimeout(giveUp);
+      fn(arg);
+    }
+    function onMessage(e) {
+      if (e.source !== window.parent) return;
+      const data = e.data || {};
+      if (data.type === "sunny:auth:token") done(resolve, data.token);
+      if (data.type === "sunny:auth:denied") {
+        done(reject, new Error("Sunny denied access — is this app installed?"));
+      }
+    }
+    const ask = () => window.parent.postMessage({ type: "sunny:auth:request" }, "*");
+
+    window.addEventListener("message", onMessage);
+    ask();
+    // Ask again in case we loaded before the page was listening, and never hang:
+    // a promise that neither resolves nor rejects is a blank widget with no error.
+    const retry = setInterval(ask, 500);
+    const giveUp = setTimeout(
+      () => done(reject, new Error("Sunny did not respond — is this app embedded in Sunny?")),
+      timeout,
+    );
+  });
+}
+```
+
+Send it as `Authorization: Bearer <token>`. Then every call answers for **that
+person** — the one who installed you, not whoever built you.
+
+The token lasts ten minutes. On a `401`, call `getSunnyToken()` again and retry;
+don't cache it beyond the session.
+
+**Without a token there is no answer at all** — every call is a `401`. If the
+handshake fails, say so; do not fall back to rendering an empty board as if the
+person had no work.
+
+Errors are `{error}` with a 4xx/5xx status. Surface them; don't render an empty
+state as if the board were empty.
 
 Errors are `{error}` with a 4xx/5xx status. Surface them; don't render an empty
 state as if the board were empty.
@@ -96,27 +147,34 @@ col_span` (1 = half width, 2 = full)`}`.
 
 ## Gotchas
 
-- Service-role endpoint, no session: results span **all** users. Never label them
-  "my tasks" or filter by assignee.
-- Items you create have no human owner, so Sunny's own UI (which scopes by owner)
-  hides them from everyone except an admin. They stay readable through this API.
+- Every action answers for the person looking, so "my tasks" is honest — and a `401`
+  means the handshake failed, not that they have no tasks.
+- The token is per-viewer, not per-app: the same app shows B their rows and A theirs.
+  Don't cache one token across users, and don't store it anywhere shared.
+- Items you create belong to that person and appear in Sunny's own UI like any other.
 - Prefer real boards over seeding fake ones. Use Sunny's vocabulary in the UI.
 
 ## Example
 
 ```js
 const SUNNY_API = "https://<SUNNY_HOST>/api/sunny";
-const SUNNY_TOKEN = "<token>"; // keep configurable, never commit
+let token = null;
 
-async function sunny(action, params = {}) {
+async function sunny(action, params = {}, retry = true) {
+  token ||= await getSunnyToken();
   const res = await fetch(SUNNY_API, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-Sunny-Api-Token": SUNNY_TOKEN,
+      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({ action, ...params }),
   });
+  // Ten-minute token: one silent re-ask, then give up.
+  if (res.status === 401 && retry) {
+    token = null;
+    return sunny(action, params, false);
+  }
   const body = await res.json();
   if (!res.ok) throw new Error(body.error || `Sunny API ${res.status}`);
   return body;

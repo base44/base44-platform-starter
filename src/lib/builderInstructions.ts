@@ -26,9 +26,11 @@ Runtime: embedded in a sandboxed iframe (\`allow-scripts allow-same-origin
 allow-forms allow-popups\`). As a dashboard widget it is user-resizable — 320px
 tall and half-column by default — and full-height on "My Tools". So design for a
 short, narrow viewport that scales up; no top-level navigation, downloads, or
-full-screen. public_without_login — no auth flow, no user/role model, no
-per-user gating. Visually: flat, neutral, small text, rounded (not pill)
-corners, restrained accent color.
+full-screen. public_without_login — build no sign-in UI of your own. The Sunny
+data you read is still per-user: Sunny hands this app a token for whoever is
+viewing it, and every call needs one (the skill has the handshake). So never
+cache a token or a row set across viewers. Visually: flat, neutral, small text,
+rounded (not pill) corners, restrained accent color.
 
 ## Load the \`${SKILL_NAME}\` skill first
 
@@ -42,6 +44,6 @@ priority, due date, people, budget, widget(s), dashboard, "My Tools" — or asks
 to read, write, sync, import, export, summarize or chart the user's real work
 data. Indicative, not exhaustive: if it plausibly touches their boards, load it.
 
-Cannot load it? Say so and ask. Guessing the API yields an app that silently
-shows nothing.`;
+Cannot load it? Say so and ask. Guessing the API yields an app whose every
+request is a 401, and no amount of retrying fixes it.`;
 }

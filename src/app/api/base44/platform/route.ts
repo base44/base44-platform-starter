@@ -15,7 +15,7 @@
  * frontend could reach: Base44 enforces OAuth scopes in its MCP tool layer, not on
  * this REST surface, so `apps:read apps:write` does not constrain these calls.
  * Keep it tight — never add a passthrough action, and never let the caller supply
- * a path, host or workspace id.
+ * a path, host or workspace id, nor a credential *value* (see `APP_SECRETS`).
  */
 
 import { NextResponse, type NextRequest } from "next/server";
@@ -23,11 +23,13 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireSessionUser } from "@/lib/auth";
 import { errorResponse, jsonError } from "@/lib/apiResponse";
 import {
+  APP_SECRETS,
   MissingConfigError,
   REFRESH_SKEW_MS,
   appsFolderId,
   orgId,
   platformHost,
+  resolveAppSecrets,
 } from "@/lib/base44Config";
 import { type Base44Link, getLink, remint } from "@/lib/base44Link";
 
@@ -70,6 +72,14 @@ const CONVERSATION_TIMEOUT_MS = 60_000;
 const str = (v: unknown) => (v === undefined || v === null ? "" : String(v));
 const num = (v: unknown, fallback: number) => String(Number(v) > 0 ? Number(v) : fallback);
 
+function createSecretsPayload(names: readonly string[] | undefined) {
+  if (!names?.length) return undefined;
+  const values = resolveAppSecrets(names);
+  return Object.fromEntries(
+    Object.entries(values).map(([name, value]) => [name, { type: "value", value }]),
+  );
+}
+
 const OPS: Record<string, Op> = {
   listApps: {
     method: "GET",
@@ -96,6 +106,8 @@ const OPS: Record<string, Op> = {
       // rather than after create because initial_message starts the first build
       // in this same call — a later update would miss it.
       custom_instructions: p.customInstructions || undefined,
+      // Written before the first build turn is scheduled.
+      secrets: createSecretsPayload(p.secrets as string[] | undefined),
       // Create-only: kicks off the first build, never persisted on the app.
       initial_message: { content: p.prompt },
       // Required for the preview to be embeddable in an iframe.
@@ -220,6 +232,17 @@ function validate(action: string, params: Params): string | null {
   }
   if (action === "createApp" && !params.prompt)
     return 'Action "createApp" needs a "prompt" string.';
+  if (action === "createApp" && params.secrets !== undefined) {
+    // Names only — a caller-supplied value would mean "write anything into this app".
+    const names = params.secrets;
+    if (!Array.isArray(names) || !names.every((n) => typeof n === "string")) {
+      return 'Action "createApp" needs "secrets" to be an array of secret names.';
+    }
+    const unknown = names.filter((n) => !Object.hasOwn(APP_SECRETS, n));
+    if (unknown.length) {
+      return `Unknown app secret(s): ${unknown.join(", ")}. Allowed: ${Object.keys(APP_SECRETS).join(", ")}`;
+    }
+  }
   if (action === "sendMessage" && !params.content) {
     return 'Action "sendMessage" needs a "content" string.';
   }

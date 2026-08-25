@@ -105,3 +105,26 @@ export const SERVICE_CLIENT_ID = "svc_delegate";
  * rate limit in `remint()`.
  */
 export const REFRESH_SKEW_MS = 5 * 60 * 1000;
+
+/**
+ * Values this deployment will install as app secrets on apps it builds. The
+ * browser sends names, never values — which is what keeps `BASE44_SVC_KEY` out
+ * of a built app.
+ */
+export const APP_SECRETS: Record<string, () => string> = {
+  // Empty since viewer tokens landed: a built app gets its credential from the
+  // embedding page at runtime, so there is nothing to install at create time. The
+  // registry stays because it is the whole security model of `setAppSecrets` — a
+  // name that is not a key here is a 400, and an empty registry rejects everything.
+};
+
+export function resolveAppSecrets(names: readonly string[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const name of names) {
+    // hasOwn, not `in`: "constructor" is not a secret.
+    const source = Object.hasOwn(APP_SECRETS, name) ? APP_SECRETS[name] : undefined;
+    if (!source) throw new Error(`Unknown app secret "${name}"`);
+    out[name] = source();
+  }
+  return out;
+}

@@ -10,9 +10,17 @@
  *
  *   1. **Every call is cross-origin** — built apps are separate Base44 apps on their
  *      own subdomains. Nothing works without the CORS headers, preflight included.
- *   2. **The caller has no Sunny session**, so this is service-role: it deliberately
- *      does NOT go through `scopedWhere()` and returns every user's rows. That makes
- *      the shared token + CORS the entire security boundary.
+ *   2. **The caller has no Sunny session.** A cross-site fetch carries no cookie, so
+ *      the request has to bring its own identity.
+ *
+ * That identity is a **viewer token** (src/lib/appTokens.ts): the Sunny page embedding
+ * the app mints one for whoever is signed in and posts it to the frame, and the app
+ * sends it as `Authorization: Bearer`. Its subject drives `scopedWhere()`, so an app
+ * installed by B answers with B's rows — never its author's.
+ *
+ * It is the **only** way in: there is no unscoped mode and no shared secret. Every
+ * request here is attributable to one person, which is what makes this endpoint no
+ * more powerful than the session-scoped API beside it.
  *
  * Consequently this route must not use src/lib/entityCrud.ts — every function there
  * requires an actor. It queries Prisma directly, and `toWire()` is shared with
@@ -20,18 +28,18 @@
  * scripts/sunny-api-smoke.ts).
  */
 
-import { timingSafeEqual } from "node:crypto";
-
 import type { Prisma } from "@prisma/client";
 import type { NextRequest } from "next/server";
 
+import { bearerToken, verifyAppToken } from "@/lib/appTokens";
 import { parsePicked, toWire, ValidationError } from "@/lib/entities";
 import { prisma } from "@/lib/prisma";
+import { scopedWhere } from "@/lib/rls";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, X-Sunny-Api-Token",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
   "Access-Control-Max-Age": "86400",
 };
 
@@ -53,15 +61,6 @@ const ITEM_WRITABLE = [
 const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 500;
 
-/**
- * Owner stamped on items created through this route. Base44 left service-role creates
- * with no owner at all ("Created items may have no owner" — SKILL.md gotchas); the
- * column here is NOT NULL, so an ownerless row is impossible and this sentinel takes
- * its place. The visible behaviour is the same: it matches no real user, so
- * `scopedWhere()` hides these items from every non-admin, exactly as before. It is
- * also greppable, which an empty string would not be.
- */
-const SERVICE_OWNER = "sunny-api@service.local";
 
 /**
  * Records here omit `created_by`, unlike /api/entities. Two reasons, and the live old
@@ -97,14 +96,6 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
-/** Constant-time compare, so the token cannot be recovered a byte at a time. */
-function tokenMatches(provided: string | null, required: string): boolean {
-  if (!provided) return false;
-  const a = Buffer.from(provided);
-  const b = Buffer.from(required);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
-
 const clampLimit = (limit: unknown) =>
   Math.floor(Math.min(Number(limit) > 0 ? Number(limit) : DEFAULT_LIMIT, MAX_LIMIT));
 
@@ -117,15 +108,13 @@ export async function OPTIONS() {
 }
 
 export async function POST(req: NextRequest) {
-  const required = process.env.SUNNY_API_TOKEN;
-  if (required) {
-    if (!tokenMatches(req.headers.get("x-sunny-api-token"), required)) {
-      return json({ error: "Missing or invalid X-Sunny-Api-Token." }, 401);
-    }
-  } else {
-    // Open when the secret is unset — see the warning in .env.example.
-    console.warn("[sunny_api] SUNNY_API_TOKEN is unset — this endpoint is OPEN.");
+  // The token is minted by this server, expires in minutes and names one app, so it
+  // both authenticates the call and says who it speaks for. No token, no answer.
+  const viewer = verifyAppToken(bearerToken(req.headers.get("authorization")));
+  if (!viewer) {
+    return json({ error: "Missing or invalid viewer token. Ask the embedding page." }, 401);
   }
+  const scope = scopedWhere({ email: viewer.sub, role: "user" });
 
   let payload: Payload;
   try {
@@ -142,6 +131,7 @@ export async function POST(req: NextRequest) {
     switch (action) {
       case "listBoards": {
         const rows = await prisma.board.findMany({
+          where: scope,
           orderBy: { updatedAt: "desc" },
           take: clampLimit(p.limit),
         });
@@ -156,7 +146,7 @@ export async function POST(req: NextRequest) {
         const boardId = str(p.board_id);
         if (!boardId) return json({ error: "getBoard needs board_id." }, 400);
 
-        const row = await prisma.board.findUnique({ where: { id: boardId } });
+        const row = await prisma.board.findFirst({ where: { id: boardId, ...scope } });
         // A missing item answers 404, not the 500 a bare throw would produce.
         // Same {error} shape, honest status.
         if (!row) return json({ error: `No board with id "${boardId}".` }, 404);
@@ -171,6 +161,9 @@ export async function POST(req: NextRequest) {
         if (boardId) {
           // Board-scoped: an unknown board is an empty list, not an error. Built apps
           // depend on this — do not turn it into a 404.
+          //
+          // Existence only, deliberately NOT `...scope`: an item can be owned by
+          // someone who cannot see its board, so scoping this would hide it.
           const board = await prisma.board.findUnique({
             where: { id: boardId },
             select: { id: true },
@@ -184,7 +177,7 @@ export async function POST(req: NextRequest) {
         }
 
         const rows = await prisma.item.findMany({
-          where: boardId ? { boardId } : {},
+          where: { ...(boardId ? { boardId } : {}), ...scope },
           orderBy: boardId ? { orderIndex: "asc" } : { updatedAt: "desc" },
           take: clampLimit(p.limit),
         });
@@ -212,7 +205,7 @@ export async function POST(req: NextRequest) {
           return json({ error: `No board with id "${String(data.boardId)}".` }, 400);
 
         const row = await prisma.item.create({
-          data: { ...data, createdBy: SERVICE_OWNER } as Prisma.ItemUncheckedCreateInput,
+          data: { ...data, createdBy: viewer.sub } as Prisma.ItemUncheckedCreateInput,
         });
         console.log(`[sunny_api] END action=createItem item_id=${row.id} (${Date.now() - t0}ms)`);
         return json({ item: publicWire("Item", row) });
@@ -238,12 +231,12 @@ export async function POST(req: NextRequest) {
         }
 
         const { count } = await prisma.item.updateMany({
-          where: { id: itemId },
+          where: { id: itemId, ...scope },
           data: patch as Prisma.ItemUpdateManyMutationInput,
         });
         if (count === 0) return json({ error: `No item with id "${itemId}".` }, 404);
 
-        const row = await prisma.item.findUnique({ where: { id: itemId } });
+        const row = await prisma.item.findFirst({ where: { id: itemId, ...scope } });
         console.log(`[sunny_api] END action=updateItem item_id=${itemId} (${Date.now() - t0}ms)`);
         return json({ item: row ? publicWire("Item", row) : null });
       }
@@ -252,7 +245,7 @@ export async function POST(req: NextRequest) {
         const itemId = str(p.item_id);
         if (!itemId) return json({ error: "deleteItem needs item_id." }, 400);
 
-        const { count } = await prisma.item.deleteMany({ where: { id: itemId } });
+        const { count } = await prisma.item.deleteMany({ where: { id: itemId, ...scope } });
         if (count === 0) return json({ error: `No item with id "${itemId}".` }, 404);
 
         console.log(`[sunny_api] END action=deleteItem item_id=${itemId} (${Date.now() - t0}ms)`);

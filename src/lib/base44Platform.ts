@@ -127,13 +127,19 @@ export async function listAppsForUser({ limit = 20, skip = 0 } = {}): Promise<Ap
 }
 
 /**
+ * Installed on every app built here; the value is resolved server-side. Empty since
+ * viewer tokens replaced the shared API token — apps no longer hold a credential.
+ */
+export const DEFAULT_APP_SECRETS: readonly string[] = Object.freeze([]);
+
+/**
  * Creates an app and queues its first builder message, then files it and records
  * ownership.
  *
  * Three calls, not one, and the order matters:
- *   1. `createApp` — `initial_message` is create-only and starts the build, while
- *      `customInstructions` persists and steers every turn, so both must be set
- *      here rather than patched afterwards.
+ *   1. `createApp` — everything that must exist before the first build turn goes
+ *      in this one request: `initial_message` starts that turn, while
+ *      `customInstructions` and `secrets` must already be on the app when it runs.
  *   2. `fileAppsInFolder` — `/api/apps` has no folder field on create, so a fresh
  *      app is briefly unfiled, and `listApps` reads out of the folder. An unfiled
  *      app is invisible in My Tools, so this failing is loud.
@@ -143,12 +149,15 @@ export async function createApp({
   prompt,
   name,
   customInstructions,
+  secrets = DEFAULT_APP_SECRETS,
 }: {
   prompt: string;
   name?: string;
   customInstructions?: string;
+  /** Names from `APP_SECRETS`; pass the same list to `buildCustomInstructions`. */
+  secrets?: readonly string[];
 }): Promise<App> {
-  const app = (await call("createApp", { prompt, name, customInstructions })) as App;
+  const app = (await call("createApp", { prompt, name, customInstructions, secrets })) as App;
 
   try {
     await fileAppsInFolder([app.id]);
