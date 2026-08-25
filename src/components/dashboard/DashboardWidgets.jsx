@@ -9,98 +9,138 @@
  * with one scoped to the current viewer. That is what makes an installed app read the
  * installer's data rather than its author's.
  */
-import React, { useState, useRef, useCallback } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 import { Widget } from "@/lib/entityClient";
 import { useAppFrameAuth } from "@/lib/appFrameAuth";
-import { X, SquareArrowOutUpRight, Loader2, LayoutGrid, Maximize2, Minimize2 } from "lucide-react";
+import { X, Loader2, LayoutGrid, Maximize, Pencil } from "lucide-react";
 import * as platform from "@/lib/base44Platform";
+import AppPreviewModal from "@/components/AppPreviewModal";
+import { useAppRebuildNonce, withNonce, APP_REBUILT } from "@/lib/appRefresh";
 
 const MIN_HEIGHT = 160;
 const MAX_HEIGHT = 800;
 const DEFAULT_HEIGHT = 320;
+/** Horizontal drag needed to flip between half and full width. */
+const WIDTH_SNAP_PX = 140;
 
-function WidgetFrame({ widget, onRemove, onUpdate }) {
+function WidgetFrame({ widget, onRemove, onUpdate, onExpand, deployedAt, metaReady }) {
   const [loading, setLoading] = useState(true);
   const [height, setHeight] = useState(widget.height || DEFAULT_HEIGHT);
   const [colSpan, setColSpan] = useState(widget.col_span || 1);
+  // Also gates the shield below: a drag crossing the iframe would otherwise hand
+  // the mouse to the frame and stop the resize dead.
+  const [resizing, setResizing] = useState(null);
   const dragRef = useRef(null);
   const frameRef = useRef(null);
-  // Embed the sandbox preview — renders whether or not the app is deployed, no
-  // token needed (apps are public_without_login). "Open" link still uses publishedUrl.
-  const url = widget.app_slug ? platform.previewUrl(widget.app_slug) : null;
+  const dragHandlersRef = useRef(null);
+
+  // Unmounting mid-drag would leave the listeners bound to window.
+  useEffect(() => {
+    return () => {
+      const h = dragHandlersRef.current;
+      if (!h) return;
+      window.removeEventListener("mousemove", h.onMove);
+      window.removeEventListener("mouseup", h.onUp);
+    };
+  }, []);
+  // Embed the sandbox preview — it renders whether or not the app is deployed and
+  // loads without a token (apps are public_without_login); the viewer token is what
+  // lets it read data. A widget stays inside the shell: "open larger" is a modal
+  // over this same URL, never a tab or a route.
+  // Points at the deployed build: served statically, never asleep. The sandbox
+  // preview boots on demand and answers with an error payload while it starts —
+  // which a frame renders as raw JSON — so it is only the never-deployed fallback.
+  const baseUrl = !widget.app_slug
+    ? null
+    : deployedAt
+      ? platform.publishedUrl(widget.app_slug)
+      : platform.previewUrl(widget.app_slug);
+  const rebuildNonce = useAppRebuildNonce(widget.app_id);
+  const url = withNonce(baseUrl, rebuildNonce);
   useAppFrameAuth(frameRef, widget.app_id, url);
 
+  /** Bottom edge is height only, right edge width only, corner both. */
   const handleResizeStart = useCallback(
-    (e) => {
+    (e, axis = "both") => {
       e.preventDefault();
+      const startX = e.clientX;
       const startY = e.clientY;
       const startHeight = height;
+      const startColSpan = colSpan;
+      setResizing(axis);
+
+      const resolve = (ev) => ({
+        height:
+          axis === "x"
+            ? startHeight
+            : Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, startHeight + (ev.clientY - startY))),
+        // Two grid positions, so width snaps rather than being continuous.
+        colSpan:
+          axis === "y"
+            ? startColSpan
+            : ev.clientX - startX > WIDTH_SNAP_PX
+              ? 2
+              : ev.clientX - startX < -WIDTH_SNAP_PX
+                ? 1
+                : startColSpan,
+      });
 
       const onMove = (moveEvent) => {
-        const delta = moveEvent.clientY - startY;
-        const newHeight = Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, startHeight + delta));
-        setHeight(newHeight);
+        const next = resolve(moveEvent);
+        setHeight(next.height);
+        setColSpan(next.colSpan);
       };
 
       const onUp = (upEvent) => {
         window.removeEventListener("mousemove", onMove);
         window.removeEventListener("mouseup", onUp);
-        const finalHeight = Math.min(
-          MAX_HEIGHT,
-          Math.max(MIN_HEIGHT, startHeight + (upEvent.clientY - startY)),
-        );
-        setHeight(finalHeight);
-        onUpdate(widget.id, { height: finalHeight });
+        dragHandlersRef.current = null;
+        setResizing(null);
+        const next = resolve(upEvent);
+        setHeight(next.height);
+        setColSpan(next.colSpan);
+        onUpdate(widget.id, { height: next.height, col_span: next.colSpan });
       };
 
+      dragHandlersRef.current = { onMove, onUp };
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
     },
-    [height, widget.id, onUpdate],
+    [height, colSpan, widget.id, onUpdate],
   );
-
-  const toggleColSpan = () => {
-    const next = colSpan === 1 ? 2 : 1;
-    setColSpan(next);
-    onUpdate(widget.id, { col_span: next });
-  };
 
   return (
     <div
-      className={`bg-card border border-border rounded-lg overflow-hidden flex flex-col${colSpan === 2 ? " sm:col-span-2 xl:col-span-2" : ""}`}
+      className={`relative bg-card border border-border rounded-lg overflow-hidden flex flex-col${colSpan === 2 ? " sm:col-span-2 xl:col-span-2" : ""}`}
     >
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-border flex-shrink-0">
-        <div className="w-5 h-5 rounded bg-muted flex-shrink-0 overflow-hidden flex items-center justify-center">
-          {widget.preview_screenshot_url ? (
-            <img
-              src={widget.preview_screenshot_url}
-              alt=""
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <span className="text-[10px] font-semibold text-muted-foreground">
-              {(widget.app_name || "?")[0].toUpperCase()}
-            </span>
-          )}
-        </div>
         <p className="text-xs font-medium text-foreground flex-1 truncate">{widget.app_name}</p>
         <div className="flex items-center gap-1 flex-shrink-0">
-          <button
-            onClick={toggleColSpan}
-            title={colSpan === 1 ? "Expand to full width" : "Shrink to half width"}
-            className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-          >
-            {colSpan === 1 ? <Maximize2 className="w-3 h-3" /> : <Minimize2 className="w-3 h-3" />}
-          </button>
           {widget.app_id && (
-            <a
-              href={`/MyTools?app=${widget.app_id}`}
+            <button
+              // An event, not a link: the panel opens over the dashboard.
+              onClick={() =>
+                window.dispatchEvent(
+                  new CustomEvent("open-assistant", {
+                    detail: { mode: "build", appId: widget.app_id },
+                  }),
+                )
+              }
+              title="Edit with the Assistant"
               className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-              title="Open in My Tools"
             >
-              <SquareArrowOutUpRight className="w-3 h-3" />
-            </a>
+              <Pencil className="w-3 h-3" />
+            </button>
+          )}
+          {url && (
+            <button
+              onClick={() => onExpand({ title: widget.app_name, url, appId: widget.app_id })}
+              title="Open in a bigger view"
+              className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+            >
+              <Maximize className="w-3 h-3" />
+            </button>
           )}
           <button
             onClick={() => onRemove(widget.id)}
@@ -113,11 +153,16 @@ function WidgetFrame({ widget, onRemove, onUpdate }) {
 
       {/* Body */}
       <div className="relative" style={{ height }}>
-        {!url ? (
+        {/* Waiting on deploy state: mounting now would load one url then the other. */}
+        {!metaReady ? (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+          </div>
+        ) : !url ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center px-4">
-            <p className="text-xs text-muted-foreground">This app hasn't been deployed yet.</p>
+            <p className="text-xs text-muted-foreground">This app hasn't been built yet.</p>
             <p className="text-xs text-muted-foreground">
-              Deploy it from the Assistant to embed it here.
+              Build it from the Assistant to embed it here.
             </p>
           </div>
         ) : (
@@ -128,6 +173,7 @@ function WidgetFrame({ widget, onRemove, onUpdate }) {
               </div>
             )}
             <iframe
+              key={rebuildNonce}
               ref={frameRef}
               src={url}
               title={widget.app_name}
@@ -139,20 +185,84 @@ function WidgetFrame({ widget, onRemove, onUpdate }) {
         )}
       </div>
 
-      {/* Resize handle */}
+      {/* Above the frame, or the embedded app owns the card's last few pixels. */}
       <div
         ref={dragRef}
-        onMouseDown={handleResizeStart}
-        className="h-2 flex items-center justify-center cursor-ns-resize bg-transparent hover:bg-border/60 transition-colors group flex-shrink-0"
+        onMouseDown={(e) => handleResizeStart(e, "y")}
+        title="Drag to change height"
+        className="absolute left-0 right-3 bottom-0 h-2 z-10 cursor-ns-resize hover:bg-primary/30 transition-colors"
+      />
+      <div
+        onMouseDown={(e) => handleResizeStart(e, "x")}
+        title="Drag to change width"
+        className="absolute top-0 bottom-3 right-0 w-2 z-10 cursor-ew-resize hover:bg-primary/30 transition-colors"
+      />
+      <div
+        onMouseDown={(e) => handleResizeStart(e, "both")}
         title="Drag to resize"
+        aria-label="Drag to resize this widget"
+        role="button"
+        className="absolute right-0 bottom-0 w-4 h-4 z-20 cursor-nwse-resize flex items-end justify-end p-0.5 text-muted-foreground hover:text-foreground"
       >
-        <div className="w-8 h-0.5 rounded-full bg-border group-hover:bg-muted-foreground transition-colors" />
+        <svg width="9" height="9" viewBox="0 0 9 9" aria-hidden="true">
+          <path
+            d="M8 1 1 8M8 5 5 8"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            fill="none"
+          />
+        </svg>
       </div>
+
+      {/* Keeps the pointer out of the iframe while dragging. */}
+      {resizing && (
+        <div
+          className={`absolute inset-0 z-30 ${
+            resizing === "y"
+              ? "cursor-ns-resize"
+              : resizing === "x"
+                ? "cursor-ew-resize"
+                : "cursor-nwse-resize"
+          }`}
+        />
+      )}
     </div>
   );
 }
 
 export default function DashboardWidgets({ widgets, onRemove, onAddClick }) {
+  // One modal for the list rather than one per card: only ever one is open.
+  const [expanded, setExpanded] = useState(null);
+  // app id -> last_deployed_at, one list call for every card. Null = not yet known.
+  const [appMeta, setAppMeta] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = () =>
+      platform
+        .listAppsForUser({ limit: 50 })
+        .then((apps) => {
+          if (cancelled) return;
+          const map = {};
+          for (const a of apps || []) map[a.id] = a.last_deployed_at ?? null;
+          setAppMeta(map);
+        })
+        // Never spin forever: an empty map falls back to the sandbox preview.
+        .catch(() => {
+          if (!cancelled) setAppMeta({});
+        });
+
+    load();
+    // A deploy flips an app from sandbox-only to deployed, so re-read.
+    const onRebuilt = () => load();
+    window.addEventListener(APP_REBUILT, onRebuilt);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(APP_REBUILT, onRebuilt);
+    };
+  }, []);
+
   const handleUpdate = async (widgetId, changes) => {
     await Widget.update(widgetId, changes);
   };
@@ -181,10 +291,26 @@ export default function DashboardWidgets({ widgets, onRemove, onAddClick }) {
       ) : (
         <div className="grid sm:grid-cols-2 xl:grid-cols-2 gap-4">
           {widgets.map((w) => (
-            <WidgetFrame key={w.id} widget={w} onRemove={onRemove} onUpdate={handleUpdate} />
+            <WidgetFrame
+              key={w.id}
+              widget={w}
+              onRemove={onRemove}
+              onUpdate={handleUpdate}
+              onExpand={setExpanded}
+              deployedAt={appMeta ? (appMeta[w.app_id] ?? null) : null}
+              metaReady={appMeta !== null}
+            />
           ))}
         </div>
       )}
+
+      <AppPreviewModal
+        open={Boolean(expanded)}
+        title={expanded?.title}
+        url={expanded?.url}
+        appId={expanded?.appId}
+        onClose={() => setExpanded(null)}
+      />
     </div>
   );
 }

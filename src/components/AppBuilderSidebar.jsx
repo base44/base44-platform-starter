@@ -224,11 +224,9 @@ export default function AppBuilderSidebar({
 
   const deployedCommit = activeApp?.last_deployed_git_commit_hash ?? null;
   const currentCommit = activeApp?.last_git_commit_hash ?? null;
-  const deployedUpToDate = Boolean(activeApp?.last_deployed_at)
-    ? deployedCommit && currentCommit
-      ? deployedCommit === currentCommit
-      : true
-    : false;
+  const deployedUpToDate =
+    Boolean(activeApp?.last_deployed_at) &&
+    (!deployedCommit || !currentCommit || deployedCommit === currentCommit);
 
   // Session state for the moment after the click, server truth for later visits.
   const savedToMyTools = !editedSinceDeploy && (savedAs !== null || deployedUpToDate);
@@ -584,9 +582,12 @@ export default function AppBuilderSidebar({
   // picking it up, which popped the card on the previous turn's result. The
   // conversation's shape is reliable: assistant last, no tool call in flight.
   const lastVisible = buildMessages.length ? buildMessages[buildMessages.length - 1] : null;
-  const hasToolInFlight = buildMessages.some((m) =>
-    (m.tool_calls || []).some((tc) => TOOL_PENDING.includes(tc.status)),
-  );
+  // Only this turn: a tool left `running` by an abandoned turn would otherwise hide
+  // the card for good, and it is the only way to publish.
+  const lastUserIndex = buildMessages.reduce((acc, m, i) => (m.role === "user" ? i : acc), -1);
+  const hasToolInFlight = buildMessages
+    .slice(lastUserIndex + 1)
+    .some((m) => (m.tool_calls || []).some((tc) => TOOL_PENDING.includes(tc.status)));
 
   const appReady =
     Boolean(activeApp) &&
