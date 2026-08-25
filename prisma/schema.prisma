@@ -1,0 +1,224 @@
+// The shell's own data layer. This is the platform's database, not Base44's —
+// the apps users build have their own entities, over in Base44.
+//
+// Conventions:
+//   * Prisma fields are camelCase; columns are snake_case via @map. The wire
+//     contract is Base44-shaped (snake_case, created_date/updated_date), and that
+//     translation lives in one place — src/lib/entities.ts — never here.
+//   * `createdBy` is the owner email and the RLS predicate. Every user-owned
+//     model has it, indexed, and is only ever queried through scopedWhere()
+//     in src/lib/rls.ts. Never query these models raw.
+//   * ids are opaque strings, so Base44's Mongo ObjectId hex values can be
+//     carried over verbatim and boardId/teamId/groupId refs stay intact.
+
+generator client {
+  provider      = "prisma-client-js"
+  // Netlify builds on Ubuntu but runs functions on Amazon Linux; without the
+  // rhel target the query engine is missing at runtime.
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  // url = pooled connection (app runtime); directUrl = unpooled (migrations).
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  user
+  admin
+}
+
+enum BoardVisibility {
+  private
+  shared
+}
+
+enum BoardViewType {
+  table
+  kanban
+  calendar
+}
+
+enum ItemPriority {
+  low
+  medium
+  high
+  critical
+}
+
+enum Base44LinkStatus {
+  pending
+  linked
+}
+
+/// Shell users. Created/upserted on Google sign-in, matched by email — which is
+/// what lets the email-keyed AppOwnership and Base44Link rows exist before their
+/// owner has ever signed in here.
+/// `role` is a manual DB flag: flip to `admin` by hand.
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  fullName  String?  @map("full_name")
+  imageUrl  String?  @map("image_url")
+  role      Role     @default(user)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+model Team {
+  id           String   @id @default(cuid())
+  name         String
+  description  String?
+  logoUrl      String?  @map("logo_url")
+  color        String   @default("#0073EA")
+  memberEmails String[] @map("member_emails")
+
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  boards Board[]
+
+  @@index([createdBy])
+  @@map("teams")
+}
+
+/// Board columns and groups stay denormalized JSON, exactly as in Base44:
+///   columns: [{ id, title, type, width, options }]
+///   groups:  [{ id, title, color, collapsed, visible_columns[], custom_columns[] }]
+/// Groups are not a table — Item.groupId is a free string pointing into this JSON,
+/// so it has no FK. Column `type` values: text | status | date | people | number |
+/// budget | priority | checkbox | dropdown.
+model Board {
+  id          String          @id @default(cuid())
+  title       String
+  description String?
+  color       String          @default("#0073EA")
+  visibility  BoardVisibility @default(private)
+  viewType    BoardViewType   @default(table) @map("view_type")
+  columns     Json            @default("[]")
+  groups      Json            @default("[]")
+
+  teamId String? @map("team_id")
+  team   Team?   @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  items Item[]
+
+  @@index([createdBy])
+  @@index([teamId])
+  @@map("boards")
+}
+
+model Item {
+  id          String       @id @default(cuid())
+  title       String
+  description String?
+  orderIndex  Float?       @map("order_index")
+  /// Dynamic column data, keyed by column ID (not column title).
+  data        Json         @default("{}")
+  priority    ItemPriority @default(medium)
+  color       String?
+
+  boardId String  @map("board_id")
+  board   Board   @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  /// Points at a Board.groups[].id. Intentionally unconstrained — groups live in JSON.
+  groupId String? @map("group_id")
+
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([createdBy])
+  @@index([boardId, orderIndex])
+  @@map("items")
+}
+
+/// A Base44 app pinned to a user's dashboard.
+model Widget {
+  id                   String  @id @default(cuid())
+  appId                String  @map("app_id")
+  appName              String  @map("app_name")
+  appSlug              String? @map("app_slug")
+  previewUrl           String? @map("preview_url")
+  previewScreenshotUrl String? @map("preview_screenshot_url")
+  orderIndex           Float   @default(0) @map("order_index")
+  height               Int     @default(320)
+  /// 1 = half width, 2 = full width.
+  colSpan              Int     @default(1) @map("col_span")
+
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([createdBy, orderIndex])
+  @@map("widgets")
+}
+
+/// Register of which shell user owns which Base44 app. One row per (app, owner).
+model AppOwnership {
+  id      String  @id @default(cuid())
+  appId   String  @map("app_id")
+  /// Display name at creation time — debugging only, may be stale.
+  appName String? @map("app_name")
+
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([appId, createdBy])
+  @@index([createdBy])
+  @@map("app_ownerships")
+}
+
+/// Per-user Base44 platform credentials (service principal + minted token).
+/// SECRET-BEARING: must never reach the client. Reached only from server code via
+/// src/lib/base44Link.ts, keyed by email — never through the generic entity CRUD,
+/// which refuses this entity outright.
+model Base44Link {
+  id String @id @default(cuid())
+
+  /// The shell user this link belongs to. Lookup key.
+  appUserEmail String @unique @map("app_user_email")
+
+  /// This user's Base44 *service principal* id — opaque, stable, and
+  /// deliberately NOT an email: Base44 derives a non-routable synthetic address
+  /// from it, so putting a real address here would be the impersonation vector
+  /// the synthetic-principal design exists to remove. Derived deterministically
+  /// (see principalId() in src/lib/base44Link.ts), so deleting this row and
+  /// reconnecting lands on the SAME principal rather than orphaning the apps it
+  /// owns. Persisted anyway, because it is the only thing that maps a Base44
+  /// workspace member back to a Sunny user.
+  serviceExternalId String? @unique @map("service_external_id")
+
+  status       Base44LinkStatus @default(pending)
+  accessToken  String?          @map("access_token")
+  /// Kept only so `disconnect` can revoke it — the bridge re-mints on expiry
+  /// rather than running a refresh exchange.
+  refreshToken String?          @map("refresh_token")
+  /// Now ~1h out, not ~30d: vended principal tokens are minted short-lived.
+  expiresAt    DateTime?        @map("expires_at")
+
+  organizationId       String? @map("organization_id")
+  /// The principal's synthetic Base44 address
+  /// (`{slug}-{hash}@{org}.svc.base44.invalid`). Non-routable, debug only —
+  /// never the user's real email, which is why it is safe to store here.
+  base44UserEmail      String? @map("base44_user_email")
+  /// True once POST /api/service/users has returned for this principal. A row
+  /// that predates provisioning stays false and needs one reconnect.
+  principalProvisioned Boolean @default(false) @map("principal_provisioned")
+
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([createdBy])
+  @@map("base44_links")
+}

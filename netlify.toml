@@ -1,0 +1,19 @@
+# Netlify build config. The Next.js runtime (OpenNext adapter) is auto-installed
+# on detection — do not add it as a plugin here.
+#
+# `build:deploy` applies pending Prisma migrations before `next build`, so a
+# deploy is what moves the schema forward. See docs/deploy.md.
+
+[build]
+  command = "npm run build:deploy"
+  publish = ".next"
+
+[build.environment]
+  # Matches the Node version production has been running.
+  NODE_VERSION = "24"
+
+  # Turbopack's build cache under .netlify/.next/cache records resolved
+  # process.env reads, so the secrets scanner finds real values there. That
+  # cache is never served — only the deployed output is — so omit the path
+  # rather than the keys, which would blind the scan everywhere else.
+  SECRETS_SCAN_OMIT_PATHS = ".netlify/.next/cache/**"
