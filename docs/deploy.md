@@ -5,10 +5,10 @@ a paid feature.
 
 Two things to understand before you start:
 
-- **A deployment makes `/api/sunny` reachable from the internet.** It is service-role by design
-  (see [base44-built-apps.md](base44-built-apps.md)), so `SUNNY_API_TOKEN` **must** be set in the
-  deploy environment. Leaving it unset leaves the endpoint open: anyone with the URL can read and
-  write every user's rows.
+- **A deployment makes `/api/sunny` reachable from the internet.** It answers only requests
+  carrying a viewer token signed with `NEXTAUTH_SECRET` (see
+  [base44-built-apps.md](base44-built-apps.md)), so there is no shared secret to leak and no open
+  mode to forget to close — but a weak or reused `NEXTAUTH_SECRET` now compromises that API too.
 - **Sign-in is pinned to one origin.** `NEXTAUTH_URL` and the Google OAuth client both name an exact
   host, so preview deployments cannot sign in unless you give them their own client. See
   [Preview deployments](#preview-deployments) below.
@@ -73,7 +73,6 @@ one is.
 | `NEXTAUTH_SECRET` | `openssl rand -base64 32` |
 | `NEXTAUTH_URL` | `https://<your-host>` — the production domain, exactly |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | the production OAuth client |
-| `SUNNY_API_TOKEN` | **do not leave unset** |
 | `BASE44_SVC_KEY` | the `b44k_` workspace key — without it the builder shows its "Connect" state |
 | `BASE44_PROVISION_KEY` | optional second key; defaults to `BASE44_SVC_KEY` |
 | `BASE44_ORG_ID`, `BASE44_PLATFORM_HOST`, `BASE44_APPS_FOLDER_ID` | from your workspace |
@@ -96,8 +95,8 @@ NEXTAUTH_URL=https://<your-host> npm run sunny:smoke
 ```
 
 …but they **write throwaway rows and clean up after themselves**, and `sunny:smoke` needs
-`SUNNY_API_TOKEN` and `NEXTAUTH_SECRET` locally to match the deployment's. Don't run them against
-anything you care about.
+`NEXTAUTH_SECRET` locally to match the deployment's — it mints its own viewer tokens. Don't run them
+against anything you care about.
 
 The deployed database starts empty. Every route works; there is just nothing to list until you sign
 in and create a board.

@@ -43,10 +43,13 @@ Next.js App Router · TypeScript · Tailwind 4 · Postgres + Prisma · NextAuth 
 - **Server-only secrets** (`BASE44_SVC_KEY`, workspace id, platform host) live in env and are never
   shipped to the client, and never caller-supplied — a request-controlled host would be an SSRF and
   a request-controlled workspace id would defeat the tenancy boundary.
-- **`/api/sunny` is service-role**, for externally-hosted Base44 apps: `X-Sunny-Api-Token` +
-  CORS `*`, no user session. Because it is unscoped it deliberately does *not* go through
-  `entityCrud.ts`, and it withholds `created_by`. Treat its contract as frozen once apps are built
-  against it — they are deployed code you do not control.
+- **`/api/sunny` serves externally-hosted Base44 apps**: CORS `*`, no user session, so it cannot
+  go through `entityCrud.ts` and it withholds `created_by`. Identity comes from a **viewer token**
+  (`src/lib/appTokens.ts`) that the embedding page mints for the current user and posts into the
+  frame (`src/lib/appFrameAuth.ts`); its subject drives `scopedWhere()`, so an installed app answers
+  for its installer, never its author. No token means unscoped, which is the legacy behaviour.
+  Treat its contract as frozen once apps are built against it — they are deployed code you do not
+  control.
 - **Two lint regimes.** Platform infrastructure (`src/lib`, `src/app`) is strict `.tsx`/`.ts`. The
   example product UI (`src/components`, `src/views`) is `.jsx` with relaxed lint — it's the example,
   not the lesson.

@@ -6,8 +6,9 @@
  * against the local `AppOwnership` rows. The frames need no token because built
  * apps are created `public_without_login`.
  */
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import * as platform from "@/lib/base44Platform";
+import { useAppFrameAuth } from "@/lib/appFrameAuth";
 import { Loader2, ArrowLeft, ExternalLink, Pencil } from "lucide-react";
 
 export default function MyTools() {
@@ -15,6 +16,14 @@ export default function MyTools() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedApp, setSelectedApp] = useState(null);
+  const frameRef = useRef(null);
+
+  // Same handshake the dashboard widgets use: the frame has no session, so it asks
+  // this page for a token scoped to whoever is signed in.
+  const selectedUrl = selectedApp
+    ? platform.previewUrl(selectedApp.slug) || platform.publishedUrl(selectedApp.slug)
+    : null;
+  useAppFrameAuth(frameRef, selectedApp?.id ?? null, selectedUrl);
 
   useEffect(() => {
     (async () => {
@@ -36,7 +45,7 @@ export default function MyTools() {
   }, []);
 
   if (selectedApp) {
-    const url = platform.previewUrl(selectedApp.slug) || platform.publishedUrl(selectedApp.slug);
+    const url = selectedUrl;
     return (
       <div className="flex flex-col h-[calc(100vh-56px)]">
         <div className="bg-card border-b border-border px-6 py-3 flex items-center gap-4 flex-shrink-0">
@@ -61,7 +70,12 @@ export default function MyTools() {
           )}
         </div>
         {url ? (
-          <iframe src={url} className="flex-1 w-full border-0" title={selectedApp.name} />
+          <iframe
+            ref={frameRef}
+            src={url}
+            className="flex-1 w-full border-0"
+            title={selectedApp.name}
+          />
         ) : (
           <div className="flex-1 flex items-center justify-center">
             <p className="text-sm text-muted-foreground">No preview URL yet — deploy it first.</p>

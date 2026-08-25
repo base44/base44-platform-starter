@@ -252,18 +252,21 @@ A built app doesn't know your product exists. Two mechanisms, and the split matt
 ### 4c. The callback API
 
 The built app runs on its own Base44 origin with no session in your product. So your data API is
-**service-role**: a shared token plus CORS is the entire boundary.
+cross-origin and cookie-less, so the request has to carry its own identity.
 
 ```
 POST https://your-host/api/sunny
 Content-Type: application/json
-X-Sunny-Api-Token: <token>
+Authorization: Bearer <viewer token>
 { "action": "listBoards" }
 ```
 
-Because it's unscoped, it deliberately does *not* go through `scopedWhere()` — and so it must not
-reuse your session-based CRUD module, and must withhold owner emails from responses. Treat that
-contract as frozen once apps are built against it: they're deployed code you don't control.
+It has no actor of its own, so it must not reuse your session-based CRUD module, and must withhold
+owner emails from responses. It gets an actor from a **viewer token**: the page embedding the app
+mints one for whoever is signed in and posts it to the frame, and the app sends it as a bearer
+token. That's what makes an installed app answer with the installer's rows rather than its author's.
+Treat the contract as frozen once apps are built against it: they're deployed code you don't
+control.
 
 → Instructions, skills, the callback contract and CORS: **[docs/base44-built-apps.md](docs/base44-built-apps.md)**
 

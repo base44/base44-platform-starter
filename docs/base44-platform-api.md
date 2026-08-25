@@ -92,16 +92,23 @@ user's apps" is a local join. This repo keeps an `AppOwnership` row per created 
   "organization_id": "<workspace id>",
   "public_settings": "public_without_login",
   "custom_instructions": "<always-on instructions>",  // persisted, applied every turn
+  "secrets": {                                        // installed before the first build turn
+    "SOME_NAME": { "type": "value", "value": "<value>" }  // APP_SECRETS is empty today
+  },
   "initial_message": { "content": "<the prompt>" },   // create-only, starts the first build
   "prevent_iframe_embedding": false                   // required for an embeddable preview
 }
 ```
 
-Two fields do different jobs and both must be set **here**:
+Three fields do different jobs and all must be set **here**:
 
 - `initial_message` kicks off the first build inside this same call — so this request blocks on an
   LLM turn, and anything you patch afterwards misses that turn.
 - `custom_instructions` is persisted on the app and re-applied on every later turn.
+- `secrets` are written before that turn is scheduled, so the app never builds without its
+  credentials. `POST /api/apps/{id}/secrets` exists too, but it races the turn. Resolve the values
+  server-side from an allow-list — a caller that can send a *value* can write anything into an app.
+  Base44 exposes app secrets only to backend functions, never to the frontend bundle.
 
 The platform silently drops fields it doesn't accept, and a dropped `custom_instructions` is
 invisible — the build just ignores it. Read it back off the response and log loudly if it didn't

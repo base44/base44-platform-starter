@@ -1,12 +1,17 @@
 /**
  * Renders pinned Base44 apps as resizable dashboard widgets.
  *
- * Each widget is just an iframe on the app's preview host — no token, because the
- * builder creates apps `public_without_login`, and `prevent_iframe_embedding` is
- * set false at create time so the frame is allowed at all.
+ * Each widget is an iframe on the app's preview host — the builder creates apps
+ * `public_without_login`, and `prevent_iframe_embedding` is set false at create time
+ * so the frame is allowed at all.
+ *
+ * The frame has no session of its own, so `useAppFrameAuth` answers its token request
+ * with one scoped to the current viewer. That is what makes an installed app read the
+ * installer's data rather than its author's.
  */
 import React, { useState, useRef, useCallback } from "react";
 import { Widget } from "@/lib/entityClient";
+import { useAppFrameAuth } from "@/lib/appFrameAuth";
 import { X, SquareArrowOutUpRight, Loader2, LayoutGrid, Maximize2, Minimize2 } from "lucide-react";
 import * as platform from "@/lib/base44Platform";
 
@@ -19,9 +24,11 @@ function WidgetFrame({ widget, onRemove, onUpdate }) {
   const [height, setHeight] = useState(widget.height || DEFAULT_HEIGHT);
   const [colSpan, setColSpan] = useState(widget.col_span || 1);
   const dragRef = useRef(null);
+  const frameRef = useRef(null);
   // Embed the sandbox preview — renders whether or not the app is deployed, no
   // token needed (apps are public_without_login). "Open" link still uses publishedUrl.
   const url = widget.app_slug ? platform.previewUrl(widget.app_slug) : null;
+  useAppFrameAuth(frameRef, widget.app_id, url);
 
   const handleResizeStart = useCallback(
     (e) => {
@@ -121,6 +128,7 @@ function WidgetFrame({ widget, onRemove, onUpdate }) {
               </div>
             )}
             <iframe
+              ref={frameRef}
               src={url}
               title={widget.app_name}
               className="w-full h-full border-0"
