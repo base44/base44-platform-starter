@@ -166,7 +166,11 @@ export default function Dashboard() {
         existingAppIds={widgets.map((w) => w.app_id)}
         onAdded={handleWidgetAdded}
         onBuildNew={() => {
-          window.dispatchEvent(new CustomEvent("open-assistant", { detail: { mode: "build" } }));
+          window.dispatchEvent(
+            new CustomEvent("open-assistant", {
+              detail: { mode: "build", origin: "home-widget" },
+            }),
+          );
         }}
       />
     </div>

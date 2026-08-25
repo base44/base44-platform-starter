@@ -9,6 +9,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import * as platform from "@/lib/base44Platform";
 import { useAppFrameAuth } from "@/lib/appFrameAuth";
+import { useAppRebuildNonce, withNonce } from "@/lib/appRefresh";
 import { Loader2, ArrowLeft, ExternalLink, Pencil } from "lucide-react";
 
 export default function MyTools() {
@@ -20,9 +21,16 @@ export default function MyTools() {
 
   // Same handshake the dashboard widgets use: the frame has no session, so it asks
   // this page for a token scoped to whoever is signed in.
-  const selectedUrl = selectedApp
-    ? platform.previewUrl(selectedApp.slug) || platform.publishedUrl(selectedApp.slug)
-    : null;
+  // Deployed build is static and always up; the sandbox is the never-deployed
+  // fallback. See DashboardWidgets.
+  const baseUrl = !selectedApp
+    ? null
+    : selectedApp.last_deployed_at
+      ? platform.publishedUrl(selectedApp.slug) || platform.previewUrl(selectedApp.slug)
+      : platform.previewUrl(selectedApp.slug);
+
+  const rebuildNonce = useAppRebuildNonce(selectedApp?.id ?? null);
+  const selectedUrl = withNonce(baseUrl, rebuildNonce);
   useAppFrameAuth(frameRef, selectedApp?.id ?? null, selectedUrl);
 
   useEffect(() => {
@@ -71,6 +79,7 @@ export default function MyTools() {
         </div>
         {url ? (
           <iframe
+            key={rebuildNonce}
             ref={frameRef}
             src={url}
             className="flex-1 w-full border-0"

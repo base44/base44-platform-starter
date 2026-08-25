@@ -34,6 +34,10 @@ import { Board } from "@/lib/entityClient";
 import { useAuth } from "@/lib/AuthContext";
 import { suggestAppName } from "@/lib/appName";
 import { buildCustomInstructions } from "@/lib/builderInstructions";
+import { addAppToMyWidgets } from "@/lib/myWidgets";
+import { announceAppRebuilt } from "@/lib/appRefresh";
+import { Widget as WidgetEntity } from "@/lib/entityClient";
+import AppPreviewModal from "@/components/AppPreviewModal";
 import { Textarea } from "@/components/ui/textarea";
 import ReactMarkdown from "react-markdown";
 import {
@@ -50,8 +54,6 @@ import {
   LayoutGrid,
   Sparkles,
   Hammer,
-  BookmarkCheck,
-  Check,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
@@ -174,50 +176,14 @@ function MessageBubble({ message, appId, isLastAssistant, onSubmitted }) {
   );
 }
 
-/**
- * What fills the preview modal until the app's own UI takes over. A faint
- * wireframe rather than a bare spinner, so the wait reads as "this app is
- * loading" instead of "nothing happened" — which is how a blank iframe reads.
- */
-function PreviewStage({ label, hint, error, onRetry }) {
-  if (error) {
-    return (
-      <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background px-6 text-center">
-        <AlertTriangle className="w-6 h-6 text-destructive" />
-        <p className="text-sm text-foreground max-w-sm">{error}</p>
-        <button
-          onClick={onRetry}
-          className="text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-        >
-          Try again
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="absolute inset-0 bg-background overflow-hidden">
-      <div className="p-6 md:p-10 max-w-5xl w-full mx-auto space-y-6 animate-pulse opacity-60">
-        <div className="h-7 w-1/3 rounded bg-muted" />
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="h-24 rounded bg-muted" />
-          ))}
-        </div>
-        <div className="h-64 rounded bg-muted" />
-      </div>
-      <div className="absolute inset-x-0 bottom-0 flex flex-col items-center gap-1.5 pb-10">
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-card border border-border shadow-sm">
-          <Loader2 className="w-3.5 h-3.5 animate-spin text-accent" />
-          <p className="text-xs font-medium text-foreground">{label}</p>
-        </div>
-        {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
-      </div>
-    </div>
-  );
-}
-
-export default function AppBuilderSidebar({ open, onClose, initialMode, initialAppId }) {
+export default function AppBuilderSidebar({
+  open,
+  onClose,
+  initialMode,
+  initialAppId,
+  origin,
+  requestId,
+}) {
   // App build state
   const [apps, setApps] = useState([]);
   const [isLoadingApps, setIsLoadingApps] = useState(false);
@@ -225,7 +191,6 @@ export default function AppBuilderSidebar({ open, onClose, initialMode, initialA
   const [buildMessages, setBuildMessages] = useState([]);
   const [buildInput, setBuildInput] = useState("");
   const [isSending, setIsSending] = useState(false);
-  const [isDeploying, setIsDeploying] = useState(false);
   const [buildView, setBuildView] = useState("list"); // "list" | "chat"
 
   const { b44Linked } = useAuth();
@@ -233,13 +198,44 @@ export default function AppBuilderSidebar({ open, onClose, initialMode, initialA
   const [linked, setLinked] = useState(null);
 
   const [error, setError] = useState(null);
-  const [appReadyFor, setAppReadyFor] = useState(null);
-  const [isSavingToMyTools, setIsSavingToMyTools] = useState(false);
-  const [savedToMyTools, setSavedToMyTools] = useState(false);
+  // A send in flight. The composer holds the text until the conversation carries
+  // it; `userCount` is the fallback for when the server normalises what it stores.
+  const [pendingSend, setPendingSend] = useState(null);
+  // Which turn the ready card was dismissed for. Openness itself is derived below.
+  const [dismissedReadyFor, setDismissedReadyFor] = useState(null);
+  // Server truth, so re-entering cannot offer to pin an already-pinned app.
+  const [alreadyPinned, setAlreadyPinned] = useState(false);
+  // Covers the window before the commit hash catches up.
+  const [editedAppId, setEditedAppId] = useState(null);
+  // Which filing action is in flight, and what the app was ultimately filed as.
+  // Single values rather than a pair of booleans per action: the reset sites are
+  // many, and two flags could fall out of step.
+  const [pendingSave, setPendingSave] = useState(null); // null | "my-tools" | "widgets"
+  const [savedAs, setSavedAs] = useState(null); //         null | "my-tools" | "widgets"
+  const isSavingToMyTools = pendingSave !== null;
+  /**
+   * Is the build on disk the one that was deployed? Comparing commits, not just
+   * `last_deployed_at`, is what re-arms Publish after an edit. Non-git sources
+   * report no hashes, so fall back to "ever deployed".
+   */
+  // `last_git_commit_hash` only moves once the build commits, long after the user
+  // asked for the change, so the deploy state below would read stale until then.
+  const editedSinceDeploy = editedAppId !== null && editedAppId === activeApp?.id;
+
+  const deployedCommit = activeApp?.last_deployed_git_commit_hash ?? null;
+  const currentCommit = activeApp?.last_git_commit_hash ?? null;
+  const deployedUpToDate = Boolean(activeApp?.last_deployed_at)
+    ? deployedCommit && currentCommit
+      ? deployedCommit === currentCommit
+      : true
+    : false;
+
+  // Session state for the moment after the click, server truth for later visits.
+  const savedToMyTools = !editedSinceDeploy && (savedAs !== null || deployedUpToDate);
+  const addedToMyWidgets = savedAs === "widgets";
   const [boardSuggestions, setBoardSuggestions] = useState([]);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewModalUrl, setPreviewModalUrl] = useState(null);
-  const [previewLoaded, setPreviewLoaded] = useState(false);
   const [previewError, setPreviewError] = useState(null);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const messagesEndRef = useRef(null);
@@ -262,6 +258,10 @@ export default function AppBuilderSidebar({ open, onClose, initialMode, initialA
   const activeAppId = activeApp?.id || null;
   const isBuilding = activeApp?.status?.state === "processing";
 
+  // The user reached the builder from the Add-widget picker, so the finished app
+  // is offered a pin to My Widgets — deploying alone only fills My Tools.
+  const cameFromWidgetPicker = origin === "home-widget";
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [buildMessages]);
@@ -274,8 +274,8 @@ export default function AppBuilderSidebar({ open, onClose, initialMode, initialA
       setActiveApp(null);
       setBuildMessages([]);
       setError(null);
-      setAppReadyFor(null);
-      setSavedToMyTools(false);
+      setDismissedReadyFor(null);
+      setSavedAs(null);
       platform
         .getApp(initialAppId)
         .then((app) => {
@@ -290,7 +290,8 @@ export default function AppBuilderSidebar({ open, onClose, initialMode, initialA
         })
         .catch((err) => setError(err.message));
     }
-  }, [open, initialAppId, linked]);
+    // Keyed on the request, so re-opening the same app reloads it.
+  }, [open, requestId, initialAppId, linked]);
 
   // Load boards to generate contextual suggestions
   useEffect(() => {
@@ -379,20 +380,19 @@ export default function AppBuilderSidebar({ open, onClose, initialMode, initialA
     setActiveApp(null);
     setBuildMessages([]);
     setError(null);
-    setAppReadyFor(null);
-    setSavedToMyTools(false);
+    setDismissedReadyFor(null);
+    setSavedAs(null);
     setBuildView("chat");
   }, []);
 
-  // An explicit build request (the open-assistant event from Quick actions, a
-  // board, or My Tools) opens a chat; the assistant button carries no mode and
-  // lands on the tools list.
+  // Keyed on `requestId`, not the request's contents: asking twice for the same
+  // thing must act twice, which "build a new app" while a chat is open needs.
   useEffect(() => {
     if (open && initialMode === "build") {
       setBuildView("chat");
       if (!initialAppId) startNewApp();
     }
-  }, [open, initialMode, startNewApp]);
+  }, [open, requestId, initialMode, initialAppId, startNewApp]);
 
   // Reset state on close
   useEffect(() => {
@@ -405,7 +405,6 @@ export default function AppBuilderSidebar({ open, onClose, initialMode, initialA
       previewReqRef.current++;
       setPreviewOpen(false);
       setPreviewModalUrl(null);
-      setPreviewLoaded(false);
       setPreviewError(null);
       setIsLoadingPreview(false);
     }
@@ -413,17 +412,37 @@ export default function AppBuilderSidebar({ open, onClose, initialMode, initialA
 
   const saveToMyTools = async () => {
     if (!activeAppId || isSavingToMyTools) return;
-    setIsSavingToMyTools(true);
+    setPendingSave("my-tools");
     try {
       await platform.deployApp(activeAppId);
       await refresh(activeAppId);
-      setSavedToMyTools(true);
-      window.dispatchEvent(new CustomEvent("widgets-updated"));
+      setSavedAs("my-tools");
+      setEditedAppId((prev) => (prev === activeAppId ? null : prev));
+      announceAppRebuilt(activeAppId);
     } catch (err) {
       if (platform.isNotLinkedError(err)) setLinked(false);
       setError(err.message);
     } finally {
-      setIsSavingToMyTools(false);
+      setPendingSave(null);
+    }
+  };
+
+  /** Publishes and pins: a superset of `saveToMyTools`, not an alternative. */
+  const addToMyWidgets = async () => {
+    if (!activeAppId || isSavingToMyTools) return;
+    setPendingSave("widgets");
+    try {
+      await platform.deployApp(activeAppId);
+      await refresh(activeAppId);
+      await addAppToMyWidgets({ ...activeApp, id: activeAppId });
+      setSavedAs("widgets");
+      setEditedAppId((prev) => (prev === activeAppId ? null : prev));
+      announceAppRebuilt(activeAppId);
+    } catch (err) {
+      if (platform.isNotLinkedError(err)) setLinked(false);
+      setError(err.message);
+    } finally {
+      setPendingSave(null);
     }
   };
 
@@ -432,13 +451,13 @@ export default function AppBuilderSidebar({ open, onClose, initialMode, initialA
     const content = buildInput.trim();
     // Answer the pending user-input widget before sending a free-form message,
     // or it races into the paused turn.
-    if (!content || isSending || awaitingInput) return;
-    // If the ready widget is showing, treat any new prompt as "keep editing"
-    if (appReadyFor) {
-      setAppReadyFor(null);
-      setSavedToMyTools(false);
-    }
-    setBuildInput("");
+    if (!content || isSending || pendingSend || awaitingInput) return;
+    // Carrying on, so the card steps aside.
+    if (appReady) setDismissedReadyFor(lastAssistantId);
+    setSavedAs(null);
+    setEditedAppId(activeApp?.id ?? null);
+    // Deliberately not clearing the composer; the effect above retires it.
+    setPendingSend({ text: content, userCount: userMessageCount });
     setIsSending(true);
     setError(null);
     try {
@@ -460,7 +479,7 @@ export default function AppBuilderSidebar({ open, onClose, initialMode, initialA
     } catch (err) {
       if (platform.isNotLinkedError(err)) setLinked(false);
       setError(err.message);
-      setBuildInput(content);
+      setPendingSend(null);
     } finally {
       setIsSending(false);
     }
@@ -471,27 +490,13 @@ export default function AppBuilderSidebar({ open, onClose, initialMode, initialA
     setActiveApp(app);
     setBuildMessages([]);
     setError(null);
-    setAppReadyFor(null);
-    setSavedToMyTools(false);
+    setDismissedReadyFor(null);
+    setSavedAs(null);
     setBuildView("chat");
     try {
       await refresh(app.id);
     } catch (err) {
       setError(err.message);
-    }
-  };
-
-  const deploy = async () => {
-    if (!activeAppId || isDeploying) return;
-    setIsDeploying(true);
-    try {
-      await platform.deployApp(activeAppId);
-      await refresh(activeAppId);
-    } catch (err) {
-      if (platform.isNotLinkedError(err)) setLinked(false);
-      setError(err.message);
-    } finally {
-      setIsDeploying(false);
     }
   };
 
@@ -504,30 +509,28 @@ export default function AppBuilderSidebar({ open, onClose, initialMode, initialA
     setBuildMessages([]);
     setBuildView("list");
     setError(null);
-    setAppReadyFor(null);
-    setSavedToMyTools(false);
+    setDismissedReadyFor(null);
+    setSavedAs(null);
   };
 
   const closePreview = () => {
     previewReqRef.current++; // abandon an in-flight poll
     setPreviewOpen(false);
     setPreviewModalUrl(null);
-    setPreviewLoaded(false);
     setPreviewError(null);
     setIsLoadingPreview(false);
   };
+
+  // So the effect above can reopen the preview without depending on it.
+  const openPreviewRef = useRef(null);
 
   const openPreview = async () => {
     if (!activeAppId || isLoadingPreview) return;
     const appId = activeAppId;
     const req = ++previewReqRef.current;
-    // Open the shell on the click, not at the end of the wait. Resolving the URL
-    // is a poll loop of up to 40s and the app then boots inside the frame, so
-    // mounting the modal only once both finished meant the button did nothing
-    // visible for seconds and then flashed a blank iframe.
+    // Open the shell on the click: resolving is a poll loop of up to 40s.
     setPreviewOpen(true);
     setPreviewModalUrl(null);
-    setPreviewLoaded(false);
     setPreviewError(null);
     setIsLoadingPreview(true);
     try {
@@ -554,18 +557,9 @@ export default function AppBuilderSidebar({ open, onClose, initialMode, initialA
       if (previewReqRef.current === req) setIsLoadingPreview(false);
     }
   };
+  openPreviewRef.current = openPreview;
 
-  // Reveal the frame even if `onLoad` never fires — a preview host that stalls or
-  // a document that errors out should still be visible; a skeleton that never
-  // resolves is the worse failure.
-  useEffect(() => {
-    if (!previewModalUrl || previewLoaded) return;
-    const t = setTimeout(() => setPreviewLoaded(true), 15000);
-    return () => clearTimeout(t);
-  }, [previewModalUrl, previewLoaded]);
 
-  const published = platform.publishedUrl(activeApp?.slug);
-  const preview = platform.previewUrl(activeApp?.slug);
   // Newest assistant message drives the running-shimmer; widget interactivity is
   // gated on tool-call status, not position.
   const lastBuildAssistantIndex = buildMessages.reduce(
@@ -578,11 +572,74 @@ export default function AppBuilderSidebar({ open, onClose, initialMode, initialA
     (m.tool_calls || []).some((tc) => tc.status === "waiting_for_user_input"),
   );
 
-  // The builder is asynchronous and reports no completion, so "finished" is an
-  // edge in the poll: an app we have seen `processing` stops being `processing`
-  // without pausing for input. That edge is the only thing that opens the ready
-  // widget — hence the ref, which also keys it to the app the chat is showing so
-  // a poll for an app the user has left can't pop a widget for it.
+  const userMessageCount = buildMessages.filter((m) => m.role === "user").length;
+  const lastAssistantId =
+    lastBuildAssistantIndex >= 0 ? (buildMessages[lastBuildAssistantIndex]?.id ?? null) : null;
+
+  /**
+   * Derived, not remembered: it used to open on a `processing -> settled` edge, so
+   * only the client that watched the build finish ever saw it.
+   */
+  // `status.state` reads "ready" in the gap between sending and the builder
+  // picking it up, which popped the card on the previous turn's result. The
+  // conversation's shape is reliable: assistant last, no tool call in flight.
+  const lastVisible = buildMessages.length ? buildMessages[buildMessages.length - 1] : null;
+  const hasToolInFlight = buildMessages.some((m) =>
+    (m.tool_calls || []).some((tc) => TOOL_PENDING.includes(tc.status)),
+  );
+
+  const appReady =
+    Boolean(activeApp) &&
+    !isBuilding &&
+    !awaitingInput &&
+    !hasToolInFlight &&
+    !pendingSend &&
+    lastVisible?.role === "assistant" &&
+    lastAssistantId !== null &&
+    dismissedReadyFor !== lastAssistantId;
+
+  // Retire the held text once the conversation carries it. Two tests, because an
+  // exact match alone strands text the server normalised.
+  useEffect(() => {
+    if (!pendingSend) return;
+    const landed =
+      userMessageCount > pendingSend.userCount ||
+      buildMessages.some(
+        (m) =>
+          m.role === "user" &&
+          (typeof m.content === "string" ? m.content : platform.messageText?.(m.content) || "") ===
+            pendingSend.text,
+      );
+    if (!landed) return;
+    setBuildInput((current) => (current === pendingSend.text ? "" : current));
+    setPendingSend(null);
+  }, [pendingSend, buildMessages, userMessageCount]);
+
+  // Never stay locked on an echo that never arrives.
+  useEffect(() => {
+    if (!pendingSend) return;
+    const t = setTimeout(() => setPendingSend(null), 30000);
+    return () => clearTimeout(t);
+  }, [pendingSend]);
+
+  // So the card cannot offer a pin that already exists.
+  useEffect(() => {
+    if (!activeAppId) {
+      setAlreadyPinned(false);
+      return;
+    }
+    let cancelled = false;
+    WidgetEntity.filter({ app_id: activeAppId })
+      .then((rows) => {
+        if (!cancelled) setAlreadyPinned(Array.isArray(rows) && rows.length > 0);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [activeAppId, savedAs]);
+
+  // The builder reports no completion, so "finished" is an edge in the poll.
   const buildingAppIdRef = useRef(null);
   useEffect(() => {
     if (!activeAppId) {
@@ -593,13 +650,30 @@ export default function AppBuilderSidebar({ open, onClose, initialMode, initialA
       buildingAppIdRef.current = activeAppId;
       return;
     }
-    // Keep the ref while a turn is paused on a widget: the build resumes when the
-    // user answers, and it is *that* completion the ready widget belongs to.
+    // Keep the ref while paused on a widget: that later completion is the one.
     if (buildingAppIdRef.current !== activeAppId || awaitingInput) return;
     buildingAppIdRef.current = null;
-    setSavedToMyTools(false);
-    setAppReadyFor(activeAppId);
+    setSavedAs(null);
   }, [activeAppId, isBuilding, awaitingInput]);
+
+  /**
+   * A finished build refreshes the preview only. Widgets and My Tools show the
+   * deployed build, which a build does not change — deploying announces instead.
+   * The preview's url carries a short-lived token, so an open panel re-resolves.
+   */
+  const seenCommitRef = useRef({ appId: null, commit: null });
+  useEffect(() => {
+    if (!activeAppId || isBuilding || !currentCommit) return;
+    const seen = seenCommitRef.current;
+    if (seen.appId !== activeAppId) {
+      // First sighting of this app: record it, never act on arrival.
+      seenCommitRef.current = { appId: activeAppId, commit: currentCommit };
+      return;
+    }
+    if (seen.commit === currentCommit) return;
+    seenCommitRef.current = { appId: activeAppId, commit: currentCommit };
+    if (previewOpen) openPreviewRef.current?.();
+  }, [activeAppId, currentCommit, isBuilding, previewOpen]);
 
   return (
     <AnimatePresence>
@@ -662,20 +736,6 @@ export default function AppBuilderSidebar({ open, onClose, initialMode, initialA
                         <Eye className="w-3.5 h-3.5" />
                       )}
                       {isLoadingPreview ? "Opening…" : "Preview"}
-                    </button>
-                    <button
-                      onClick={saveToMyTools}
-                      disabled={isSavingToMyTools || savedToMyTools}
-                      className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded transition-colors disabled:opacity-100 ${savedToMyTools ? "bg-green-600 text-white cursor-default" : "bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-60"}`}
-                    >
-                      {isSavingToMyTools ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : savedToMyTools ? (
-                        <Check className="w-3.5 h-3.5" />
-                      ) : (
-                        <BookmarkCheck className="w-3.5 h-3.5" />
-                      )}
-                      {isSavingToMyTools ? "Saving…" : savedToMyTools ? "Saved!" : "Save"}
                     </button>
                   </>
                 )}
@@ -816,18 +876,28 @@ export default function AppBuilderSidebar({ open, onClose, initialMode, initialA
                       <Loader2 className="w-3 h-3 animate-spin" /> building…
                     </div>
                   )}
-                  {appReadyFor && appReadyFor === activeAppId && (
+                  {appReady && (
                     <div className="pl-8">
                       <AppReadyWidget
                         appName={activeApp?.name}
                         onPreview={openPreview}
                         isLoadingPreview={isLoadingPreview}
                         onSaveToMyTools={saveToMyTools}
-                        isSaving={isSavingToMyTools}
+                        isSaving={pendingSave === "my-tools"}
                         isSaved={savedToMyTools}
+                        offerMyWidgets={cameFromWidgetPicker}
+                        onAddToMyWidgets={addToMyWidgets}
+                        isAddingToMyWidgets={pendingSave === "widgets"}
+                        isAddedToMyWidgets={addedToMyWidgets || alreadyPinned}
+                        myToolsHref={activeAppId ? `/MyTools?app=${activeAppId}` : null}
+                        // Close the builder on the way: the point of following the
+                        // link is to look at the app, and the panel covers it.
+                        onNavigate={onClose}
                         onKeepEditing={() => {
-                          setAppReadyFor(null);
-                          setSavedToMyTools(false);
+                          // Dismissed for this turn only: the next finished turn
+                          // produces a new assistant message, so a fresh card.
+                          setDismissedReadyFor(lastAssistantId);
+                          setSavedAs(null);
                         }}
                       />
                     </div>
@@ -845,7 +915,7 @@ export default function AppBuilderSidebar({ open, onClose, initialMode, initialA
                           submitBuild();
                         }
                       }}
-                      disabled={awaitingInput}
+                      disabled={awaitingInput || Boolean(pendingSend)}
                       placeholder={
                         awaitingInput
                           ? "Answer the prompt above to continue…"
@@ -874,51 +944,16 @@ export default function AppBuilderSidebar({ open, onClose, initialMode, initialA
             )}
           </motion.div>
 
-          {/* Preview modal */}
-          {previewOpen && (
-            <div className="fixed inset-0 z-[200] flex flex-col bg-foreground/60 backdrop-blur-sm">
-              <div className="flex items-center justify-between px-4 py-2 bg-card border-b border-border flex-shrink-0">
-                <div className="flex items-center gap-2 min-w-0">
-                  <p className="text-sm font-medium text-foreground truncate">
-                    {activeApp?.name || "App Preview"}
-                  </p>
-                  {!previewLoaded && !previewError && (
-                    <Loader2 className="w-3 h-3 animate-spin text-muted-foreground flex-shrink-0" />
-                  )}
-                </div>
-                <button
-                  onClick={closePreview}
-                  aria-label="Close preview"
-                  className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="relative flex-1 bg-background">
-                {previewModalUrl && (
-                  <iframe
-                    src={previewModalUrl}
-                    onLoad={() => setPreviewLoaded(true)}
-                    className={`absolute inset-0 w-full h-full border-0 transition-opacity duration-300 ${previewLoaded ? "opacity-100" : "opacity-0"}`}
-                    title={activeApp?.name || "App Preview"}
-                    allow="fullscreen"
-                  />
-                )}
-                {(!previewLoaded || previewError) && (
-                  <PreviewStage
-                    label={previewModalUrl ? "Loading your tool…" : "Waking up your tool…"}
-                    hint={
-                      previewModalUrl
-                        ? null
-                        : "The first preview takes a few seconds while the app boots."
-                    }
-                    error={previewError}
-                    onRetry={openPreview}
-                  />
-                )}
-              </div>
-            </div>
-          )}
+          <AppPreviewModal
+            open={previewOpen}
+            title={activeApp?.name}
+            url={previewModalUrl}
+            appId={activeAppId}
+            error={previewError}
+            onClose={closePreview}
+            onRetry={openPreview}
+            stageHint="The first preview takes a few seconds while the app boots."
+          />
         </>
       )}
     </AnimatePresence>

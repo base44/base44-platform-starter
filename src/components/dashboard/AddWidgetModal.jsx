@@ -1,14 +1,12 @@
 /**
- * Picks one of the user's built Base44 apps to pin to the dashboard as a widget.
- *
- * Resolving a preview URL boots a sandbox, so it is done once here, at pin time,
- * rather than on every dashboard render.
+ * Picks a built app to pin as a widget. The pin lives in `addAppToMyWidgets`,
+ * shared with the builder so a hand-built app lands there the same way.
  */
 import React, { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Loader2, Plus, Check, Sparkles } from "lucide-react";
 import * as platform from "@/lib/base44Platform";
-import { Widget } from "@/lib/entityClient";
+import { addAppToMyWidgets } from "@/lib/myWidgets";
 
 export default function AddWidgetModal({
   open,
@@ -34,21 +32,7 @@ export default function AddWidgetModal({
   const handleAdd = async (app) => {
     setAdding(app.id);
     try {
-      let preview_url = null;
-      try {
-        const urlData = await platform.getPreviewUrl(app.id);
-        if (urlData?.preview_url) {
-          preview_url = `https://${urlData.preview_url}/`;
-        }
-      } catch {}
-      const widget = await Widget.create({
-        app_id: app.id,
-        app_name: app.name || "Untitled",
-        app_slug: app.slug || null,
-        preview_url,
-        preview_screenshot_url: app.preview_screenshot_url || null,
-        order_index: Date.now(),
-      });
+      const widget = await addAppToMyWidgets(app);
       onAdded(widget);
       onClose();
     } catch (err) {
