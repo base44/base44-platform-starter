@@ -59,6 +59,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
 import { widgetFor } from "@/components/builder/toolWidgets";
 import AppReadyWidget from "@/components/builder/widgets/AppReadyWidget";
+import PublishDialog from "@/components/market/PublishDialog";
 
 const BUILDING_POLL_MS = 2500;
 const IDLE_POLL_MS = 8000;
@@ -256,9 +257,13 @@ export default function AppBuilderSidebar({
   const activeAppId = activeApp?.id || null;
   const isBuilding = activeApp?.status?.state === "processing";
 
-  // The user reached the builder from the Add-widget picker, so the finished app
-  // is offered a pin to My Widgets — deploying alone only fills My Tools.
+  // Where the builder was opened from is already a statement of intent, so it picks
+  // the finished app's primary destination rather than asking. From the Add-widget
+  // picker: pin it. From the market: list it. Everything lands in My Tools regardless.
   const cameFromWidgetPicker = origin === "home-widget";
+  const cameFromMarket = origin === "market";
+  const [marketApp, setMarketApp] = useState(null);
+  const [listedInMarket, setListedInMarket] = useState(false);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -436,6 +441,30 @@ export default function AppBuilderSidebar({
       setSavedAs("widgets");
       setEditedAppId((prev) => (prev === activeAppId ? null : prev));
       announceAppRebuilt(activeAppId);
+    } catch (err) {
+      if (platform.isNotLinkedError(err)) setLinked(false);
+      setError(err.message);
+    } finally {
+      setPendingSave(null);
+    }
+  };
+
+  /**
+   * Deploy, then ask for the listing. Deploying first is not optional: a listing
+   * snapshots the app's deployed URL, and installers load that build rather than the
+   * author's preview sandbox.
+   */
+  const addToMarket = async () => {
+    if (!activeAppId || isSavingToMyTools) return;
+    setPendingSave("market");
+    try {
+      await platform.deployApp(activeAppId);
+      // getApp directly, not refresh(): the dialog needs `last_deployed_at` and the
+      // slug from *this* moment, and refresh() commits to state without returning.
+      const fresh = await platform.getApp(activeAppId);
+      await refresh(activeAppId);
+      announceAppRebuilt(activeAppId);
+      setMarketApp({ ...fresh, id: activeAppId });
     } catch (err) {
       if (platform.isNotLinkedError(err)) setLinked(false);
       setError(err.message);
@@ -886,6 +915,10 @@ export default function AppBuilderSidebar({
                         onSaveToMyTools={saveToMyTools}
                         isSaving={pendingSave === "my-tools"}
                         isSaved={savedToMyTools}
+                        offerMarket={cameFromMarket}
+                        onAddToMarket={addToMarket}
+                        isAddingToMarket={pendingSave === "market"}
+                        isAddedToMarket={listedInMarket}
                         offerMyWidgets={cameFromWidgetPicker}
                         onAddToMyWidgets={addToMyWidgets}
                         isAddingToMyWidgets={pendingSave === "widgets"}
@@ -955,6 +988,17 @@ export default function AppBuilderSidebar({
             onRetry={openPreview}
             stageHint="The first preview takes a few seconds while the app boots."
           />
+
+          {marketApp && (
+            <PublishDialog
+              app={marketApp}
+              onClose={() => setMarketApp(null)}
+              onDone={() => {
+                setMarketApp(null);
+                setListedInMarket(true);
+              }}
+            />
+          )}
         </>
       )}
     </AnimatePresence>

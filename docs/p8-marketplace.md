@@ -95,6 +95,31 @@ Three properties that are easy to get backwards, all asserted:
   everyone who came to depend on their app.
 * **Install counts follow the pins**, so unpinning both decrements and revokes.
 
+## Getting an app *into* the market
+
+Three ways in, and the third is the one that matters:
+
+* **Market → Publish an app** — a picker of the apps you built. This is where the
+  question gets asked, so this is where the answer lives.
+* **My Tools → Publish** on any app you built. Labelled, not a bare storefront glyph:
+  an icon does not say "offer this to other people", and nobody hovers a control whose
+  meaning they have not already guessed.
+* **From the chat.** Opening the builder from the market passes `origin: "market"`, and
+  the finished app's ready card offers **Add to the market** as its primary action —
+  deploy, then the listing dialog.
+
+That last one follows a pattern this codebase already had: `origin: "home-widget"`
+makes the ready card offer *Add to my widgets*. **Where the builder was opened from is
+already a statement of intent**, so it picks the destination instead of asking. Someone
+who clicked "Build an app" inside the market is building it *for* the market.
+
+It is a default, not a fork. The other destinations stay one click away, and nobody is
+asked to choose up front — at the start of a build you do not yet know whether the app
+is any good, which is the worst possible moment to be asked where to file it.
+
+Note that "Publish" in the ready card already means `deployApp`. Hence **"Add to the
+market"** for the listing, so the two are not the same word.
+
 ## Where you meet it
 
 | | |

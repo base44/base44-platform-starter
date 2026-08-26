@@ -4,6 +4,8 @@ import { Loader2, Search, Check, Trash2, ArrowLeft, ShieldCheck, Sparkles, Store
 
 import { addAppToMyWidgets } from "@/lib/myWidgets";
 import { useAppFrameAuth } from "@/lib/appFrameAuth";
+import { listUsableApps } from "@/lib/usableApps";
+import PublishDialog from "@/components/market/PublishDialog";
 
 /**
  * The app market.
@@ -67,6 +69,75 @@ function EmbeddedApp({ listing, onBack }) {
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * "How do I get my app in here?" is asked *on this page*, not in My Tools, so the
+ * answer lives here too. Lists the apps you built and hands the chosen one to the
+ * same PublishDialog that My Tools uses.
+ */
+function PublishPicker({ onCancel, onPick }) {
+  const [apps, setApps] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const all = await listUsableApps().catch(() => []);
+      if (alive) setApps(all.filter((a) => a.source === "built"));
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-foreground/50 p-4 backdrop-blur-sm" onClick={onCancel}>
+      <div className="w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <h2 className="font-display text-lg text-foreground">Publish one of your apps</h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Pick an app you built. Anyone in Sunny will be able to install it.
+        </p>
+
+        {apps === null ? (
+          <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+        ) : apps.length === 0 ? (
+          <div className="py-8 text-center">
+            <p className="text-sm text-muted-foreground">You have not built an app yet.</p>
+            <button
+              onClick={() => { onCancel(); window.dispatchEvent(new CustomEvent("open-assistant", { detail: { mode: "build", origin: "market" } })); }}
+              className="mt-3 inline-flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground"
+            >
+              <Sparkles className="h-3.5 w-3.5" /> Build one
+            </button>
+          </div>
+        ) : (
+          <div className="mt-4 max-h-80 divide-y divide-border overflow-y-auto rounded border border-border">
+            {apps.map((a) => (
+              <button
+                key={a.id}
+                onClick={() => onPick(a.app)}
+                className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-secondary/50"
+              >
+                <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded bg-muted">
+                  {a.screenshot ? (
+                    <img src={a.screenshot} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <span className="text-base font-semibold text-muted-foreground">{a.name[0].toUpperCase()}</span>
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-foreground">{a.name}</p>
+                  <p className="truncate text-xs text-muted-foreground">{a.subtitle}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="mt-5 flex justify-end">
+          <button onClick={onCancel} className="rounded-md border border-border px-3 py-1.5 text-sm">Cancel</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -197,6 +268,8 @@ export default function Marketplace() {
   const [installing, setInstalling] = useState(null);
   const [open, setOpen] = useState(null);
   const [notice, setNotice] = useState(null);
+  const [picking, setPicking] = useState(false);
+  const [publishing, setPublishing] = useState(null);
 
   const load = useCallback(async (which) => {
     setLoading(true);
@@ -289,6 +362,19 @@ export default function Marketplace() {
       {installing && (
         <InstallDialog listing={installing} onCancel={() => setInstalling(null)} onConfirm={install} />
       )}
+      {picking && (
+        <PublishPicker
+          onCancel={() => setPicking(false)}
+          onPick={(app) => { setPicking(false); setPublishing(app); }}
+        />
+      )}
+      {publishing && (
+        <PublishDialog
+          app={publishing}
+          onClose={() => setPublishing(null)}
+          onDone={() => { setPublishing(null); setTab("mine"); load("mine"); }}
+        />
+      )}
 
       <div className="border-b border-border">
         <div className="mx-auto max-w-7xl px-6 py-8 md:py-10">
@@ -299,14 +385,22 @@ export default function Marketplace() {
               Apps built by other people in Sunny. Install one and it works on your boards — it
               never sees anyone else&apos;s.
             </p>
-            <button
-              onClick={() =>
-                window.dispatchEvent(new CustomEvent("open-assistant", { detail: { mode: "build" } }))
-              }
-              className="flex items-center gap-2 rounded-md bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-            >
-              <Sparkles className="h-3.5 w-3.5" /> Build an app
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => setPicking(true)}
+                className="flex items-center gap-2 rounded-md border border-border px-3.5 py-2 text-sm font-medium text-foreground transition-colors hover:bg-secondary"
+              >
+                <Store className="h-3.5 w-3.5" /> Publish an app
+              </button>
+              <button
+                onClick={() =>
+                  window.dispatchEvent(new CustomEvent("open-assistant", { detail: { mode: "build", origin: "market" } }))
+                }
+                className="flex items-center gap-2 rounded-md bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                <Sparkles className="h-3.5 w-3.5" /> Build an app
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -357,8 +451,16 @@ export default function Marketplace() {
             <p className="text-sm text-muted-foreground">
               {tab === "browse" && "Nothing published yet. Build an app, then publish it from My Tools."}
               {tab === "installed" && "You haven't installed anything yet."}
-              {tab === "mine" && "You haven't published an app. Build one, deploy it, then publish it from My Tools."}
+              {tab === "mine" && "You haven't published anything yet."}
             </p>
+            {(tab === "mine" || tab === "browse") && (
+              <button
+                onClick={() => setPicking(true)}
+                className="mt-4 inline-flex items-center gap-2 rounded-md bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground"
+              >
+                <Store className="h-3.5 w-3.5" /> Publish an app
+              </button>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
