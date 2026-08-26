@@ -204,7 +204,7 @@ export default function ItemRow({
             <Button
               variant="ghost"
               size="icon"
-              className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-[#EDEDED]"
+              className="reveal-on-hover h-6 w-6 hover:bg-[#EDEDED]"
             >
               <Trash2 className="w-3 h-3 text-[#6D6E6F]" />
             </Button>

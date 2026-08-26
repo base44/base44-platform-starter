@@ -8,30 +8,116 @@
  * The frame has no session of its own, so `useAppFrameAuth` answers its token request
  * with one scoped to the current viewer. That is what makes an installed app read the
  * installer's data rather than its author's.
+ *
+ * When that handshake is refused the header says so, since an app denied its token
+ * may otherwise fail quietly. Nothing is claimed in the other direction: see
+ * `AccessDenied` for why "not reading your data" is not a thing this page knows.
  */
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import { Widget } from "@/lib/entityClient";
 import { useAppFrameAuth } from "@/lib/appFrameAuth";
-import { X, Loader2, LayoutGrid, Maximize, Pencil } from "lucide-react";
+import { X, Loader2, LayoutGrid, Maximize, Pencil, PlugZap } from "lucide-react";
 import * as platform from "@/lib/base44Platform";
 import AppPreviewModal from "@/components/AppPreviewModal";
 import { useAppRebuildNonce, withNonce, APP_REBUILT } from "@/lib/appRefresh";
+import { clampFrameHeight, useReportedFrameHeight } from "@/lib/appFrameSize";
 
 const MIN_HEIGHT = 160;
 const MAX_HEIGHT = 800;
 const DEFAULT_HEIGHT = 320;
+/**
+ * Which widgets the user has sized by hand, so a self-reporting app never
+ * overrides a deliberate drag. `Widget.height` is a non-null column with a
+ * default, so "the user chose 320" and "nobody ever chose" are the same row —
+ * the distinction lives here rather than behind a migration.
+ */
+const PINNED_KEY = "sunny:widget-height-pinned";
+
+function readPinned() {
+  if (typeof window === "undefined") return new Set();
+  try {
+    return new Set(JSON.parse(window.localStorage.getItem(PINNED_KEY) || "[]"));
+  } catch {
+    return new Set();
+  }
+}
+
+function pinHeight(widgetId) {
+  try {
+    const pinned = readPinned();
+    pinned.add(widgetId);
+    window.localStorage.setItem(PINNED_KEY, JSON.stringify([...pinned]));
+  } catch {
+    // Private mode, or storage full: auto-sizing stays on. Harmless.
+  }
+}
 /** Horizontal drag needed to flip between half and full width. */
 const WIDTH_SNAP_PX = 140;
 
-function WidgetFrame({ widget, onRemove, onUpdate, onExpand, deployedAt, metaReady }) {
+/**
+ * Shown only when the app asked Sunny for a viewer token and Sunny refused —
+ * an observed failure, not a guess about what the frame is rendering.
+ *
+ * There is deliberately no counterpart for "this widget is not reading your
+ * data". Whether an app has asked yet is not evidence that it never will: one
+ * that fetches on a click, or on a tab switch, has asked nothing at load. And
+ * plenty of useful widgets — a calculator, a scratchpad, a chart of something
+ * external — read no Sunny data by design and are not mislabelled lightly.
+ */
+function AccessDenied() {
+  return (
+    <span
+      title="This widget asked for your Sunny data and was refused."
+      className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 bg-destructive/10 text-destructive"
+    >
+      <PlugZap className="w-3 h-3" aria-hidden="true" />
+      No access
+    </span>
+  );
+}
+
+/**
+ * Why there is no frame. These are different failures and the old copy — "This
+ * app hasn't been built yet. Build it from the Assistant" — claimed the first
+ * for both. An app with a slug *is* built; if there is still no url, the shell
+ * has no app host to put it on, and telling the user to rebuild a working app
+ * sends them to do work that cannot help. A missing env var after a deploy would
+ * otherwise look, to every user at once, like their apps had un-built themselves.
+ */
+function NoFrame({ reason }) {
+  return (
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center px-4">
+      {reason === "unbuilt" ? (
+        <>
+          <p className="text-xs text-muted-foreground">This app hasn't been built yet.</p>
+          <p className="text-xs text-muted-foreground">
+            Build it from the Assistant to embed it here.
+          </p>
+        </>
+      ) : (
+        <>
+          <p className="text-xs text-muted-foreground">App previews aren't configured here.</p>
+          <p className="text-xs text-muted-foreground">
+            The app is fine — this Sunny has no <code>NEXT_PUBLIC_BASE44_APP_HOST</code> set.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+function WidgetFrame({ widget, onRemove, onUpdate, onExpand, deployedAt, metaReady, highlight }) {
   const [loading, setLoading] = useState(true);
   const [height, setHeight] = useState(widget.height || DEFAULT_HEIGHT);
   const [colSpan, setColSpan] = useState(widget.col_span || 1);
   // Also gates the shield below: a drag crossing the iframe would otherwise hand
   // the mouse to the frame and stop the resize dead.
   const [resizing, setResizing] = useState(null);
+  // Set only if the app asked for a viewer token and was refused.
+  const [authDenied, setAuthDenied] = useState(false);
   const dragRef = useRef(null);
   const frameRef = useRef(null);
+  const cardRef = useRef(null);
   const dragHandlersRef = useRef(null);
 
   // Unmounting mid-drag would leave the listeners bound to window.
@@ -57,7 +143,28 @@ function WidgetFrame({ widget, onRemove, onUpdate, onExpand, deployedAt, metaRea
       : platform.previewUrl(widget.app_slug);
   const rebuildNonce = useAppRebuildNonce(widget.app_id);
   const url = withNonce(baseUrl, rebuildNonce);
-  useAppFrameAuth(frameRef, widget.app_id, url);
+  useAppFrameAuth(frameRef, widget.app_id, url, (state) => setAuthDenied(state === "denied"));
+
+  // Grow to fit whatever the app says it needs, unless this widget was sized by
+  // hand. Persisted so the height survives a reload instead of snapping back to
+  // 320 and then jumping again once the frame boots.
+  const reportedHeight = useReportedFrameHeight(frameRef, url);
+  useEffect(() => {
+    if (reportedHeight === null) return;
+    if (readPinned().has(widget.id)) return;
+    const next = clampFrameHeight(reportedHeight);
+    setHeight((current) => {
+      if (current === next) return current;
+      onUpdate(widget.id, { height: next });
+      return next;
+    });
+  }, [reportedHeight, widget.id, onUpdate]);
+
+  // Land the eye on a widget that was just added or restored.
+  useEffect(() => {
+    if (!highlight) return;
+    cardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [highlight]);
 
   /** Bottom edge is height only, right edge width only, corner both. */
   const handleResizeStart = useCallback(
@@ -99,6 +206,7 @@ function WidgetFrame({ widget, onRemove, onUpdate, onExpand, deployedAt, metaRea
         const next = resolve(upEvent);
         setHeight(next.height);
         setColSpan(next.colSpan);
+        if (axis !== "x") pinHeight(widget.id);
         onUpdate(widget.id, { height: next.height, col_span: next.colSpan });
       };
 
@@ -111,12 +219,16 @@ function WidgetFrame({ widget, onRemove, onUpdate, onExpand, deployedAt, metaRea
 
   return (
     <div
-      className={`relative bg-card border border-border rounded-lg overflow-hidden flex flex-col${colSpan === 2 ? " sm:col-span-2 xl:col-span-2" : ""}`}
+      ref={cardRef}
+      className={`relative bg-card border rounded-lg overflow-hidden flex flex-col transition-colors duration-500${
+        colSpan === 2 ? " sm:col-span-2 xl:col-span-2" : ""
+      } ${highlight ? "border-primary ring-2 ring-primary/40" : "border-border"}`}
     >
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border flex-shrink-0">
-        <p className="text-xs font-medium text-foreground flex-1 truncate">{widget.app_name}</p>
-        <div className="flex items-center gap-1 flex-shrink-0">
+      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border flex-shrink-0">
+        <p className="text-xs font-medium text-foreground truncate">{widget.app_name}</p>
+        {authDenied && <AccessDenied />}
+        <div className="flex items-center gap-0.5 flex-shrink-0 ml-auto">
           {widget.app_id && (
             <button
               // An event, not a link: the panel opens over the dashboard.
@@ -128,25 +240,28 @@ function WidgetFrame({ widget, onRemove, onUpdate, onExpand, deployedAt, metaRea
                 )
               }
               title="Edit with the Assistant"
-              className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+              aria-label={`Edit ${widget.app_name} with the Assistant`}
+              className="w-9 h-9 sm:w-7 sm:h-7 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
             >
-              <Pencil className="w-3 h-3" />
+              <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
             </button>
           )}
           {url && (
             <button
               onClick={() => onExpand({ title: widget.app_name, url, appId: widget.app_id })}
               title="Open in a bigger view"
-              className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+              aria-label={`Open ${widget.app_name} in a bigger view`}
+              className="w-9 h-9 sm:w-7 sm:h-7 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
             >
-              <Maximize className="w-3 h-3" />
+              <Maximize className="w-3.5 h-3.5" aria-hidden="true" />
             </button>
           )}
           <button
             onClick={() => onRemove(widget.id)}
-            className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+            aria-label={`Remove ${widget.app_name} from My Widgets`}
+            className="w-9 h-9 sm:w-7 sm:h-7 flex items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
           >
-            <X className="w-3 h-3" />
+            <X className="w-3.5 h-3.5" aria-hidden="true" />
           </button>
         </div>
       </div>
@@ -159,12 +274,7 @@ function WidgetFrame({ widget, onRemove, onUpdate, onExpand, deployedAt, metaRea
             <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
           </div>
         ) : !url ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center px-4">
-            <p className="text-xs text-muted-foreground">This app hasn't been built yet.</p>
-            <p className="text-xs text-muted-foreground">
-              Build it from the Assistant to embed it here.
-            </p>
-          </div>
+          <NoFrame reason={widget.app_slug ? "unconfigured" : "unbuilt"} />
         ) : (
           <>
             {loading && (
@@ -231,7 +341,13 @@ function WidgetFrame({ widget, onRemove, onUpdate, onExpand, deployedAt, metaRea
   );
 }
 
-export default function DashboardWidgets({ widgets, onRemove, onAddClick }) {
+export default function DashboardWidgets({
+  widgets,
+  onRemove,
+  onAddClick,
+  highlightId,
+  onHighlightDone,
+}) {
   // One modal for the list rather than one per card: only ever one is open.
   const [expanded, setExpanded] = useState(null);
   // app id -> last_deployed_at, one list call for every card. Null = not yet known.
@@ -263,6 +379,13 @@ export default function DashboardWidgets({ widgets, onRemove, onAddClick }) {
     };
   }, []);
 
+  // The ring is a pointer, not a state: drop it once it has done its job.
+  useEffect(() => {
+    if (!highlightId) return;
+    const timer = setTimeout(() => onHighlightDone?.(), 2500);
+    return () => clearTimeout(timer);
+  }, [highlightId, onHighlightDone]);
+
   const handleUpdate = async (widgetId, changes) => {
     await Widget.update(widgetId, changes);
   };
@@ -276,7 +399,7 @@ export default function DashboardWidgets({ widgets, onRemove, onAddClick }) {
         </h2>
         <button
           onClick={onAddClick}
-          className="text-xs text-muted-foreground hover:text-foreground border border-border px-3 py-1.5 rounded hover:border-foreground/30 transition-colors"
+          className="text-xs text-muted-foreground hover:text-foreground border border-border px-3 py-1.5 min-h-[36px] rounded hover:border-foreground/30 transition-colors"
         >
           + Add widget
         </button>
@@ -299,6 +422,7 @@ export default function DashboardWidgets({ widgets, onRemove, onAddClick }) {
               onExpand={setExpanded}
               deployedAt={appMeta ? (appMeta[w.app_id] ?? null) : null}
               metaReady={appMeta !== null}
+              highlight={w.id === highlightId}
             />
           ))}
         </div>

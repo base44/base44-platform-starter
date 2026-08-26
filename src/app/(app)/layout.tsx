@@ -7,17 +7,26 @@
  * page rather than to NextAuth's own sign-in page, so the product has one
  * sign-in button, not two. `/api/entities` enforces the same thing independently
  * (a 401), so this is UX, not the security boundary.
+ *
+ * The path they asked for rides along as `?next=`, so a link to a board survives
+ * the round trip through Google instead of dumping everyone on the dashboard —
+ * which made every shared link inside the product useless to a signed-out reader.
  */
 
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import AppShell from "@/components/AppShell";
 import Providers from "@/components/Providers";
 import { getSessionUser } from "@/lib/auth";
+import { PATHNAME_HEADER } from "@/proxy";
 
 export default async function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
   const user = await getSessionUser();
-  if (!user) redirect("/");
+  if (!user) {
+    const path = (await headers()).get(PATHNAME_HEADER);
+    redirect(path ? `/?next=${encodeURIComponent(path)}` : "/");
+  }
 
   return (
     <Providers>

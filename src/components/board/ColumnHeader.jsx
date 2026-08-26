@@ -82,7 +82,7 @@ export default function ColumnHeader({ column, onUpdateColumn, onDeleteColumn, s
             <div className="flex items-center gap-2 flex-1 min-w-0">
               <span className="font-medium text-[#1E1F21] text-sm truncate">{column.title}</span>
             </div>
-            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="reveal-on-hover flex items-center gap-1">
               <Settings className="w-3 h-3 text-gray-500 hover:text-gray-700" />
               <ChevronDown className="w-3 h-3 text-gray-500 hover:text-gray-700" />
             </div>

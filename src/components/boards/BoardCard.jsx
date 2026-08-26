@@ -74,7 +74,7 @@ export default function BoardCard({ board, viewMode, index, itemCount = 0, onDel
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
-              className="opacity-0 group-hover:opacity-100 p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-all"
+              className="reveal-on-hover p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-secondary"
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();

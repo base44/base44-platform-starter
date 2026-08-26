@@ -100,8 +100,25 @@ person had no work.
 Errors are `{error}` with a 4xx/5xx status. Surface them; don't render an empty
 state as if the board were empty.
 
-Errors are `{error}` with a 4xx/5xx status. Surface them; don't render an empty
-state as if the board were empty.
+## Fit the widget to your content
+
+Sunny embeds you cross-origin and cannot measure you, so a widget card is a fixed
+box until you say otherwise — which is how a three-row list ends up sitting above
+180px of white. Report your height and the card follows it:
+
+```js
+const reportSize = () => {
+  const height = document.documentElement.scrollHeight;
+  window.parent.postMessage({ type: "sunny:size", height }, "*");
+};
+
+reportSize();
+new ResizeObserver(reportSize).observe(document.body);
+```
+
+Advisory and clamped by Sunny to 160–800px, and ignored for a widget the user has
+resized by hand. Report on mount and whenever content changes — after data loads,
+not only on first paint, or the card is sized to your empty state.
 
 ## Actions
 

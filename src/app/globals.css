@@ -157,3 +157,34 @@
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--muted-foreground));
 }
+
+/**
+ * A control that fades in when its `group` is hovered — used for row menus and
+ * per-item delete buttons, to keep dense lists calm.
+ *
+ * The plain `opacity-0 group-hover:opacity-100` it replaces hid the *only* path
+ * to those actions, which made them unreachable two ways: a keyboard user could
+ * tab to an invisible button, and a touch device has no hover at all, so on a
+ * phone or tablet the control simply did not exist. Deleting a board from the
+ * list view was impossible, and looked like a bug rather than a hidden affordance.
+ *
+ * So: fade for mouse users, but always visible when the pointer cannot hover,
+ * and always visible while anything inside the group has focus.
+ */
+@layer utilities {
+  .reveal-on-hover {
+    opacity: 0;
+    transition: opacity 150ms;
+  }
+  .group:hover .reveal-on-hover,
+  .group:focus-within .reveal-on-hover,
+  .reveal-on-hover:focus-visible {
+    opacity: 1;
+  }
+  /* Also covers a mouse-less desktop and Windows tablets in tablet mode. */
+  @media (hover: none) {
+    .reveal-on-hover {
+      opacity: 1;
+    }
+  }
+}
