@@ -13,7 +13,6 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
-    "seed:example": "tsx --env-file=.env scripts/seed-example-board.ts",
     "rls:smoke": "tsx --env-file=.env scripts/rls-smoke.ts",
     "auth:smoke": "tsx --env-file=.env scripts/auth-smoke.ts",
     "entities:smoke": "tsx --env-file=.env scripts/entity-api-smoke.ts",
