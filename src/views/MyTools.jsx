@@ -21,8 +21,8 @@ import { useAppFrameAuth } from "@/lib/appFrameAuth";
 import { useAppRebuildNonce, withNonce } from "@/lib/appRefresh";
 import { listUsableApps } from "@/lib/usableApps";
 import PublishDialog from "@/components/market/PublishDialog";
-import { useMarketChanges } from "@/lib/marketEvents";
-import { Loader2, ArrowLeft, ExternalLink, Pencil, Store, Hammer } from "lucide-react";
+import { announceMarketChanged, useMarketChanges } from "@/lib/marketEvents";
+import { Loader2, ArrowLeft, ExternalLink, Pencil, Store, Hammer, Trash2 } from "lucide-react";
 
 export default function MyTools() {
   const [apps, setApps] = useState([]);
@@ -31,6 +31,7 @@ export default function MyTools() {
   const [selectedApp, setSelectedApp] = useState(null);
   const [publishing, setPublishing] = useState(null);
   const [source, setSource] = useState("all");
+  const [busyId, setBusyId] = useState(null);
 
   /** Which of these are already listed, so a card can say "In market". */
   const refreshPublished = useCallback(async () => {
@@ -50,6 +51,33 @@ export default function MyTools() {
 
   // Publishing can happen from the builder panel or the market page, not only here.
   useMarketChanges(refreshPublished);
+
+  /**
+   * Uninstall lives here rather than in the market: a storefront is for getting things,
+   * not for managing what you already have. Revoking is also what it is — the server
+   * drops the grant and any widgets that depended on it — so it is spelled out rather
+   * than hidden behind a trash can, which would suggest the app is being deleted.
+   */
+  const uninstall = async (app) => {
+    if (busyId) return;
+    setBusyId(app.id);
+    try {
+      const res = await fetch("/api/installs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "uninstall", app_id: app.id }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Uninstall failed");
+      setApps((prev) => prev.filter((a) => a.id !== app.id));
+      if (selectedApp?.id === app.id) setSelectedApp(null);
+      window.dispatchEvent(new CustomEvent("widgets-updated"));
+      announceMarketChanged();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusyId(null);
+    }
+  };
   const [published, setPublished] = useState(new Set());
   const frameRef = useRef(null);
 
@@ -231,6 +259,21 @@ export default function MyTools() {
                   {/* Labelled, not a bare glyph: "publish this to other people" is not
                       something a storefront icon says on its own, and nobody hovers a
                       button they have not already guessed the meaning of. */}
+                  {app.source === "market" && (
+                    <button
+                      onClick={() => uninstall(app)}
+                      disabled={busyId === app.id}
+                      title="Remove it and revoke its access to your data"
+                      className="flex flex-shrink-0 items-center gap-1 rounded px-1.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-destructive disabled:opacity-40"
+                    >
+                      {busyId === app.id ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="w-3.5 h-3.5" />
+                      )}
+                      Uninstall
+                    </button>
+                  )}
                   {app.source === "built" && (
                     <div className="flex flex-shrink-0 items-center gap-1">
                       <button

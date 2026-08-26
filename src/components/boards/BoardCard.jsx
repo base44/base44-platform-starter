@@ -154,7 +154,7 @@ export default function BoardCard({ board, viewMode, index, itemCount = 0, onDel
             className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors"
           >
             <Sparkles className="w-3 h-3" />
-            Build a tool
+            Build an app
           </button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

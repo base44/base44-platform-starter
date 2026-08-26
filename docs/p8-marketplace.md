@@ -159,6 +159,32 @@ Related, and the same mistake in miniature: after listing an app the ready card 
 say *"Published — view in Apps"*, confirming a destination the user had not chosen. It
 now says *"In the market — view it"*.
 
+## Who can delist what
+
+Only an author, and only their own listing. `unpublish()` scopes the update with
+`ownerFields(actor)`, so another user's row is not merely hidden from the UI — it is
+outside the `where`. The button renders only for `is_author`, and
+`npm run market:smoke` asserts a non-author gets a 404.
+
+That is the *author* half. The **platform** half — Sunday delisting somebody else's app
+because it misbehaves — does not exist yet and is listed under What is left. The two
+are different powers and should not be the same code path: `unpublish` is personal by
+construction, and widening it would be the wrong way to build a kill switch.
+
+## Card actions say what they do
+
+Three glyphs were doing work no glyph can do:
+
+* a **storefront icon** meant "offer this to everyone" — now a labelled *Publish*;
+* a **grid icon** meant "put it on your home page" — now *Add to Home* / *On Home*;
+* a **trash can** meant "revoke this app's access" — which is not deletion, and was in
+  the wrong place besides.
+
+Uninstall now lives on **Apps**, not in the market. A storefront is for getting things;
+managing what you already have belongs next to the thing itself. That also makes the
+two card kinds symmetrical: an app you built offers *Publish* and *Edit in builder*, an
+app you installed offers *Uninstall*.
+
 ## Where you meet it
 
 | | |

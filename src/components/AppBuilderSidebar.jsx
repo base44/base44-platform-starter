@@ -740,7 +740,7 @@ export default function AppBuilderSidebar({
               <div className="flex-1 min-w-0 flex items-center gap-2">
                 <Sparkles className="w-3.5 h-3.5 text-accent flex-shrink-0" />
                 <p className="text-sm font-medium text-foreground truncate">
-                  {buildView === "chat" && activeApp ? activeApp.name : "Build a tool"}
+                  {buildView === "chat" && activeApp ? activeApp.name : "Build an app"}
                 </p>
                 {buildView === "chat" && activeApp && (
                   <div className="flex items-center gap-2 ml-1">
@@ -874,7 +874,7 @@ export default function AppBuilderSidebar({
                     <div className="flex flex-col items-center justify-center h-full gap-3 text-center py-10">
                       <Hammer className="w-8 h-8 text-muted-foreground/40" />
                       <div>
-                        <h3 className="font-display text-xl text-foreground mb-1">Build a tool</h3>
+                        <h3 className="font-display text-xl text-foreground mb-1">Build an app</h3>
                         <p className="text-muted-foreground text-xs max-w-xs">
                           Describe what you want and I'll create it.
                         </p>

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Loader2, Search, Check, Trash2, ArrowLeft, ShieldCheck, Sparkles, Store, LayoutGrid } from "lucide-react";
+import { Loader2, Search, Check, ArrowLeft, ShieldCheck, Sparkles, Store, LayoutGrid } from "lucide-react";
 
 import { addAppToMyWidgets } from "@/lib/myWidgets";
 import { useAppFrameAuth } from "@/lib/appFrameAuth";
@@ -180,7 +180,7 @@ function InstallDialog({ listing, onCancel, onConfirm }) {
   );
 }
 
-function ListingCard({ listing, onInstall, onUninstall, onOpen, onUnpublish, onPin }) {
+function ListingCard({ listing, onInstall, onOpen, onUnpublish, onPin }) {
   return (
     <div className="flex flex-col overflow-hidden rounded-lg border border-border bg-card shadow-sm transition-all hover:border-primary/40 hover:shadow-md">
       <div className="flex aspect-[16/9] items-center justify-center overflow-hidden bg-muted">
@@ -231,20 +231,18 @@ function ListingCard({ listing, onInstall, onUninstall, onOpen, onUnpublish, onP
               <button onClick={() => onOpen(listing)} className="flex-1 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground">
                 Open
               </button>
+              {/* Labelled, because a bare grid glyph says nothing. And no uninstall
+                  here: a storefront is for getting things, not for managing what you
+                  already have — that lives on Apps, next to the app itself. A trash can
+                  was doubly wrong, since nothing is deleted. */}
               <button
                 onClick={() => onPin(listing)}
                 disabled={listing.pinned}
-                title={listing.pinned ? "Already on your home page" : "Add it to your home page"}
-                className="rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-40"
+                title={listing.pinned ? "Already on your home page" : "Show it on your home page"}
+                className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-40"
               >
                 <LayoutGrid className="h-3.5 w-3.5" />
-              </button>
-              <button
-                onClick={() => onUninstall(listing)}
-                title="Uninstall — revokes its access to your data"
-                className="rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:text-destructive"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
+                {listing.pinned ? "On Home" : "Add to Home"}
               </button>
             </>
           ) : (
@@ -305,23 +303,6 @@ export default function Marketplace() {
       });
       announceMarketChanged();
       setNotice(`${listing.title} is installed. Find it in Apps.`);
-      await load(tab);
-    } catch (err) {
-      setError(err.message);
-    }
-  };
-
-  /**
-   * Revokes. The server also removes any widgets for the app: unpinning is not
-   * uninstalling, but the reverse does hold — a widget with no grant behind it renders
-   * as a frame that cannot read anything, which looks broken rather than revoked.
-   */
-  const uninstall = async (listing) => {
-    try {
-      await post("/api/installs", { action: "uninstall", app_id: listing.app_id });
-      window.dispatchEvent(new CustomEvent("widgets-updated"));
-      announceMarketChanged();
-      setNotice(`${listing.title} uninstalled. It can no longer read your boards.`);
       await load(tab);
     } catch (err) {
       setError(err.message);
@@ -477,7 +458,6 @@ export default function Marketplace() {
                 key={l.app_id}
                 listing={l}
                 onInstall={setInstalling}
-                onUninstall={uninstall}
                 onOpen={setOpen}
                 onUnpublish={unpublish}
                 onPin={pin}
