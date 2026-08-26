@@ -1,16 +1,26 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Board, Item, Team, Widget, me } from "@/lib/entityClient";
-import Link from "next/link";
-import { createPageUrl } from "@/utils";
-import { ArrowRight, Plus, Users } from "lucide-react";
+import { Plus, Users } from "lucide-react";
 
-import StatsOverview from "../components/dashboard/StatsOverview";
 import RecentBoards from "../components/dashboard/RecentBoards";
-import QuickActions from "../components/dashboard/QuickActions";
+import TaskStats from "../components/dashboard/TaskStats";
+import WorkList from "../components/dashboard/WorkList";
+import CalendarModal from "../components/dashboard/CalendarModal";
+import CreateBoardModal from "../components/boards/CreateBoardModal";
 import DashboardWidgets from "../components/dashboard/DashboardWidgets";
 import AddWidgetModal from "../components/dashboard/AddWidgetModal";
 import TeamBanner from "../components/team/TeamBanner";
 import TeamSetupModal from "../components/team/TeamSetupModal";
+import { useToast } from "@/components/ui/toast";
+import { summarize } from "@/lib/taskStats";
+
+/**
+ * Boards and items are fetched whole, not paged, because everything on this page
+ * is a *count*: a capped fetch silently under-reports rather than showing "more".
+ * The entity API caps at MAX_LIMIT, and a workspace past that has outgrown a
+ * client-side dashboard anyway.
+ */
+const COUNT_LIMIT = 1000;
 
 export default function Dashboard() {
   const [boards, setBoards] = useState([]);
@@ -19,8 +29,13 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [widgets, setWidgets] = useState([]);
   const [showAddWidget, setShowAddWidget] = useState(false);
+  const [showCreateBoard, setShowCreateBoard] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
   const [team, setTeam] = useState(null);
   const [showTeamModal, setShowTeamModal] = useState(false);
+  const [filter, setFilter] = useState(null);
+  const [highlightWidgetId, setHighlightWidgetId] = useState(null);
+  const { toast } = useToast();
 
   const refetchWidgets = async () => {
     const widgetsData = await Widget.list("order_index", 20);
@@ -38,8 +53,8 @@ export default function Dashboard() {
     setIsLoading(true);
     try {
       const [boardsData, itemsData, userData, widgetsData, teamsData] = await Promise.all([
-        Board.list("-updated_date", 10),
-        Item.list("-updated_date", 20),
+        Board.list("-updated_date", COUNT_LIMIT),
+        Item.list("-updated_date", COUNT_LIMIT),
         me(),
         Widget.list("order_index", 20),
         Team.list("-created_date", 1),
@@ -57,25 +72,74 @@ export default function Dashboard() {
 
   const handleWidgetAdded = (widget) => {
     setWidgets((prev) => [...prev, widget]);
+    setHighlightWidgetId(widget.id);
+    toast({ message: `Added “${widget.app_name}” to My Widgets.` });
   };
 
   const handleWidgetRemove = async (widgetId) => {
+    const removed = widgets.find((w) => w.id === widgetId);
     setWidgets((prev) => prev.filter((w) => w.id !== widgetId));
     await Widget.delete(widgetId);
+    if (!removed) return;
+
+    toast({
+      message: `Removed “${removed.app_name}”.`,
+      actionLabel: "Undo",
+      // A widget row is only a pin, so putting it back is a re-create. The id
+      // changes; nothing the user can see does.
+      action: async () => {
+        const { id: _id, created_date, updated_date, created_by, ...pin } = removed;
+        try {
+          const restored = await Widget.create(pin);
+          setWidgets((prev) => [...prev, restored]);
+          setHighlightWidgetId(restored.id);
+        } catch (error) {
+          console.error("Error restoring widget:", error);
+          toast({ message: "Couldn't put that widget back." });
+        }
+      },
+    });
   };
 
   const handleCreateBoard = async (boardData) => {
     try {
       const newBoard = await Board.create(boardData);
       setBoards((prev) => [newBoard, ...prev]);
+      setShowCreateBoard(false);
+      toast({ message: `Created “${newBoard.title}”.` });
     } catch (error) {
       console.error("Error creating board:", error);
     }
   };
 
-  const pendingTasks = items.filter(
-    (item) => !item.data?.status || item.data?.status !== "done",
-  ).length;
+  /** Writes one status cell, addressed by the board's own status column id. */
+  const handleStatusChange = async (item, columnId, label) => {
+    const nextData = { ...(item.data || {}), [columnId]: label };
+    setItems((prev) =>
+      prev.map((it) =>
+        it.id === item.id
+          ? { ...it, data: nextData, updated_date: new Date().toISOString() }
+          : it,
+      ),
+    );
+    try {
+      await Item.update(item.id, { data: nextData });
+    } catch (error) {
+      console.error("Error updating item:", error);
+      setItems((prev) => prev.map((it) => (it.id === item.id ? item : it)));
+      toast({ message: "Couldn't save that status." });
+    }
+  };
+
+  const boardsById = useMemo(() => {
+    const map = new Map();
+    for (const board of boards) map.set(board.id, board);
+    return map;
+  }, [boards]);
+
+  const stats = useMemo(() => summarize(boards, items), [boards, items]);
+  const listItems = filter ? stats.buckets[filter] : stats.scoped;
+
   const firstName = user?.full_name?.split(" ")[0] || null;
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
@@ -89,67 +153,71 @@ export default function Dashboard() {
     <div className="min-h-screen bg-background">
       {/* Header strip */}
       <div className="border-b border-border">
-        <div className="px-4 sm:px-6 py-5 md:py-7">
+        <div className="mx-auto max-w-[1400px] px-4 sm:px-6 py-5 md:py-7">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
               <p className="text-sm text-muted-foreground mb-1">{today}</p>
               <h1 className="text-2xl text-foreground font-semibold tracking-tight">
                 {firstName ? `${greeting}, ${firstName}` : "Your workspace"}
               </h1>
-              {pendingTasks > 0 && (
-                <p className="text-muted-foreground mt-1 text-sm">
-                  You have {pendingTasks} task{pendingTasks !== 1 ? "s" : ""} pending across your
-                  boards.
-                </p>
-              )}
             </div>
             <div className="flex items-center gap-3">
               {!team && (
                 <button
                   onClick={() => setShowTeamModal(true)}
-                  className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground border border-border px-4 py-2 rounded hover:text-foreground hover:border-foreground/30 transition-colors"
+                  className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground border border-border px-4 py-2 min-h-[40px] rounded hover:text-foreground hover:border-foreground/30 transition-colors"
                 >
-                  <Users className="w-3.5 h-3.5" /> Create team
+                  <Users className="w-3.5 h-3.5" aria-hidden="true" /> Create team
                 </button>
               )}
-              <Link
-                href={createPageUrl("Boards")}
-                className="inline-flex items-center gap-2 bg-primary text-primary-foreground text-sm font-medium px-4 py-2 rounded hover:bg-primary/90 transition-colors"
+              {/* The page's one primary control is an action, not a second route
+                  to a page already in the nav. */}
+              <button
+                onClick={() => setShowCreateBoard(true)}
+                className="inline-flex items-center gap-2 bg-primary text-primary-foreground text-sm font-medium px-4 py-2 min-h-[40px] rounded hover:bg-primary/90 transition-colors"
               >
-                All Boards <ArrowRight className="w-3.5 h-3.5" />
-              </Link>
+                <Plus className="w-3.5 h-3.5" aria-hidden="true" /> New board
+              </button>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="px-4 sm:px-6 py-6 md:py-8 space-y-6">
-        {/* Team banner */}
+      <div className="mx-auto max-w-[1400px] px-4 sm:px-6 py-6 md:py-8 space-y-6">
         {team && <TeamBanner team={team} onEdit={() => setShowTeamModal(true)} />}
 
-        {/* Stats row */}
-        <StatsOverview boards={boards} items={items} isLoading={isLoading} />
+        <TaskStats
+          buckets={stats.buckets}
+          selected={filter}
+          onSelect={setFilter}
+          isLoading={isLoading}
+        />
 
-        {/* Main content — asymmetric grid */}
         <div className="grid lg:grid-cols-3 gap-6 items-start">
           <div className="lg:col-span-2">
-            <RecentBoards
-              boards={boards}
-              items={items}
+            <WorkList
+              items={listItems}
+              boardsById={boardsById}
               isLoading={isLoading}
-              onCreateBoard={handleCreateBoard}
+              filter={filter}
+              onStatusChange={handleStatusChange}
+              onOpenCalendar={() => setShowCalendar(true)}
             />
           </div>
-          <div className="space-y-6">
-            <QuickActions onCreateBoard={handleCreateBoard} team={team} />
-          </div>
+          <RecentBoards
+            boards={boards}
+            items={stats.scoped}
+            isLoading={isLoading}
+            onCreateBoard={handleCreateBoard}
+          />
         </div>
 
-        {/* Widgets — full width */}
         <DashboardWidgets
           widgets={widgets}
           onRemove={handleWidgetRemove}
           onAddClick={() => setShowAddWidget(true)}
+          highlightId={highlightWidgetId}
+          onHighlightDone={() => setHighlightWidgetId(null)}
         />
       </div>
 
@@ -159,6 +227,14 @@ export default function Dashboard() {
         existingTeam={team}
         onSaved={(t) => setTeam(t)}
       />
+
+      <CreateBoardModal
+        isOpen={showCreateBoard}
+        onClose={() => setShowCreateBoard(false)}
+        onSubmit={handleCreateBoard}
+      />
+
+      <CalendarModal isOpen={showCalendar} onClose={() => setShowCalendar(false)} />
 
       <AddWidgetModal
         open={showAddWidget}

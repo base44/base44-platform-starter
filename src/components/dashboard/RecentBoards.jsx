@@ -21,17 +21,17 @@ export default function RecentBoards({ boards, items = [], isLoading, onCreateBo
     <div className="flex flex-col">
       <div className="flex items-center justify-between mb-3 h-6">
         <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
-          <Clock className="w-4 h-4 text-muted-foreground" />
+          <Clock className="w-4 h-4 text-muted-foreground" aria-hidden="true" />
           Recent boards
         </h2>
         <Link
           href={createPageUrl("Boards")}
           className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
         >
-          View all <ArrowRight className="w-3 h-3" />
+          View all <ArrowRight className="w-3 h-3" aria-hidden="true" />
         </Link>
       </div>
-      <div className="bg-card border border-border rounded-lg shadow-sm p-4 md:p-6 overflow-hidden">
+      <div className="bg-card border border-border rounded-lg shadow-sm p-3 overflow-hidden">
         {isLoading ? (
           <div className="space-y-1">
             {Array(4)
@@ -57,7 +57,7 @@ export default function RecentBoards({ boards, items = [], isLoading, onCreateBo
               onClick={() => setShowCreateModal(true)}
               className="inline-flex items-center gap-2 text-sm font-medium bg-primary text-primary-foreground px-4 py-2 rounded-md hover:bg-primary/90 transition-colors shadow-sm"
             >
-              <Plus className="w-3.5 h-3.5" /> Create your first board
+              <Plus className="w-3.5 h-3.5" aria-hidden="true" /> Create your first board
             </button>
           </div>
         ) : (
@@ -69,9 +69,11 @@ export default function RecentBoards({ boards, items = [], isLoading, onCreateBo
                 <Link
                   key={board.id}
                   href={createPageUrl(`Board?id=${board.id}`)}
-                  className="group flex items-center gap-3.5 py-3 px-3 rounded-lg hover:bg-secondary/50 transition-colors"
+                  aria-label={`Open the board ${board.title}`}
+                  className="group flex items-center gap-3.5 py-3 px-3 min-h-[56px] rounded-lg hover:bg-secondary/50 transition-colors"
                 >
                   <div
+                    aria-hidden="true"
                     className="w-9 h-9 rounded-lg flex-shrink-0 flex items-center justify-center text-sm font-semibold shadow-sm"
                     style={{ backgroundColor: color, color: readableText(color) }}
                   >

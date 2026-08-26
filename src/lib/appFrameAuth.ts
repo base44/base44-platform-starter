@@ -8,15 +8,23 @@
  * Request-driven rather than pushed on load: the frame asks once its listener exists,
  * so there is no race with its own boot. Both directions are origin-pinned — we only
  * answer the frame we embedded, and we post to that app's exact origin, never `*`.
+ *
+ * `onState` reports what happened, because whether an app ever asked for a token is
+ * the one thing this page knows about what the frame is showing. An app rendering
+ * invented sample rows never asks; an app reading the viewer's boards always does.
+ * That difference is what the widget's data badge is built on — see DashboardWidgets.
  */
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 export const AUTH_REQUEST = "sunny:auth:request";
 export const AUTH_TOKEN = "sunny:auth:token";
 export const AUTH_DENIED = "sunny:auth:denied";
 
 type Frame = { current: HTMLIFrameElement | null };
+
+/** "idle" = the frame has not asked for a token (yet, or ever). */
+export type FrameAuthState = "idle" | "granted" | "denied";
 
 function originOf(url: string | null): string | null {
   try {
@@ -26,8 +34,19 @@ function originOf(url: string | null): string | null {
   }
 }
 
-export function useAppFrameAuth(frameRef: Frame, appId: string | null, url: string | null) {
+export function useAppFrameAuth(
+  frameRef: Frame,
+  appId: string | null,
+  url: string | null,
+  onState?: (state: FrameAuthState) => void,
+) {
   const appOrigin = originOf(url);
+  // Kept in a ref so a caller passing an inline arrow does not rebind the
+  // listener — and drop a token request — on every render.
+  const onStateRef = useRef(onState);
+  useEffect(() => {
+    onStateRef.current = onState;
+  }, [onState]);
 
   useEffect(() => {
     if (!appId || !appOrigin) return;
@@ -49,11 +68,13 @@ export function useAppFrameAuth(frameRef: Frame, appId: string | null, url: stri
 
       if (!res.ok) {
         frame.contentWindow?.postMessage({ type: AUTH_DENIED, status: res.status }, appOrigin);
+        onStateRef.current?.("denied");
         return;
       }
 
       const { token, expires_in } = (await res.json()) as { token: string; expires_in: number };
       frame.contentWindow?.postMessage({ type: AUTH_TOKEN, token, expires_in }, appOrigin);
+      onStateRef.current?.("granted");
     }
 
     window.addEventListener("message", onMessage);

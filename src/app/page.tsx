@@ -1,6 +1,11 @@
 /**
- * Landing page. Signed-in visitors go straight to the dashboard; everyone else
- * gets a sign-in card.
+ * Landing page. Signed-in visitors go straight to where they were headed;
+ * everyone else gets a sign-in card.
+ *
+ * `?next=` is set by the authenticated layout when it turns a signed-out visitor
+ * away, and is the reason a link to a specific board survives sign-in. It is
+ * attacker-controlled — it arrives in a URL anyone can send — so it is only ever
+ * used as a same-origin path, never as a URL.
  */
 
 import { redirect } from "next/navigation";
@@ -9,8 +14,27 @@ import GoogleSignInButton from "@/components/GoogleSignInButton";
 import SunnyLogo from "@/components/SunnyLogo";
 import { getSessionUser } from "@/lib/auth";
 
-export default async function Home() {
-  if (await getSessionUser()) redirect("/Dashboard");
+const DEFAULT_DESTINATION = "/Dashboard";
+
+/**
+ * A single leading slash and nothing that could re-target the browser: `//host`
+ * and `/\host` are both read as protocol-relative URLs by browsers, so a bare
+ * `startsWith("/")` check is an open redirect.
+ */
+function safeDestination(next: string | string[] | undefined): string {
+  if (typeof next !== "string") return DEFAULT_DESTINATION;
+  if (!next.startsWith("/")) return DEFAULT_DESTINATION;
+  if (next.startsWith("//") || next.startsWith("/\\")) return DEFAULT_DESTINATION;
+  return next;
+}
+
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const destination = safeDestination((await searchParams).next);
+  if (await getSessionUser()) redirect(destination);
 
   return (
     <main className="min-h-screen flex flex-col items-center justify-center gap-8 px-6 bg-background">
@@ -23,12 +47,7 @@ export default async function Home() {
         </p>
       </div>
 
-      <GoogleSignInButton callbackUrl="/Dashboard" />
-
-      <p className="max-w-xs text-center text-xs text-muted-foreground">
-        The Google consent screen warns that the app is unverified — expected while the OAuth
-        project is in Testing mode.
-      </p>
+      <GoogleSignInButton callbackUrl={destination} />
     </main>
   );
 }

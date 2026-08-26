@@ -26,7 +26,9 @@ Runtime: embedded in a sandboxed iframe (\`allow-scripts allow-same-origin
 allow-forms allow-popups\`). As a dashboard widget it is user-resizable — 320px
 tall and half-column by default — and full-height on "My Tools". So design for a
 short, narrow viewport that scales up; no top-level navigation, downloads, or
-full-screen. public_without_login — build no sign-in UI of your own. The Sunny
+full-screen. Report your content height so the card fits it instead of leaving
+dead white space: \`parent.postMessage({ type: "sunny:size", height }, "*")\` on
+mount and whenever it changes (the skill has the snippet). public_without_login — build no sign-in UI of your own. The Sunny
 data you read is still per-user: Sunny hands this app a token for whoever is
 viewing it, and every call needs one (the skill has the handshake). So never
 cache a token or a row set across viewers. Visually: flat, neutral, small text,

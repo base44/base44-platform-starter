@@ -15,6 +15,12 @@
  *
  * The `open-assistant` window event is how several pages open the builder with a
  * preset mode; rewiring that to context is future polish.
+ *
+ * The builder starts closed and remembers the last choice. It used to open on
+ * every page, on every route, taking 380px — over a quarter of a 1440px window —
+ * to show a list of four apps, and squeezing the page the user actually asked
+ * for. Opening a panel is the user's decision to make once, not the shell's to
+ * make repeatedly.
  */
 
 import { useEffect, useState } from "react";
@@ -35,6 +41,18 @@ import {
 import { createPageUrl } from "@/utils";
 
 const AVATAR_GRADIENT = "linear-gradient(135deg,#0E2E56 0%,#5B87DA 100%)";
+
+const BUILDER_OPEN_KEY = "sunny:builder-open";
+
+/** Closed unless this browser has said otherwise. SSR always renders closed. */
+function readBuilderOpen() {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(BUILDER_OPEN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
 
 function initialsOf(value) {
   return value
@@ -78,7 +96,7 @@ function AccountMenu() {
         </div>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => signOut({ callbackUrl: "/" })} className="cursor-pointer">
-          <LogOut className="w-3.5 h-3.5 mr-2" /> Log out
+          <LogOut className="w-3.5 h-3.5 mr-2" aria-hidden="true" /> Log out
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -95,7 +113,9 @@ const navigationItems = [
 export default function AppShell({ children }) {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [builderOpen, setBuilderOpen] = useState(true);
+  // Always false on the server and on the first client render: reading storage
+  // during render would make the two disagree and hydration would tear.
+  const [builderOpen, setBuilderOpen] = useState(false);
   const [builderInitialMode, setBuilderInitialMode] = useState(null);
 
   // `builderInitialMode` sticks around after the open that set it, so clear it
@@ -105,7 +125,7 @@ export default function AppShell({ children }) {
     setBuilderInitialMode(null);
     setBuilderOrigin(null);
     setBuilderRequest((n) => n + 1);
-    setBuilderOpen(true);
+    setBuilderOpenPersisted(true);
   };
   const [builderInitialAppId, setBuilderInitialAppId] = useState(null);
   // "home-widget" means the user started in the Add-widget picker.
@@ -115,13 +135,26 @@ export default function AppShell({ children }) {
   const [builderRequest, setBuilderRequest] = useState(0);
 
   useEffect(() => {
+    if (readBuilderOpen()) setBuilderOpen(true);
+  }, []);
+
+  const setBuilderOpenPersisted = (next) => {
+    setBuilderOpen(next);
+    try {
+      window.localStorage.setItem(BUILDER_OPEN_KEY, next ? "1" : "0");
+    } catch {
+      // Private mode: the panel still opens, it just will not be remembered.
+    }
+  };
+
+  useEffect(() => {
     const handler = (e) => {
       const detail = e.detail;
       setBuilderInitialMode(detail?.mode || null);
       setBuilderInitialAppId(detail?.appId || null);
       setBuilderOrigin(detail?.origin || null);
       setBuilderRequest((n) => n + 1);
-      setBuilderOpen(true);
+      setBuilderOpenPersisted(true);
     };
     window.addEventListener("open-assistant", handler);
     return () => window.removeEventListener("open-assistant", handler);
@@ -138,8 +171,12 @@ export default function AppShell({ children }) {
       <nav className="bg-card border-b border-border shadow-sm sticky top-0 z-30">
         <div className="px-4 sm:px-6">
           <div className="flex items-center h-14 gap-8">
-            <Link href={createPageUrl("Dashboard")} className="flex items-center flex-shrink-0">
-              <SunnyLogo className="h-6 w-auto text-primary" />
+            <Link
+              href={createPageUrl("Dashboard")}
+              aria-label="Sunny home"
+              className="flex items-center flex-shrink-0"
+            >
+              <SunnyLogo className="h-6 w-auto text-primary" aria-hidden="true" />
             </Link>
 
             <div className="hidden md:flex items-center gap-1 flex-1 flex-nowrap overflow-hidden">
@@ -164,7 +201,7 @@ export default function AppShell({ children }) {
                   onClick={() => openAssistant()}
                   className="flex items-center gap-2 text-sm font-medium bg-primary text-primary-foreground px-3.5 py-1.5 rounded-md hover:bg-primary/90 transition-colors shadow-sm"
                 >
-                  <Sparkles className="w-3.5 h-3.5" />
+                  <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />
                   Assistant
                 </button>
               )}
@@ -174,16 +211,23 @@ export default function AppShell({ children }) {
             <div className="md:hidden ml-auto flex items-center gap-2">
               <button
                 onClick={() => openAssistant()}
-                className="flex items-center gap-1.5 text-xs font-medium bg-primary text-primary-foreground px-3 py-1.5 rounded hover:bg-primary/90 transition-colors"
+                aria-label="Open the Assistant"
+                className="flex items-center justify-center min-w-[40px] min-h-[40px] text-xs font-medium bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors"
               >
-                <Sparkles className="w-3.5 h-3.5" />
+                <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />
               </button>
               <AccountMenu />
               <button
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="p-2 rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                aria-label={mobileMenuOpen ? "Close the menu" : "Open the menu"}
+                aria-expanded={mobileMenuOpen}
+                className="flex items-center justify-center min-w-[40px] min-h-[40px] rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
               >
-                {mobileMenuOpen ? <X className="w-5 h-5" /> : <MenuIcon className="w-5 h-5" />}
+                {mobileMenuOpen ? (
+                  <X className="w-5 h-5" aria-hidden="true" />
+                ) : (
+                  <MenuIcon className="w-5 h-5" aria-hidden="true" />
+                )}
               </button>
             </div>
           </div>
@@ -215,7 +259,7 @@ export default function AppShell({ children }) {
 
       <AppBuilderSidebar
         open={builderOpen}
-        onClose={() => setBuilderOpen(false)}
+        onClose={() => setBuilderOpenPersisted(false)}
         initialMode={builderInitialMode}
         initialAppId={builderInitialAppId}
         origin={builderOrigin}
