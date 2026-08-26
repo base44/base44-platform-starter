@@ -27,13 +27,9 @@ type Frame = { current: HTMLIFrameElement | null };
 export type FrameAuthState = "idle" | "granted" | "denied";
 
 /**
- * Resolved against the current document, so a same-origin app — one Sunny hosts
- * itself, rather than a Base44 deployment on its own subdomain — gets an origin too.
- * Without the base, a relative `src` throws, `appOrigin` is null, and the listener is
- * never attached: the frame asks for a token and waits forever.
- *
- * Returning null still disables the handshake, which is the right failure: with no
- * known origin there is nowhere safe to post a token.
+ * Resolved against the current document so a same-origin app gets an origin too —
+ * without the base a relative `src` throws, the listener never attaches, and the frame
+ * waits forever. Null still disables the handshake: nowhere safe to post a token.
  */
 function originOf(url: string | null): string | null {
   if (!url) return null;

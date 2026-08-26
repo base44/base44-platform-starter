@@ -3,14 +3,9 @@ import Link from "next/link";
 import { Store, Sparkles, ArrowRight } from "lucide-react";
 
 /**
- * The market's entry point on the home page.
- *
- * Home is where someone notices they are missing a tool, so this offers the two ways
- * out of that: install what somebody already built, or build it. Both one click.
- *
- * The count is a live read rather than static copy, because "3 apps to install" is a
- * reason to click and "Apps" is not. It falls back to the plain sentence if the fetch
- * fails — this card is never worth an error state.
+ * The market's entry point on Home: install what someone built, or build it. The count
+ * is live because "3 apps to install" is a reason to click and "Apps" is not; it falls
+ * back to plain copy on failure rather than showing an error.
  */
 export default function MarketCard() {
   const [count, setCount] = useState(null);

@@ -5,13 +5,9 @@ import * as platform from "@/lib/base44Platform";
 import { announceMarketChanged } from "@/lib/marketEvents";
 
 /**
- * Offer an app to everyone else in Sunny.
- *
- * The embed URL is snapshotted here rather than resolved when someone views the
- * listing: an installer's Base44 principal cannot see this app at all, so nothing on
- * their side can ask the platform where it lives. That is also why publishing needs a
- * deployed app — `publishedUrl` off the slug, not a preview sandbox, which is
- * per-owner and boots on demand.
+ * Offer an app to everyone else. The embed URL is snapshotted here because an
+ * installer's Base44 principal cannot resolve it later — which is also why the app has
+ * to be deployed, not just previewed.
  */
 export default function PublishDialog({ app, onClose, onDone }) {
   const [title, setTitle] = useState(app.name || "Untitled");
@@ -40,9 +36,6 @@ export default function PublishDialog({ app, onClose, onDone }) {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || `Publish failed (${res.status})`);
-      // Announced here rather than in each caller: the builder publishes from a panel
-      // over the market, so the surface that needs to know is one nobody is thinking
-      // about at the call site.
       announceMarketChanged();
       onDone();
     } catch (err) {

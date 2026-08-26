@@ -1,37 +1,13 @@
 /**
- * The **only** module that reads or writes `MarketplaceListing`, and it is
- * server-only.
+ * The only module that reads or writes `MarketplaceListing`. Server-only.
  *
- * ## The carve-out
+ * `listPublished()` is the one query in this codebase with no owner predicate — a
+ * published listing is public by intent. Every write stays owner-only. Do not copy
+ * the exception without the same justification.
  *
- * CLAUDE.md's first convention is that every user-owned entity goes through
- * `scopedWhere()`. This module breaks that in one direction, on purpose:
- * `listPublished()` reads across owners, because a market whose listings are visible
- * only to their author is not a market.
- *
- * The exception is contained to rows whose `status` is `published` — a state the
- * author put them in deliberately — and to the fields in `ListingCard`. Every write
- * is still owner-only. Nothing else should copy this without the same justification.
- *
- * ## Installing is not pinning
- *
- * The grant is an `AppInstall` row (`src/lib/appInstall.ts`), which this module reads
- * but never writes — installing is an authorization decision and lives on
- * `/api/installs`. A listing is only how you found the app; browsing grants nothing.
- *
- * Pinning to Home is a separate, later choice. `installed` and `install_count` here
- * therefore count installs, not widgets.
- *
- * ## Publishing snapshots the app
- *
- * `appSlug` / `appUrl` / `screenshotUrl` are captured at publish time rather than
- * resolved when someone views the listing. That is forced: an installer's Base44
- * service principal cannot see another user's app in the shared workspace, so at
- * install and render time there is no way to ask the platform where the app lives.
- *
- * The cost is staleness — an author who redeploys leaves installers on the snapshot
- * until they re-publish. The alternative is a lookup the identity model cannot
- * currently perform at all.
+ * The `app*` fields are snapshotted at publish time because an installer's Base44
+ * principal cannot see another user's app, so nothing can resolve the URL later. The
+ * cost is staleness until the author re-publishes.
  */
 
 import type { MarketplaceListing } from "@prisma/client";
@@ -80,12 +56,7 @@ function text(value: unknown, max: number): string | null {
   return value.trim().slice(0, max) || null;
 }
 
-/**
- * Rows → cards, with the caller's own install folded in.
- *
- * Two batched queries rather than one per listing: a market page renders every card
- * at once, so N+1 here would be N+1 on the hot path.
- */
+/** Batched, not per-listing: the market renders every card at once. */
 async function toCards(actor: RlsActor, listings: MarketplaceListing[]): Promise<ListingCard[]> {
   const appIds = listings.map((l) => l.appId);
   if (!appIds.length) return [];
@@ -128,10 +99,7 @@ async function toCards(actor: RlsActor, listings: MarketplaceListing[]): Promise
   }));
 }
 
-/**
- * The public catalogue. The one query here with no owner predicate — see the note at
- * the top of this file.
- */
+/** The public catalogue. The one query with no owner predicate. */
 export async function listPublished(actor: RlsActor): Promise<ListingCard[]> {
   const rows = await prisma.marketplaceListing.findMany({
     where: { status: "published" },
@@ -164,11 +132,7 @@ export async function listInstalled(actor: RlsActor): Promise<ListingCard[]> {
   return toCards(actor, rows);
 }
 
-/**
- * Is this app on offer? Asked by `appInstall.install()`, which must not accept an
- * arbitrary app id — an install is a grant, and you can only be granted what someone
- * published. Lives here because this module owns the model.
- */
+/** Asked by `appInstall.install()`, which must not accept an arbitrary app id. */
 export async function isPublished(appId: string): Promise<boolean> {
   const row = await prisma.marketplaceListing.findFirst({
     where: { appId, status: "published" },
@@ -185,11 +149,7 @@ async function ownsApp(actor: RlsActor, appId: string): Promise<boolean> {
   return Boolean(row);
 }
 
-/**
- * Offer an app to everyone else. Requires ownership of the app — the author is never
- * taken from input — and an embed URL, because a listing nobody can render is worse
- * than no listing.
- */
+/** Requires ownership of the app and a deployed URL; the author is never from input. */
 export async function publish(
   actor: RlsActor,
   input: {
@@ -208,13 +168,9 @@ export async function publish(
     throw new ListingError("You can only publish an app you built.", "not_the_author", 403);
   }
 
-  /**
-   * Owning the app is not the same as owning its listing. `AppOwnership` is unique on
-   * `(appId, createdBy)`, so an app can have several owners — the old `resolveScope`
-   * handled exactly that — and the upsert below keys on `appId` alone. Without this a
-   * co-owner could overwrite someone else's listing, including its embed URL, while
-   * `createdBy` kept crediting the original author.
-   */
+  // Owning the app is not owning its listing: AppOwnership is unique on
+  // (appId, createdBy), so an app can have several owners while the upsert below keys
+  // on appId alone. Without this a co-owner overwrites another author's embed URL.
   const existing = await prisma.marketplaceListing.findUnique({
     where: { appId },
     select: { createdBy: true },
@@ -261,10 +217,8 @@ export async function publish(
 }
 
 /**
- * Take a listing out of the market. Anyone already running it keeps working: the row
- * stays, so their snapshot URL still resolves and their Widget row still mints a
- * token. Pulling a listing is about discovery. Cutting an app off is the installer's
- * call, made by unpinning it.
+ * Discovery only. The row stays, so anyone already running it keeps working — cutting
+ * an app off is the installer's call.
  */
 export async function unpublish(actor: RlsActor, appId: string): Promise<ListingCard> {
   const { count } = await prisma.marketplaceListing.updateMany({

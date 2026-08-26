@@ -1,17 +1,9 @@
 /**
  * Tells any open market surface that the catalogue changed.
  *
- * The builder is a side panel over whatever page you were on, so you can publish an
- * app from the chat while looking straight at the market grid behind it — and the grid
- * has no reason to refetch. Same for installing from one surface with another mounted.
- * Without a signal the only fix is a manual reload, which reads as "it didn't work".
- *
- * Same shape as `widgets-updated` and `app-rebuilt`, deliberately: this codebase
- * already coordinates cross-surface refreshes with window events, and a third
- * mechanism would be a third thing to remember.
- *
- * Announced from the one place every publish goes through (`PublishDialog`) and from
- * install/uninstall, so a new caller gets it for free rather than having to remember.
+ * The builder is a panel over whatever page you were on, so publishing from the chat
+ * leaves the market grid behind it stale. Same shape as `widgets-updated`. Announced
+ * from `PublishDialog` and from install/uninstall, so new callers get it for free.
  */
 import { useEffect, useRef } from "react";
 
@@ -22,12 +14,7 @@ export function announceMarketChanged(): void {
   window.dispatchEvent(new CustomEvent(MARKET_CHANGED));
 }
 
-/**
- * Run `onChange` whenever the catalogue changes.
- *
- * Kept in a ref so a caller passing an inline arrow does not rebind — and miss an
- * announcement — on every render.
- */
+/** Ref-held so an inline arrow does not rebind, and miss an event, every render. */
 export function useMarketChanges(onChange: () => void): void {
   const handler = useRefLatest(onChange);
   useEffect(() => {

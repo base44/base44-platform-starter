@@ -1,23 +1,12 @@
 /**
- * Contract test for the app market (`/api/marketplace`, `src/lib/marketplace.ts`).
+ * Contract test for the app market.
  *
- * The reason this file exists is one line in `listPublished()`: a Prisma query with
- * **no owner predicate**, the first in the codebase. CLAUDE.md calls hand-enforced RLS
- * the biggest correctness risk here, so the carve-out gets assertions rather than a
- * comment promising it is fine.
+ * It exists for one line in `listPublished()`: a query with no owner predicate, the
+ * first in the codebase. Section 2 fences that carve-out; the rest covers owner-only
+ * writes, that a listing grants nothing until someone installs, that installing and
+ * pinning are separate, and that delisting is discovery rather than revocation.
  *
- * What it pins down:
- *   1. writes are owner-only — publishing needs ownership of the app, delisting needs
- *      authorship of the listing
- *   2. the exception is exactly as wide as intended: `published` rows cross owners,
- *      `draft` and `delisted` ones do not, and a card carries no extra field
- *   3. a listing is metadata, not access — it grants nothing until someone installs
- *   4. installing and pinning to Home are separate: pinning grants nothing, and
- *      uninstalling revokes *and* takes the widget with it
- *   5. delisting is about discovery: an existing installer keeps working
- *
- * Needs `npm run dev`. Writes throwaway rows and cleans up:
- *   npm run market:smoke
+ * Needs `npm run dev`. Writes throwaway rows and cleans up:  npm run market:smoke
  */
 
 import { encode } from "next-auth/jwt";

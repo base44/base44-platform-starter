@@ -187,9 +187,7 @@ export default function Dashboard() {
       <div className="mx-auto max-w-[1400px] px-4 sm:px-6 py-6 md:py-8 space-y-6">
         {team && <TeamBanner team={team} onEdit={() => setShowTeamModal(true)} />}
 
-        {/* The stats row was the one section without a heading, and Analytics is the
-            same numbers with history behind them — so the link belongs on it, in the
-            shape every other section here already uses. */}
+        {/* Analytics is these same numbers with history, so the link belongs here. */}
         <div>
           <div className="flex items-center justify-between mb-3 h-6">
             <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">

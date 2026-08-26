@@ -11,17 +11,9 @@ import PublishDialog from "@/components/market/PublishDialog";
 /**
  * The app market.
  *
- * An app one person builds, another installs and runs against their own boards. What
- * makes that safe is not on this page — it is the viewer token (src/lib/appTokens.ts):
- * the app is one deployment with one author, and the token is what makes it read the
- * *viewer's* rows rather than the author's.
- *
- * So this page never passes an identity to anything. Installing writes an `AppInstall`
- * row — the grant — and embedding triggers the handshake. Everything about who the app
- * acts for is resolved server-side from the token.
- *
- * Installing and pinning to Home are separate acts, deliberately: an app you open once
- * a month should not have to live on your home page to work.
+ * This page never passes an identity to anything: installing writes the grant,
+ * embedding triggers the handshake, and who the app acts for is resolved server-side
+ * from the viewer token. Installing and pinning to Home are separate acts.
  */
 
 const post = async (path, body) => {
@@ -74,11 +66,7 @@ function EmbeddedApp({ listing, onBack }) {
   );
 }
 
-/**
- * "How do I get my app in here?" is asked *on this page*, not on the Apps page, so the
- * answer lives here too. Lists the apps you built and hands the chosen one to the
- * same PublishDialog that My Tools uses.
- */
+/** "How do I get my app in here?" is asked on this page, so the answer lives here. */
 function PublishPicker({ onCancel, onPick }) {
   const [apps, setApps] = useState(null);
 
@@ -231,10 +219,7 @@ function ListingCard({ listing, onInstall, onOpen, onUnpublish, onPin }) {
               <button onClick={() => onOpen(listing)} className="flex-1 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground">
                 Open
               </button>
-              {/* Labelled, because a bare grid glyph says nothing. And no uninstall
-                  here: a storefront is for getting things, not for managing what you
-                  already have — that lives on Apps, next to the app itself. A trash can
-                  was doubly wrong, since nothing is deleted. */}
+              {/* No uninstall here: a storefront is for getting things. That lives on Apps. */}
               <button
                 onClick={() => onPin(listing)}
                 disabled={listing.pinned}
@@ -287,8 +272,7 @@ export default function Marketplace() {
     load(tab);
   }, [tab, load]);
 
-  // Publishing from the builder happens in a panel over this page, so the grid has to
-  // be told; nothing about the click that caused it happened here.
+  // Publishing happens in a panel over this page, so the grid has to be told.
   useMarketChanges(() => load(tab));
 
   /** The grant, and nothing else. Where it shows up is a separate choice. */

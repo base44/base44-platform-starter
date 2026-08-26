@@ -1,13 +1,8 @@
 /**
- * POST /api/installs — the grant surface.
+ * POST /api/installs — the grant surface, kept apart from the catalogue: a listing is
+ * how you found an app, an install is permission for it to read your data.
  *
- * Kept separate from `/api/marketplace` on purpose: a listing is how you *found* an
- * app, an install is permission for it to read your data. Putting them on one route
- * would make the catalogue look like it hands out access, which it never does.
- *
- *   list                     → the apps you have installed
- *   install   {app_id, name} → grant. Idempotent
- *   uninstall {app_id}       → revoke, and take it off Home with it
+ *   list · install {app_id, app_name} · uninstall {app_id}
  */
 
 import { NextResponse, type NextRequest } from "next/server";

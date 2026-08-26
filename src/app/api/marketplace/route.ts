@@ -1,18 +1,8 @@
 /**
- * POST /api/marketplace — the catalogue.
+ * POST /api/marketplace — the catalogue. Session-authenticated: the market is for
+ * signed-in Sunny users, not the open internet. Installing lives on `/api/installs`.
  *
- * Session-authenticated throughout: the market is for signed-in Sunny users, not the
- * open internet. That is why browsing lives here rather than on `/api/sunny`.
- *
- * Installing is deliberately **not** an action here. On this shell a `Widget` row is
- * the grant, so the market installs by pinning through the existing entity API — a
- * listing is only how you found the app.
- *
- *   browse                       → published listings, with your install folded in
- *   installed                    → listings for apps you have pinned
- *   mine                         → your own listings, published or not
- *   publish   {app_id, title, …} → offer an app you built
- *   unpublish {app_id}           → take it out of the catalogue; installs survive
+ *   browse · installed · mine · publish {app_id, title, …} · unpublish {app_id}
  */
 
 import { NextResponse, type NextRequest } from "next/server";

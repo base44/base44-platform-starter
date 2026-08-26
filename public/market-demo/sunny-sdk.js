@@ -1,23 +1,20 @@
 /**
- * The app half of Sunny's viewer-token handshake. Every demo market app loads this.
+ * The app half of Sunny's viewer-token handshake (src/lib/appFrameAuth.ts). A real
+ * Base44 app would inline this; it is shared here only to keep the demos short.
  *
- * A real Base44 app would inline it — apps are separate deployments and cannot share
- * a script with the shell. It is one file here only so the demos stay short.
+ *   app → parent:  {type: "sunny:auth:request"}
+ *   parent → app:  {type: "sunny:auth:token", token} | {type: "sunny:auth:denied"}
  *
- * The protocol is the one in src/lib/appFrameAuth.ts:
- *   app  → parent:  {type: "sunny:auth:request"}
- *   parent → app:   {type: "sunny:auth:token", token, expires_in}
- *                or {type: "sunny:auth:denied", status}
- * and the token then rides as `Authorization: Bearer` on POST /api/sunny.
+ * then `Authorization: Bearer` on POST /api/sunny.
  */
 (function () {
   let token = null;
 
   function requestToken() {
     return new Promise((resolve, reject) => {
+      // Sunny attaches its listener in an effect, which can flush after a fast iframe
+      // has already asked. Retry rather than hang forever.
       const ask = () => window.parent.postMessage({ type: "sunny:auth:request" }, "*");
-      // Sunny attaches its listener in a React effect, which the browser can flush
-      // after a fast iframe has already asked. Retry rather than hang forever.
       const retry = setInterval(ask, 500);
       const timer = setTimeout(() => { stop(); reject(new Error("Sunny did not answer")); }, 10000);
       function stop() {

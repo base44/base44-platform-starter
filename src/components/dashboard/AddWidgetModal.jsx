@@ -19,12 +19,7 @@ import { addAppToMyWidgets } from "@/lib/myWidgets";
 /** Above this many apps the list stops being scannable and needs a filter. */
 const SEARCH_THRESHOLD = 5;
 
-/**
- * Everything pinnable, from both sources — apps you built and apps you installed from
- * the market. `listUsableApps()` has already resolved each one's URL and subtitle,
- * because a built app is addressed by slug and an installed one only by the snapshot
- * its author published.
- */
+/** Both sources; `listUsableApps()` has already resolved each one's URL. */
 function subtitleFor(app) {
   if (app.subtitle) return app.subtitle;
   const stamp = app.app?.last_deployed_at || app.app?.updated_date || app.app?.created_date;
@@ -64,12 +59,8 @@ export default function AddWidgetModal({
     );
   }, [apps, query]);
 
-  /**
-   * Installed apps first: they are the shorter list and the newer idea, and a picker
-   * that opens on eight of your own apps buries the two you just installed. Headers
-   * are hidden when only one kind is present — a lone "Built by you" header labels
-   * nothing.
-   */
+  // Installed first: the shorter list, and it would otherwise be buried. Headers only
+  // when both kinds are present.
   const groups = useMemo(() => {
     const market = matches.filter((a) => a.source === "market");
     const built = matches.filter((a) => a.source !== "market");
@@ -163,9 +154,7 @@ export default function AddWidgetModal({
           <div className="max-h-80 overflow-y-auto rounded border border-border">
             {groups.map(({ key, label, items }) => (
               <div key={key}>
-                {/* Grouped rather than badged per row: the two kinds differ in where
-                    they came from, which is a property of the group, not the app. A
-                    badge on every row says the same thing eight times. */}
+                {/* Grouped, not badged: it is a property of the group, not each row. */}
                 {showGroups && (
                   <p className="sticky top-0 bg-secondary/70 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground backdrop-blur-sm">
                     {label} <span className="opacity-60">{items.length}</span>

@@ -131,9 +131,7 @@ export default function WorkList({ items, boardsById, isLoading, filter, onStatu
               showing {LIMIT} of {items.length}
             </span>
           )}
-          {/* The calendar is these same tasks arranged by date, so it belongs next to
-              them rather than in the header. Someone scanning due dates finds it
-              without having gone looking. */}
+          {/* The same tasks arranged by date, so it belongs next to them. */}
           <button
             onClick={() => window.dispatchEvent(new CustomEvent("open-calendar"))}
             className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"

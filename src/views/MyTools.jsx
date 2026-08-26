@@ -1,13 +1,9 @@
 /**
- * "Apps" — every app this user can open, each embedded full-height in an iframe.
+ * "Apps" — every app this user can open, embedded full-height.
  *
- * Called Apps rather than My Tools because half of what is here is not the user's: an
- * installed app is someone else's code they were granted the right to run. The route
- * stays `/MyTools` — `?app=` deep links point at it from the builder and the widgets.
- *
- * The two sources are filtered rather than tabbed. Opening an app is the common action
- * and people do not reliably remember whether they built the thing they are looking
- * for, so "All" has to be the default; the filter is for when you do know.
+ * Called Apps because half of what is here is not the user's. The route stays
+ * `/MyTools`: `?app=` deep links point at it. Sources are filtered rather than tabbed,
+ * because opening an app is the common action and "All" has to be the default.
  *
  * Two sources, merged in `listUsableApps()`: apps they built (the Base44 folder,
  * filtered against local `AppOwnership` rows) and apps they installed from the market
@@ -51,12 +47,7 @@ export default function MyTools() {
   // Publishing can happen from the builder panel or the market page, not only here.
   useMarketChanges(refreshPublished);
 
-  /**
-   * Uninstall lives here rather than in the market: a storefront is for getting things,
-   * not for managing what you already have. Revoking is also what it is — the server
-   * drops the grant and any widgets that depended on it — so it is spelled out rather
-   * than hidden behind a trash can, which would suggest the app is being deleted.
-   */
+  /** Lives here, not the market: a storefront is for getting things, not managing them. */
   const uninstall = async (app) => {
     if (busyId) return;
     setBusyId(app.id);
@@ -253,11 +244,8 @@ export default function MyTools() {
                     <p className="text-xs font-medium text-foreground truncate">{app.name}</p>
                     <p className="text-xs text-muted-foreground mt-0.5 truncate">{app.subtitle}</p>
                   </div>
-                  {/* Publishing and editing are the author's affordances; an installed
-                      app is somebody else's code and neither applies to it. */}
-                  {/* Labelled, not a bare glyph: "publish this to other people" is not
-                      something a storefront icon says on its own, and nobody hovers a
-                      button they have not already guessed the meaning of. */}
+                  {/* Author-only affordances; an installed app is somebody else's code. */}
+                  {/* Labelled: a storefront glyph does not say "offer this to people". */}
                   {app.source === "market" && (
                     <button
                       onClick={() => uninstall(app)}

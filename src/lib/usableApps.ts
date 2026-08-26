@@ -1,19 +1,11 @@
 /**
- * Every app this user can actually open: the ones they built, and the ones they
- * installed from the market.
+ * Every app this user can open: built and installed.
  *
- * Two sources that cannot be merged upstream. Built apps come from the Base44 folder
- * (`listAppsForUser`), which is the live truth for a slug, a screenshot and whether the
- * app is deployed. Installed apps cannot come from there at all — an installer's
- * service principal cannot see another user's app in the shared workspace — so they
- * come from the listing snapshot taken when their author published.
- *
- * That difference is the reason for `slug`. It means "an app this viewer can address by
- * convention", which an installed app is not, and `DashboardWidgets` reads its absence
- * as "use the URL you were given". Anything pinning an app must preserve it honestly.
- *
- * The Apps page and the Add-widget picker both read through here so they cannot disagree
- * about what you have.
+ * Two sources that cannot be merged upstream — built apps come live from the Base44
+ * folder, installed ones from the listing snapshot, because an installer's principal
+ * cannot see another user's app. Hence `slug`: it means "addressable by convention",
+ * which an installed app is not, and `DashboardWidgets` reads its absence as "use the
+ * URL you were given". The Apps page and the Add-widget picker both read through here.
  */
 
 import * as platform from "@/lib/base44Platform";

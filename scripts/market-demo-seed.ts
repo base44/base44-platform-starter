@@ -1,19 +1,11 @@
 /**
- * Seeds (or removes) a few example listings, so `/Marketplace` has something in it on
- * a local database.
+ * Seeds example listings so `/Marketplace` has something in it locally.
  *
- * The point of the fixture is the **author**: these apps are owned by someone who is
- * not you, so installing one is genuinely installing another person's app rather than
- * running your own. That is the case viewer tokens exist for, and the only one worth
- * looking at.
+ * The point is the author: these apps belong to someone who is not you, so installing
+ * one is genuinely installing another person's app. Only the hosting is local — the
+ * apps in `public/market-demo/` call `/api/sunny` the way a deployed one would.
  *
- * Nothing else is faked. The listing, the install (a `Widget` row), the
- * `sunny:auth:request` handshake and the viewer-scoped read are all the real code
- * paths — the apps in `public/market-demo/` call `/api/sunny` exactly the way a
- * deployed Base44 app would. Only their hosting is local.
- *
- *   npx tsx --env-file=.env scripts/market-demo-seed.ts
- *   npx tsx --env-file=.env scripts/market-demo-seed.ts --remove
+ *   npx tsx --env-file=.env scripts/market-demo-seed.ts [--remove]
  */
 
 import { prisma } from "../src/lib/prisma";
@@ -65,7 +57,7 @@ async function main() {
   });
 
   for (const app of APPS) {
-    // Ownership first: publish() checks it, and it is what answers "whose app is this".
+    // Ownership first: publish() checks it.
     await prisma.appOwnership.upsert({
       where: { appId_createdBy: { appId: app.appId, createdBy: DEMO_AUTHOR } },
       create: { appId: app.appId, appName: app.title, createdBy: DEMO_AUTHOR },

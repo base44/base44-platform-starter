@@ -9,16 +9,11 @@ import { Eye, BookmarkCheck, Pencil, LayoutGrid, Loader2, Check, ArrowRight, Sto
  * it is built, so nothing was being filed; `deployApp` publishes. From the
  * Add-widget picker it becomes "Add to my widgets", which publishes *and* pins.
  * Already pinned, it reverts to Publish so an app on the dashboard can still be
- * iterated on. From the market it becomes "Add to the market", which deploys and then
- * asks for a listing.
+ * iterated on. From the market it becomes "Add to the market".
  *
- * The primary action follows **where the builder was opened from**, because that is
- * already a statement of intent — someone who clicked "Build an app" inside the market
- * is building it *for* the market. It is a default, not a fork: the other destinations
- * stay one click away, and nobody is asked to choose up front, when they do not yet
- * know whether the app is any good.
- *
- * Note "Publish" here means `deployApp`, not the market. Hence "Add to the market".
+ * The primary action follows where the builder was opened from — that is already a
+ * statement of intent, so it is a default rather than a question. Note "Publish" here
+ * means `deployApp`, not the market; hence the separate wording.
  */
 export default function AppReadyWidget({
   appName,
@@ -72,8 +67,7 @@ export default function AppReadyWidget({
         </button>
 
         {isAddedToMarket ? (
-          // Confirm the destination that was actually chosen. Sending someone to Apps
-          // after they put the app in the market answers a question they did not ask.
+          // Confirm the destination actually chosen, not a different one.
           <Link href="/Marketplace" onClick={onNavigate} className={done}>
             <Check className="w-3.5 h-3.5" />
             In the market — view it

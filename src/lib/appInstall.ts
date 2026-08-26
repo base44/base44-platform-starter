@@ -1,27 +1,14 @@
 /**
- * The **only** module that reads or writes `AppInstall`, and it is server-only.
+ * The only module that reads or writes `AppInstall`. Server-only.
  *
- * An install is the grant: `/api/sunny/token` mints a viewer token for an app you have
- * installed or authored, so a row here is what lets an app read your boards as you, and
- * deleting it revokes on the next call.
+ * An install is the grant: `/api/sunny/token` mints for an app you installed or
+ * authored, so a row here is what lets an app read your boards, and deleting it
+ * revokes. It used to be the `Widget` row, which welded "I want this app" to "I want
+ * it on my home page"; the migration backfills one row per already-pinned pair.
  *
- * ## Why this is not the `Widget` row any more
- *
- * It used to be. That held while every app was one you built — pinning it to Home was
- * the only reason to have it — and broke once apps come from a market. "I want this
- * app" and "I want it on my home page" are different intents, and welding them meant
- * an app you open monthly had to sit on Home to work at all. Now `Widget` means only
- * what its name says, and this model carries permission.
- *
- * The migration backfills one row per already-pinned `(app, user)`, because otherwise
- * moving the predicate would revoke everyone at once.
- *
- * ## No admin bypass
- *
- * Everywhere else in the shell an admin reads across owners and `scopedWhere()` returns
- * `{}`. Not here. Reading another user's rows through an admin session is one thing;
- * minting a token bound to *their* install and handing it to third-party app code is
- * another. Every function below matches on the caller's own email via `ownerFields()`.
+ * **No admin bypass.** Reading another user's rows through an admin session is one
+ * thing; minting a token bound to their install and handing it to third-party code is
+ * another. Everything here matches on the caller's own email.
  */
 
 import type { AppInstall } from "@prisma/client";
@@ -72,13 +59,8 @@ export async function listInstalls(actor: RlsActor): Promise<AppInstall[]> {
 }
 
 /**
- * Idempotent: re-installing an app you already have is not an error.
- *
- * Only an app that is actually on offer, or one you built. The id arrives from the
- * request, so without this any string would create a grant — installs for apps that
- * were never published, and rows referring to nothing. An author is allowed because
- * installing your own app before listing it is reasonable; the token route lets them
- * through on authorship anyway.
+ * Idempotent. Only an app on offer, or one you built: the id arrives from the request,
+ * so without this any string would create a grant.
  */
 export async function install(
   actor: RlsActor,
@@ -103,12 +85,9 @@ export async function install(
 }
 
 /**
- * Cut an app off, and take it off Home with it.
- *
- * Unpinning is *not* uninstalling — that separation is the whole point of this model —
- * but the reverse does hold: an app with no access left would render on Home as a frame
- * that cannot read anything, which reads as broken rather than as revoked. So removing
- * the grant removes the widgets that depended on it.
+ * Unpinning is not uninstalling, but the reverse holds: a widget with no grant behind
+ * it renders as a frame that cannot read anything, which looks broken rather than
+ * revoked. So this removes the widgets too.
  */
 export async function uninstall(actor: RlsActor, appId: string): Promise<void> {
   const owner = ownerFields(actor);

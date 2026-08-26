@@ -105,19 +105,12 @@ function AccountMenu() {
 }
 
 /**
- * Four items, because the header should hold the places you go, not everything you
- * can reach.
+ * The places you go, not everything you can reach. Calendar and Analytics now sit
+ * beside the content they are about — a calendar link next to a column of due dates is
+ * found by someone who was not looking for it, which a nav item is not.
  *
- * Calendar and Analytics came out of it and now sit beside the content they are about:
- * Calendar in the header of the dated-work list, Analytics on the stats row that is
- * already a summary of the same numbers. Both were once buried in a Quick actions
- * block, which is why they were promoted here in the first place — the fix for that
- * was never the nav, it was putting them somewhere they make sense. A calendar link
- * next to a list of due dates is found by someone who was not looking for it.
- *
- * The calendar modal stays mounted at shell level, since it is a view of the whole
- * workspace rather than of the dashboard. It is opened by an `open-calendar` window
- * event, the same way the builder panel is opened from anywhere.
+ * The calendar modal stays shell-level (it spans the workspace) and is opened by an
+ * `open-calendar` window event.
  */
 const navigationItems = [
   { title: "Home", url: createPageUrl("Dashboard") },
