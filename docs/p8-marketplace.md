@@ -193,29 +193,8 @@ app you installed offers *Uninstall*.
 | **Apps** in the top nav | everything you can open, filtered by source |
 | Home | an App market card with a live count, and *Build your own* |
 | Add widget | links to the market and the builder |
-| My Tools | a store icon on each app card publishes it |
+| Apps | a labelled *Publish* on each app you built |
 | Market header | *Build an app* — the market is where you learn nobody built the thing you need |
-
-## Seeing it on a local database
-
-```bash
-npx tsx --env-file=.env scripts/market-demo-seed.ts
-```
-
-Three listings authored by `demo-author@example.com`, so installing one is genuinely
-installing another person's app — the case viewer tokens exist for:
-
-| app | what it shows |
-| --- | --- |
-| Weekly report | reads across boards; resolves a status column by id, not by name |
-| My week | finds date columns by *type* rather than assuming a field called "due" |
-| Quick capture | writes — creates an item on the viewer's board, owned by the viewer |
-
-They live in `public/market-demo/` and share `sunny-sdk.js`, which is the
-`sunny:auth:request` handshake plus `Authorization: Bearer` on `/api/sunny`. A real
-Base44 app would inline it. Everything else is the real path.
-
-Remove with `--remove`, then delete `public/market-demo/` and the seed script.
 
 ## Changes to existing files, and why
 
