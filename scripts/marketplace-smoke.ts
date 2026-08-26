@@ -11,9 +11,9 @@
  *      authorship of the listing
  *   2. the exception is exactly as wide as intended: `published` rows cross owners,
  *      `draft` and `delisted` ones do not, and a card carries no extra field
- *   3. a listing is metadata, not access — it grants nothing until someone pins the
- *      app, which is this shell's install
- *   4. install counts follow the `Widget` rows
+ *   3. a listing is metadata, not access — it grants nothing until someone installs
+ *   4. installing and pinning to Home are separate: pinning grants nothing, and
+ *      uninstalling revokes *and* takes the widget with it
  *   5. delisting is about discovery: an existing installer keeps working
  *
  * Needs `npm run dev`. Writes throwaway rows and cleans up:
@@ -65,6 +65,7 @@ async function api(path: string, body: unknown, as?: string) {
 }
 
 const market = (body: unknown, as?: string) => api("/api/marketplace", body, as);
+const installs = (body: unknown, as?: string) => api("/api/installs", body, as);
 const token = (appId: string, as: string) => api("/api/sunny/token", { app_id: appId }, as);
 
 const cards = (r: { body: Rec }) => (r.body.listings ?? []) as Rec[];
@@ -78,7 +79,7 @@ const PUBLISH = {
   app_url: "https://example.invalid/app",
 };
 
-/** Installing, on this shell, is pinning — so the fixture does it directly. */
+/** Pinning to Home, which is deliberately not the grant. */
 const pin = (appId: string, email: string) =>
   prisma.widget.create({
     data: { appId, appName: "pinned", appSlug: null, previewUrl: "https://example.invalid/app", createdBy: email },
@@ -86,6 +87,7 @@ const pin = (appId: string, email: string) =>
 
 async function cleanup() {
   await prisma.marketplaceListing.deleteMany({ where: { appId: { startsWith: TAG } } });
+  await prisma.appInstall.deleteMany({ where: { appId: { startsWith: TAG } } });
   await prisma.widget.deleteMany({ where: { appId: { startsWith: TAG } } });
   await prisma.appOwnership.deleteMany({ where: { appId: { startsWith: TAG } } });
   await prisma.user.deleteMany({ where: { email: { startsWith: TAG } } });
@@ -148,7 +150,7 @@ async function main() {
       Object.keys(l).every((k) =>
         ["app_id", "title", "tagline", "category", "author", "app_slug", "app_url",
          "screenshot_url", "status", "published_date", "install_count", "installed",
-         "is_author"].includes(k))),
+         "pinned", "is_author"].includes(k))),
     JSON.stringify(Object.keys(cards(stranger)[0] ?? {})),
   );
 
@@ -163,31 +165,51 @@ async function main() {
   // === 3. a listing grants nothing =========================================
   console.log("\n3. a listing is metadata, not access");
   check("browsing does not grant a token", (await token(APP, THIRD)).status === 403);
+  check("anonymous cannot install", (await installs({ action: "install", app_id: APP })).status === 401);
 
-  await pin(APP, THIRD);
-  check("pinning it does", (await token(APP, THIRD)).status === 200);
-  const afterPin = cards(await market({ action: "browse" }, THIRD)).find((l) => l.app_id === APP);
-  check("...and the card says installed", afterPin?.installed === true);
+  check("installing does", (await installs({ action: "install", app_id: APP }, THIRD)).status === 200);
+  check("...the token is now minted", (await token(APP, THIRD)).status === 200);
+  const afterInstall = cards(await market({ action: "browse" }, THIRD)).find((l) => l.app_id === APP);
+  check("...and the card says installed", afterInstall?.installed === true);
   check("...it appears under `installed`", ids(await market({ action: "installed" }, THIRD)).includes(APP));
   check("...but not under someone else's", !ids(await market({ action: "installed" }, OTHER)).includes(APP));
+  check("installing twice is not an error", (await installs({ action: "install", app_id: APP }, THIRD)).status === 200);
 
-  // === 4. install counts ===================================================
-  console.log("\n4. install counts follow the pins");
-  check(
-    "one pin is one install",
-    cards(await market({ action: "browse" }, AUTHOR)).find((l) => l.app_id === APP)?.install_count === 1,
-  );
+  // === 4. installing is not pinning ========================================
+  console.log("\n4. installing and pinning are separate");
+  check("an install is not on Home", afterInstall?.pinned === false);
+
+  await pin(APP, THIRD);
+  const afterPin = cards(await market({ action: "browse" }, THIRD)).find((l) => l.app_id === APP);
+  check("...pinning shows on the card", afterPin?.pinned === true);
+  check("...and does not change the install count", afterPin?.install_count === 1, String(afterPin?.install_count));
+
+  // Pinning must not be a way to grant access without installing.
   await pin(APP, OTHER);
+  check("a pin alone grants nothing", (await token(APP, OTHER)).status === 403);
+  await prisma.widget.deleteMany({ where: { appId: APP, createdBy: OTHER } });
+
+  await installs({ action: "install", app_id: APP }, OTHER);
   check(
-    "a second pin makes it two",
+    "a second installer makes it two",
     cards(await market({ action: "browse" }, AUTHOR)).find((l) => l.app_id === APP)?.install_count === 2,
   );
-  await prisma.widget.deleteMany({ where: { appId: APP, createdBy: OTHER } });
+
+  check("uninstalling revokes", (await installs({ action: "uninstall", app_id: APP }, OTHER)).status === 200);
+  check("...the token is refused again", (await token(APP, OTHER)).status === 403);
   check(
-    "unpinning stops counting — and revokes",
-    cards(await market({ action: "browse" }, AUTHOR)).find((l) => l.app_id === APP)?.install_count === 1 &&
-      (await token(APP, OTHER)).status === 403,
+    "...and the count drops",
+    cards(await market({ action: "browse" }, AUTHOR)).find((l) => l.app_id === APP)?.install_count === 1,
   );
+  check(
+    "uninstalling takes the widget with it",
+    (await installs({ action: "uninstall", app_id: APP }, THIRD)).status === 200 &&
+      (await prisma.widget.count({ where: { appId: APP, createdBy: THIRD } })) === 0,
+  );
+  check("uninstalling what you do not have is 404", (await installs({ action: "uninstall", app_id: APP }, THIRD)).status === 404);
+
+  // Put THIRD back for the delisting checks below.
+  await installs({ action: "install", app_id: APP }, THIRD);
 
   // === 5. delisting ========================================================
   console.log("\n5. delisting is about discovery, not access");

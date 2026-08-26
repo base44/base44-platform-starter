@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Loader2, Search, Check, Trash2, ArrowLeft, ShieldCheck, Sparkles, Store } from "lucide-react";
+import { Loader2, Search, Check, Trash2, ArrowLeft, ShieldCheck, Sparkles, Store, LayoutGrid } from "lucide-react";
 
-import { Widget } from "@/lib/entityClient";
 import { addAppToMyWidgets } from "@/lib/myWidgets";
 import { useAppFrameAuth } from "@/lib/appFrameAuth";
 
@@ -14,9 +13,12 @@ import { useAppFrameAuth } from "@/lib/appFrameAuth";
  * the app is one deployment with one author, and the token is what makes it read the
  * *viewer's* rows rather than the author's.
  *
- * So this page never passes an identity to anything. Installing pins a `Widget` row,
- * which is this shell's grant, and embedding triggers the handshake. Everything about
- * who the app acts for is resolved server-side from the token.
+ * So this page never passes an identity to anything. Installing writes an `AppInstall`
+ * row — the grant — and embedding triggers the handshake. Everything about who the app
+ * acts for is resolved server-side from the token.
+ *
+ * Installing and pinning to Home are separate acts, deliberately: an app you open once
+ * a month should not have to live on your home page to work.
  */
 
 const post = async (path, body) => {
@@ -82,11 +84,14 @@ function InstallDialog({ listing, onCancel, onConfirm }) {
           <p className="text-sm text-foreground">
             It will read and write <strong>your</strong> boards and items, as you.
             <span className="mt-1 block text-xs text-muted-foreground">
-              It never sees anyone else&apos;s work — not even its author&apos;s. Remove it from My
-              Widgets and it loses access immediately.
+              It never sees anyone else&apos;s work — not even its author&apos;s. Uninstall it and
+              it loses access immediately.
             </span>
           </p>
         </div>
+        <p className="mt-2 text-xs text-muted-foreground">
+          It will appear in My Tools. Add it to your home page separately, if you want it there.
+        </p>
 
         <div className="mt-5 flex justify-end gap-2">
           <button onClick={onCancel} className="rounded-md border border-border px-3 py-1.5 text-sm">Cancel</button>
@@ -103,7 +108,7 @@ function InstallDialog({ listing, onCancel, onConfirm }) {
   );
 }
 
-function ListingCard({ listing, onInstall, onUninstall, onOpen, onUnpublish }) {
+function ListingCard({ listing, onInstall, onUninstall, onOpen, onUnpublish, onPin }) {
   return (
     <div className="flex flex-col overflow-hidden rounded-lg border border-border bg-card shadow-sm transition-all hover:border-primary/40 hover:shadow-md">
       <div className="flex aspect-[16/9] items-center justify-center overflow-hidden bg-muted">
@@ -155,8 +160,16 @@ function ListingCard({ listing, onInstall, onUninstall, onOpen, onUnpublish }) {
                 Open
               </button>
               <button
+                onClick={() => onPin(listing)}
+                disabled={listing.pinned}
+                title={listing.pinned ? "Already on your home page" : "Add it to your home page"}
+                className="rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-40"
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
+              </button>
+              <button
                 onClick={() => onUninstall(listing)}
-                title="Remove it from My Widgets, which revokes its access"
+                title="Uninstall — revokes its access to your data"
                 className="rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:text-destructive"
               >
                 <Trash2 className="h-3.5 w-3.5" />
@@ -202,14 +215,41 @@ export default function Marketplace() {
     load(tab);
   }, [tab, load]);
 
-  /**
-   * Installing *is* pinning: the `Widget` row is what lets the app mint a viewer
-   * token. No slug — see src/lib/myWidgets.ts — so the row carries the listing's
-   * snapshot URL and My Widgets renders it from that.
-   */
+  /** The grant, and nothing else. Where it shows up is a separate choice. */
   const install = async () => {
     const listing = installing;
     setInstalling(null);
+    try {
+      await post("/api/installs", {
+        action: "install",
+        app_id: listing.app_id,
+        app_name: listing.title,
+      });
+      setNotice(`${listing.title} is installed. Find it in My Tools.`);
+      await load(tab);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  /**
+   * Revokes. The server also removes any widgets for the app: unpinning is not
+   * uninstalling, but the reverse does hold — a widget with no grant behind it renders
+   * as a frame that cannot read anything, which looks broken rather than revoked.
+   */
+  const uninstall = async (listing) => {
+    try {
+      await post("/api/installs", { action: "uninstall", app_id: listing.app_id });
+      window.dispatchEvent(new CustomEvent("widgets-updated"));
+      setNotice(`${listing.title} uninstalled. It can no longer read your boards.`);
+      await load(tab);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  /** Put an installed app on Home. Pinning grants nothing on its own. */
+  const pin = async (listing) => {
     try {
       await addAppToMyWidgets(
         {
@@ -220,19 +260,7 @@ export default function Marketplace() {
         },
         listing.app_url,
       );
-      setNotice(`${listing.title} is installed and on your home page.`);
-      await load(tab);
-    } catch (err) {
-      setError(err.message);
-    }
-  };
-
-  const uninstall = async (listing) => {
-    try {
-      const rows = await Widget.list("order_index", 100);
-      for (const w of rows.filter((r) => r.app_id === listing.app_id)) await Widget.delete(w.id);
-      window.dispatchEvent(new CustomEvent("widgets-updated"));
-      setNotice(`${listing.title} removed. It can no longer read your boards.`);
+      setNotice(`${listing.title} added to your home page.`);
       await load(tab);
     } catch (err) {
       setError(err.message);
@@ -342,6 +370,7 @@ export default function Marketplace() {
                 onUninstall={uninstall}
                 onOpen={setOpen}
                 onUnpublish={unpublish}
+                onPin={pin}
               />
             ))}
           </div>

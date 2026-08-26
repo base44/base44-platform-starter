@@ -1,15 +1,17 @@
 /**
- * "My Tools" — the apps this user built, each embedded full-height in an iframe.
+ * "My Tools" — every app this user can open, each embedded full-height in an iframe.
  *
- * Reads the list through `listAppsForUser()`: Base44 apps live under one shared
- * workspace and carry no per-shell-user owner, so the folder listing is filtered
- * against the local `AppOwnership` rows. The frames need no token because built
- * apps are created `public_without_login`.
+ * Two sources, merged in `listUsableApps()`: apps they built (the Base44 folder,
+ * filtered against local `AppOwnership` rows) and apps they installed from the market
+ * (the listing snapshot, because an installer's principal cannot see another user's
+ * app). The frames load without a token — built apps are `public_without_login` — and
+ * then ask for one to read data.
  */
 import React, { useState, useEffect, useRef } from "react";
 import * as platform from "@/lib/base44Platform";
 import { useAppFrameAuth } from "@/lib/appFrameAuth";
 import { useAppRebuildNonce, withNonce } from "@/lib/appRefresh";
+import { listUsableApps } from "@/lib/usableApps";
 import { Loader2, ArrowLeft, ExternalLink, Pencil, Store } from "lucide-react";
 
 /**
@@ -110,14 +112,10 @@ export default function MyTools() {
   const frameRef = useRef(null);
 
   // Same handshake the dashboard widgets use: the frame has no session, so it asks
-  // this page for a token scoped to whoever is signed in.
-  // Deployed build is static and always up; the sandbox is the never-deployed
-  // fallback. See DashboardWidgets.
-  const baseUrl = !selectedApp
-    ? null
-    : selectedApp.last_deployed_at
-      ? platform.publishedUrl(selectedApp.slug) || platform.previewUrl(selectedApp.slug)
-      : platform.previewUrl(selectedApp.slug);
+  // this page for a token scoped to whoever is signed in. The URL is already resolved
+  // per source in listUsableApps() — a built app by slug, an installed one from its
+  // listing snapshot.
+  const baseUrl = selectedApp?.url ?? null;
 
   const rebuildNonce = useAppRebuildNonce(selectedApp?.id ?? null);
   const selectedUrl = withNonce(baseUrl, rebuildNonce);
@@ -126,7 +124,7 @@ export default function MyTools() {
   useEffect(() => {
     (async () => {
       try {
-        const list = await platform.listAppsForUser({ limit: 50 });
+        const list = await listUsableApps();
         setApps(list);
 
         // Which of these are already in the market, so the card can say so.
@@ -215,7 +213,7 @@ export default function MyTools() {
           <p className="text-xs font-medium text-muted-foreground mb-1">Workspace</p>
           <h1 className="font-display text-3xl md:text-4xl text-foreground">My Tools</h1>
           <p className="text-muted-foreground text-sm mt-2">
-            Apps you've built — click any to open it.
+            Apps you built and apps you installed — click any to open it.
           </p>
         </div>
       </div>
@@ -232,7 +230,7 @@ export default function MyTools() {
         ) : apps.length === 0 ? (
           <div className="py-24 text-center">
             <p className="text-sm text-muted-foreground">
-              No apps found. Build one in App Builder.
+              Nothing here yet. Build an app with the Assistant, or install one from the market.
             </p>
           </div>
         ) : (
@@ -244,61 +242,60 @@ export default function MyTools() {
               >
                 <button onClick={() => setSelectedApp(app)} className="w-full block">
                   <div className="aspect-[4/3] bg-muted overflow-hidden relative flex items-center justify-center">
-                    {app.preview_screenshot_url || app.social_image_url || app.logo_url ? (
-                      <img
-                        src={app.preview_screenshot_url || app.social_image_url || app.logo_url}
-                        alt={app.name}
-                        className="w-full h-full object-cover"
-                      />
+                    {app.screenshot ? (
+                      <img src={app.screenshot} alt={app.name} className="w-full h-full object-cover" />
                     ) : (
                       <span className="text-5xl font-display text-muted-foreground/20 select-none">
                         {(app.name || "?")[0].toUpperCase()}
+                      </span>
+                    )}
+                    {app.source === "market" && (
+                      <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-card/90 px-2 py-0.5 text-[10px] text-muted-foreground shadow-sm">
+                        <Store className="w-2.5 h-2.5" /> Installed
                       </span>
                     )}
                   </div>
                 </button>
                 <div className="p-3 flex items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="text-xs font-medium text-foreground truncate">
-                      {app.name || "Untitled"}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {app.status?.state === "processing"
-                        ? "Building…"
-                        : new Date(app.updated_date).toLocaleDateString()}
-                    </p>
+                    <p className="text-xs font-medium text-foreground truncate">{app.name}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5 truncate">{app.subtitle}</p>
                   </div>
-                  <div className="flex flex-shrink-0 items-center gap-0.5">
-                    <button
-                      onClick={() => setPublishing(app)}
-                      className={`p-1.5 rounded transition-colors hover:bg-secondary ${
-                        published.has(app.id)
-                          ? "text-primary"
-                          : "text-muted-foreground hover:text-foreground"
-                      }`}
-                      title={
-                        published.has(app.id)
-                          ? "In the market — republish to update it"
-                          : "Publish to the market"
-                      }
-                    >
-                      <Store className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => {
-                        setSelectedApp(app);
-                        window.dispatchEvent(
-                          new CustomEvent("open-assistant", {
-                            detail: { mode: "build", appId: app.id },
-                          }),
-                        );
-                      }}
-                      className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-                      title="Edit in builder"
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+                  {/* Publishing and editing are the author's affordances; an installed
+                      app is somebody else's code and neither applies to it. */}
+                  {app.source === "built" && (
+                    <div className="flex flex-shrink-0 items-center gap-0.5">
+                      <button
+                        onClick={() => setPublishing(app.app)}
+                        className={`p-1.5 rounded transition-colors hover:bg-secondary ${
+                          published.has(app.id)
+                            ? "text-primary"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                        title={
+                          published.has(app.id)
+                            ? "In the market — republish to update it"
+                            : "Publish to the market"
+                        }
+                      >
+                        <Store className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSelectedApp(app);
+                          window.dispatchEvent(
+                            new CustomEvent("open-assistant", {
+                              detail: { mode: "build", appId: app.id },
+                            }),
+                          );
+                        }}
+                        className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                        title="Edit in builder"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

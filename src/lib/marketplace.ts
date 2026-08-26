@@ -13,13 +13,14 @@
  * author put them in deliberately — and to the fields in `ListingCard`. Every write
  * is still owner-only. Nothing else should copy this without the same justification.
  *
- * ## An install is a Widget row
+ * ## Installing is not pinning
  *
- * There is no separate install record, because this shell already has one. Pinning an
- * app to My Widgets is what lets it mint a viewer token (`/api/sunny/token` gates on
- * exactly that), and unpinning revokes. So the market installs by pinning and counts
- * installs by counting rows. Adding a second grant concept beside it would mean two
- * places to look when someone asks "why can this app read my boards".
+ * The grant is an `AppInstall` row (`src/lib/appInstall.ts`), which this module reads
+ * but never writes — installing is an authorization decision and lives on
+ * `/api/installs`. A listing is only how you found the app; browsing grants nothing.
+ *
+ * Pinning to Home is a separate, later choice. `installed` and `install_count` here
+ * therefore count installs, not widgets.
  *
  * ## Publishing snapshots the app
  *
@@ -64,8 +65,10 @@ export type ListingCard = {
   status: string;
   published_date: string | null;
   install_count: number;
-  /** Whether the *caller* has it pinned, which on this shell is what installed means. */
+  /** Whether the caller has installed it — i.e. whether it may read their data. */
   installed: boolean;
+  /** Whether it is also on their home page. A separate, later choice. */
+  pinned: boolean;
   is_author: boolean;
 };
 
@@ -87,11 +90,15 @@ async function toCards(actor: RlsActor, listings: MarketplaceListing[]): Promise
   const appIds = listings.map((l) => l.appId);
   if (!appIds.length) return [];
 
-  const [counts, mine] = await Promise.all([
-    prisma.widget.groupBy({
+  const [counts, mine, pinned] = await Promise.all([
+    prisma.appInstall.groupBy({
       by: ["appId"],
       where: { appId: { in: appIds } },
       _count: { _all: true },
+    }),
+    prisma.appInstall.findMany({
+      where: { appId: { in: appIds }, ...ownerFields(actor) },
+      select: { appId: true },
     }),
     prisma.widget.findMany({
       where: { appId: { in: appIds }, ...ownerFields(actor) },
@@ -101,6 +108,7 @@ async function toCards(actor: RlsActor, listings: MarketplaceListing[]): Promise
 
   const countBy = new Map(counts.map((c) => [c.appId, c._count._all]));
   const mineIds = new Set(mine.map((m) => m.appId));
+  const pinnedIds = new Set(pinned.map((w) => w.appId));
 
   return listings.map((l) => ({
     app_id: l.appId,
@@ -115,6 +123,7 @@ async function toCards(actor: RlsActor, listings: MarketplaceListing[]): Promise
     published_date: l.publishedAt?.toISOString() ?? null,
     install_count: countBy.get(l.appId) ?? 0,
     installed: mineIds.has(l.appId),
+    pinned: pinnedIds.has(l.appId),
     is_author: l.createdBy === actor.email,
   }));
 }
@@ -140,16 +149,16 @@ export async function listMine(actor: RlsActor): Promise<ListingCard[]> {
   return toCards(actor, rows);
 }
 
-/** Listings for apps the caller has pinned — including ones since delisted. */
+/** Listings for apps the caller has installed — including ones since delisted. */
 export async function listInstalled(actor: RlsActor): Promise<ListingCard[]> {
-  const pinned = await prisma.widget.findMany({
+  const installs = await prisma.appInstall.findMany({
     where: ownerFields(actor),
     select: { appId: true },
   });
-  if (!pinned.length) return [];
+  if (!installs.length) return [];
 
   const rows = await prisma.marketplaceListing.findMany({
-    where: { appId: { in: pinned.map((w) => w.appId) } },
+    where: { appId: { in: installs.map((i) => i.appId) } },
     orderBy: { title: "asc" },
   });
   return toCards(actor, rows);

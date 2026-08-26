@@ -280,3 +280,39 @@ model MarketplaceListing {
   @@index([status])
   @@map("marketplace_listings")
 }
+
+
+/// An app a user has installed and may run against their own data.
+///
+/// **This is the grant.** `/api/sunny/token` mints a viewer token for an app you have
+/// installed (or authored), so a row here is what lets an app read your boards as you,
+/// and deleting it revokes on the next call.
+///
+/// It used to be the `Widget` row. That worked while every app was one you built —
+/// pinning it to Home was the only reason to have it — and stopped working once apps
+/// come from a market: "I want this app" and "I want it on my home page" are different
+/// intents, and welding them together means an app you use monthly has to live on Home
+/// to work at all. So the grant moved here and `Widget` went back to meaning only what
+/// its name says.
+///
+/// SENSITIVE, like Base44Link: a row grants read/write access to one user's work data.
+/// Reached only through src/lib/appInstall.ts, never the generic entity CRUD, and with
+/// deliberately **no admin bypass** — an admin reading another user's rows through
+/// their own session is one thing, vending a portable token for it is another.
+model AppInstall {
+  id String @id @default(cuid())
+
+  /// The Base44 app. Not an FK — apps live in Base44, not here.
+  appId String @map("app_id")
+  /// Display name at install time. The installs list and debugging; may be stale.
+  appName String? @map("app_name")
+
+  /// The installer, and therefore whose rows this install reaches.
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([appId, createdBy])
+  @@index([createdBy])
+  @@map("app_installs")
+}

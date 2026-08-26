@@ -13,17 +13,43 @@ feature.
 
 What was missing was only the catalogue: a way to find an app you did not build.
 
-## An install is a `Widget` row
+## Installing is not pinning
 
-There is deliberately no separate install record. `/api/sunny/token` mints for an app
-you have **pinned** or authored, so pinning is already the grant and unpinning is
-already revocation. The market installs by pinning and counts installs by counting
-rows.
+The grant is an `AppInstall` row (`src/lib/appInstall.ts`). `/api/sunny/token` mints
+for an app you have installed or authored, so installing is what lets an app read your
+boards and uninstalling revokes.
 
-A second grant concept beside it would mean two places to look when someone asks why
-an app can read their boards, and two places to get it wrong. The cost is that
-"installed" and "on my home page" are the same state — you cannot install without
-pinning. That is a real limitation and the right trade for now.
+It used to be the `Widget` row. That held while every app was one you built — pinning
+it to Home was the only reason to have it — and broke as soon as apps come from a
+market: *I want this app* and *I want it on my home page* are different intents, and
+welding them meant an app you open monthly had to sit on Home to work at all. So the
+grant moved, and `Widget` went back to meaning only what its name says.
+
+The migration **backfills one install per already-pinned `(app, user)`**. Without it,
+moving the predicate would revoke everyone at once.
+
+Two directions, and only one of them holds:
+
+* Unpinning is **not** uninstalling. Take it off Home, it still works in My Tools.
+* Uninstalling **does** unpin. A widget with no grant behind it renders as a frame that
+  cannot read anything, which reads as broken rather than as revoked — so `uninstall()`
+  removes the widgets too.
+
+`npm run market:smoke` asserts both, including that a pin alone grants nothing.
+
+## Two surfaces list every app you can open
+
+`src/lib/usableApps.ts` merges the two sources so **My Tools** and the **Add widget**
+picker cannot disagree:
+
+* apps you **built** — the Base44 folder, live, which is the truth for a slug, a
+  screenshot and whether the app is deployed;
+* apps you **installed** — the listing snapshot, because an installer's principal
+  cannot see another user's app in the workspace at all.
+
+Neither failing takes the other down: a Base44 outage should not hide your market apps.
+Publishing and *Edit in builder* only appear on apps you built — an installed app is
+somebody else's code and neither applies.
 
 ## Publishing snapshots the app
 
@@ -124,8 +150,6 @@ and an admin kill switch for a listing.
 viewer can. Per-action scopes would let a reporting widget be installed without write
 access. That is a change to the token, not to the catalogue — `appTokens.ts` would
 carry the grant and `/api/sunny` would check it per action.
-
-**Installing without pinning.** Today they are the same act.
 
 **Origin binding.** `appTokens.ts` records the `app` claim but does not enforce it, and
 says so: a token that escaped one app would work in another. Binding it to the app's
