@@ -1,15 +1,19 @@
 import React from "react";
 import Link from "next/link";
-import { Eye, BookmarkCheck, Pencil, LayoutGrid, Loader2, Check, ArrowRight } from "lucide-react";
+import { Eye, BookmarkCheck, Pencil, LayoutGrid, Loader2, Check, ArrowRight, Store } from "lucide-react";
 
 /**
  * The "your app is ready" card, with one filing action.
  *
- * "Publish" is what the old "Save to My Tools" did — an app is in My Tools from the
- * moment it is built, so nothing was being filed; `deployApp` publishes. From the
+ * "Publish" is what the old "Save to My Tools" did — an app is in Apps from the moment
+ * it is built, so nothing was being filed; `deployApp` publishes. From the
  * Add-widget picker it becomes "Add to my widgets", which publishes *and* pins.
  * Already pinned, it reverts to Publish so an app on the dashboard can still be
- * iterated on.
+ * iterated on. From the market it becomes "Add to the market".
+ *
+ * The primary action follows where the builder was opened from — that is already a
+ * statement of intent, so it is a default rather than a question. Note "Publish" here
+ * means `deployApp`, not the market; hence the separate wording.
  */
 export default function AppReadyWidget({
   appName,
@@ -23,10 +27,14 @@ export default function AppReadyWidget({
   onAddToMyWidgets,
   isAddingToMyWidgets = false,
   isAddedToMyWidgets = false,
+  offerMarket = false,
+  onAddToMarket,
+  isAddingToMarket = false,
+  isAddedToMarket = false,
   myToolsHref = null,
   onNavigate,
 }) {
-  const busy = isSaving || isAddingToMyWidgets;
+  const busy = isSaving || isAddingToMyWidgets || isAddingToMarket;
   // Not `isSaved || isAddedToMyWidgets`: the picker creates a Widget row without
   // deploying, and conflating them would disable the only deploy control.
   const settled = isSaved;
@@ -58,7 +66,23 @@ export default function AppReadyWidget({
           {isLoadingPreview ? "Opening…" : "Preview"}
         </button>
 
-        {offerMyWidgets && !isAddedToMyWidgets ? (
+        {isAddedToMarket ? (
+          // Confirm the destination actually chosen, not a different one.
+          <Link href="/Marketplace" onClick={onNavigate} className={done}>
+            <Check className="w-3.5 h-3.5" />
+            In the market — view it
+            <ArrowRight className="w-3.5 h-3.5 ml-auto" />
+          </Link>
+        ) : offerMarket ? (
+          <button onClick={onAddToMarket} disabled={busy} className={primary}>
+            {isAddingToMarket ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Store className="w-3.5 h-3.5" />
+            )}
+            {isAddingToMarket ? "Deploying…" : "Add to the market"}
+          </button>
+        ) : offerMyWidgets && !isAddedToMyWidgets ? (
           <button onClick={onAddToMyWidgets} disabled={busy} className={primary}>
             {isAddingToMyWidgets ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -70,7 +94,7 @@ export default function AppReadyWidget({
         ) : settled && myToolsHref ? (
           <Link href={myToolsHref} onClick={onNavigate} className={done}>
             <Check className="w-3.5 h-3.5" />
-            Published — view in My Tools
+            Published — view in Apps
             <ArrowRight className="w-3.5 h-3.5 ml-auto" />
           </Link>
         ) : (

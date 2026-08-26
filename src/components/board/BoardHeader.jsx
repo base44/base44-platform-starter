@@ -200,7 +200,7 @@ export default function BoardHeader({
                 }
               >
                 <Sparkles className="w-3.5 h-3.5" />
-                Build a tool
+                Build an app
               </button>
               <button
                 className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground px-2.5 py-1.5 rounded hover:bg-secondary transition-colors"

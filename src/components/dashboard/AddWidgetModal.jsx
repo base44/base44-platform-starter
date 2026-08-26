@@ -11,22 +11,18 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatDistanceToNow } from "date-fns";
-import { Loader2, Plus, Check, Search, Sparkles } from "lucide-react";
-import * as platform from "@/lib/base44Platform";
+import Link from "next/link";
+import { Loader2, Plus, Check, Search, Sparkles, Store } from "lucide-react";
+import { listUsableApps } from "@/lib/usableApps";
 import { addAppToMyWidgets } from "@/lib/myWidgets";
 
 /** Above this many apps the list stops being scannable and needs a filter. */
 const SEARCH_THRESHOLD = 5;
 
-/** Base44 calls the build prompt `user_description`; `description` is a fallback. */
-function describe(app) {
-  return app.user_description || app.description || "";
-}
-
+/** Both sources; `listUsableApps()` has already resolved each one's URL. */
 function subtitleFor(app) {
-  const description = describe(app);
-  if (description) return description;
-  const stamp = app.last_deployed_at || app.updated_date || app.created_date;
+  if (app.subtitle) return app.subtitle;
+  const stamp = app.app?.last_deployed_at || app.app?.updated_date || app.app?.created_date;
   if (!stamp) return "Not built yet";
   const when = new Date(stamp);
   if (Number.isNaN(when.getTime())) return "Not built yet";
@@ -49,8 +45,7 @@ export default function AddWidgetModal({
     if (!open) return;
     setQuery("");
     setIsLoading(true);
-    platform
-      .listAppsForUser({ limit: 50 })
+    listUsableApps()
       .then(setApps)
       .catch(() => {})
       .finally(() => setIsLoading(false));
@@ -60,14 +55,28 @@ export default function AddWidgetModal({
     const needle = query.trim().toLowerCase();
     if (!needle) return apps;
     return apps.filter((app) =>
-      `${app.name || ""} ${describe(app)}`.toLowerCase().includes(needle),
+      `${app.name || ""} ${app.subtitle || ""}`.toLowerCase().includes(needle),
     );
   }, [apps, query]);
+
+  // Installed first: the shorter list, and it would otherwise be buried. Headers only
+  // when both kinds are present.
+  const groups = useMemo(() => {
+    const market = matches.filter((a) => a.source === "market");
+    const built = matches.filter((a) => a.source !== "market");
+    return [
+      { key: "market", label: "From the market", items: market },
+      { key: "built", label: "Built by you", items: built },
+    ].filter((g) => g.items.length > 0);
+  }, [matches]);
+
+  const showGroups = groups.length > 1;
 
   const handleAdd = async (app) => {
     setAdding(app.id);
     try {
-      const widget = await addAppToMyWidgets(app);
+      // Market apps carry their URL and no slug; built apps resolve theirs live.
+      const widget = await addAppToMyWidgets(app, app.source === "market" ? app.url : null);
       onAdded(widget);
       onClose();
     } catch (err) {
@@ -84,18 +93,33 @@ export default function AddWidgetModal({
           <DialogTitle>Add a widget</DialogTitle>
         </DialogHeader>
         <p className="text-sm text-muted-foreground -mt-2 mb-3">
-          Pick one of your built apps to embed as a widget on the home page.
+          Pin an app to the home page — one you built, or one you installed from the market.
         </p>
-        <button
-          onClick={() => {
-            onClose();
-            onBuildNew?.();
-          }}
-          className="w-full flex items-center gap-3 px-3 py-2.5 min-h-[44px] border border-dashed border-border rounded-lg text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors mb-3"
-        >
-          <Sparkles className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
-          Build a new app with the Assistant
-        </button>
+        {/*
+          Two ways to get an app that is not in the list below. Installing from the
+          market pins it on the spot — the pin *is* the install — so there is nothing
+          to come back here for afterwards.
+        */}
+        <div className="grid grid-cols-2 gap-2 mb-3">
+          <button
+            onClick={() => {
+              onClose();
+              onBuildNew?.();
+            }}
+            className="flex items-center gap-2 px-3 py-2.5 min-h-[44px] border border-dashed border-border rounded-lg text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
+          >
+            <Sparkles className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+            Build one
+          </button>
+          <Link
+            href="/Marketplace"
+            onClick={onClose}
+            className="flex items-center gap-2 px-3 py-2.5 min-h-[44px] border border-dashed border-border rounded-lg text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
+          >
+            <Store className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+            Browse the market
+          </Link>
+        </div>
 
         {apps.length > SEARCH_THRESHOLD && (
           <div className="relative mb-3">
@@ -127,11 +151,20 @@ export default function AddWidgetModal({
             No app matches “{query}”.
           </p>
         ) : (
-          <div className="divide-y divide-border max-h-80 overflow-y-auto rounded border border-border">
-            {matches.map((app) => {
+          <div className="max-h-80 overflow-y-auto rounded border border-border">
+            {groups.map(({ key, label, items }) => (
+              <div key={key}>
+                {/* Grouped, not badged: it is a property of the group, not each row. */}
+                {showGroups && (
+                  <p className="sticky top-0 bg-secondary/70 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground backdrop-blur-sm">
+                    {label} <span className="opacity-60">{items.length}</span>
+                  </p>
+                )}
+                <div className="divide-y divide-border">
+                  {items.map((app) => {
               const already = existingAppIds.includes(app.id);
               const busy = adding === app.id;
-              const thumb = app.preview_screenshot_url || app.logo_url;
+              const thumb = app.screenshot;
               return (
                 <button
                   key={app.id}
@@ -175,7 +208,10 @@ export default function AddWidgetModal({
                   )}
                 </button>
               );
-            })}
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </DialogContent>

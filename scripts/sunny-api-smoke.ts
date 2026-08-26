@@ -86,6 +86,7 @@ const list = (r: Res, key: string) => (Array.isArray(r.body[key]) ? (r.body[key]
 
 async function cleanup() {
   await prisma.widget.deleteMany({ where: { appId: { startsWith: TAG } } });
+  await prisma.appInstall.deleteMany({ where: { appId: { startsWith: TAG } } });
   await prisma.appOwnership.deleteMany({ where: { appId: { startsWith: TAG } } });
   await prisma.item.deleteMany({ where: { title: { startsWith: TAG } } });
   await prisma.board.deleteMany({ where: { title: { startsWith: TAG } } });
@@ -609,7 +610,17 @@ async function main() {
     (await mint(userCookie, { app_id: APP_A })).status === 403,
   );
 
+  // Pinning to Home is deliberately NOT the grant any more: an app you open monthly
+  // should not have to live on Home to work. The grant is an AppInstall row.
   await prisma.widget.create({
+    data: { appId: APP_A, appName: `${TAG} app A`, createdBy: OWNER_A },
+  });
+  check(
+    "...still 403 when it is only pinned to Home",
+    (await mint(userCookie, { app_id: APP_A })).status === 403,
+  );
+
+  await prisma.appInstall.create({
     data: { appId: APP_A, appName: `${TAG} app A`, createdBy: OWNER_A },
   });
   const minted = await mint(userCookie, { app_id: APP_A });

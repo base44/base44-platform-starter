@@ -26,9 +26,16 @@ type Frame = { current: HTMLIFrameElement | null };
 /** "idle" = the frame has not asked for a token (yet, or ever). */
 export type FrameAuthState = "idle" | "granted" | "denied";
 
+/**
+ * Resolved against the current document so a same-origin app gets an origin too —
+ * without the base a relative `src` throws, the listener never attaches, and the frame
+ * waits forever. Null still disables the handshake: nowhere safe to post a token.
+ */
 function originOf(url: string | null): string | null {
+  if (!url) return null;
   try {
-    return url ? new URL(url).origin : null;
+    const base = typeof window === "undefined" ? undefined : window.location.href;
+    return new URL(url, base).origin;
   } catch {
     return null;
   }

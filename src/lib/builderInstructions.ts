@@ -24,7 +24,7 @@ serves the user's work there.
 
 Runtime: embedded in a sandboxed iframe (\`allow-scripts allow-same-origin
 allow-forms allow-popups\`). As a dashboard widget it is user-resizable — 320px
-tall and half-column by default — and full-height on "My Tools". So design for a
+tall and half-column by default — and full-height on the "Apps" page. So design for a
 short, narrow viewport that scales up; no top-level navigation, downloads, or
 full-screen. Report your content height so the card fits it instead of leaving
 dead white space: \`parent.postMessage({ type: "sunny:size", height }, "*")\` on
@@ -42,7 +42,7 @@ schemas and the gotchas are in the **\`${SKILL_NAME}\`** skill.
 
 Read it before writing code whenever the request mentions Sunny, the platform,
 the workspace, board(s), group(s), item(s), task(s), row(s), column(s), status,
-priority, due date, people, budget, widget(s), dashboard, "My Tools" — or asks
+priority, due date, people, budget, widget(s), dashboard, "Apps" — or asks
 to read, write, sync, import, export, summarize or chart the user's real work
 data. Indicative, not exhaustive: if it plausibly touches their boards, load it.
 

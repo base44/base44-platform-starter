@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Board, Item, Team, Widget, me } from "@/lib/entityClient";
-import { Plus, Users } from "lucide-react";
+import Link from "next/link";
+import { Plus, Users, Gauge, ArrowRight } from "lucide-react";
+import { createPageUrl } from "@/utils";
 
 import RecentBoards from "../components/dashboard/RecentBoards";
 import TaskStats from "../components/dashboard/TaskStats";
@@ -8,6 +10,7 @@ import WorkList from "../components/dashboard/WorkList";
 import CreateBoardModal from "../components/boards/CreateBoardModal";
 import DashboardWidgets from "../components/dashboard/DashboardWidgets";
 import AddWidgetModal from "../components/dashboard/AddWidgetModal";
+import MarketCard from "../components/dashboard/MarketCard";
 import TeamBanner from "../components/team/TeamBanner";
 import TeamSetupModal from "../components/team/TeamSetupModal";
 import { useToast } from "@/components/ui/toast";
@@ -184,12 +187,27 @@ export default function Dashboard() {
       <div className="mx-auto max-w-[1400px] px-4 sm:px-6 py-6 md:py-8 space-y-6">
         {team && <TeamBanner team={team} onEdit={() => setShowTeamModal(true)} />}
 
-        <TaskStats
-          buckets={stats.buckets}
-          selected={filter}
-          onSelect={setFilter}
-          isLoading={isLoading}
-        />
+        {/* Analytics is these same numbers with history, so the link belongs here. */}
+        <div>
+          <div className="flex items-center justify-between mb-3 h-6">
+            <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <Gauge className="w-4 h-4 text-muted-foreground" aria-hidden="true" />
+              Where things stand
+            </h2>
+            <Link
+              href={createPageUrl("Analytics")}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+            >
+              Analytics <ArrowRight className="w-3 h-3" aria-hidden="true" />
+            </Link>
+          </div>
+          <TaskStats
+            buckets={stats.buckets}
+            selected={filter}
+            onSelect={setFilter}
+            isLoading={isLoading}
+          />
+        </div>
 
         <div className="grid lg:grid-cols-3 gap-6 items-start">
           <div className="lg:col-span-2">
@@ -201,12 +219,15 @@ export default function Dashboard() {
               onStatusChange={handleStatusChange}
             />
           </div>
-          <RecentBoards
-            boards={boards}
-            items={stats.scoped}
-            isLoading={isLoading}
-            onCreateBoard={handleCreateBoard}
-          />
+          <div className="space-y-6">
+            <RecentBoards
+              boards={boards}
+              items={stats.scoped}
+              isLoading={isLoading}
+              onCreateBoard={handleCreateBoard}
+            />
+            <MarketCard />
+          </div>
         </div>
 
         <DashboardWidgets

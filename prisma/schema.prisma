@@ -48,6 +48,14 @@ enum ItemPriority {
   critical
 }
 
+/// `delisted` is kept rather than deleted so anyone already running the app keeps
+/// working: pulling a listing is about discovery, not about breaking its users.
+enum ListingStatus {
+  draft
+  published
+  delisted
+}
+
 enum Base44LinkStatus {
   pending
   linked
@@ -221,4 +229,68 @@ model Base44Link {
 
   @@index([createdBy])
   @@map("base44_links")
+}
+
+
+/// An app its author has offered to other Sunny users.
+///
+/// The one model whose reads are not owner-scoped: a published listing is public by
+/// intent. Writes stay owner-only, and src/lib/marketplace.ts is the only module that
+/// touches it — a documented carve-out from scopedWhere, not a precedent.
+///
+/// The `app*` fields are snapshotted at publish time because an installer's Base44
+/// principal cannot see another user's app to resolve them later, which is also why
+/// publishing requires a deployed app.
+model MarketplaceListing {
+  id String @id @default(cuid())
+
+  /// The Base44 app on offer. One listing per app.
+  appId String @unique @map("app_id")
+
+  title       String
+  tagline     String?
+  category    String?
+
+  /// Snapshot. `appUrl` is the resolved embed URL rather than something derived from
+  /// `appSlug` at render time, because the published host still rotates.
+  appSlug       String? @map("app_slug")
+  appUrl        String? @map("app_url")
+  screenshotUrl String? @map("screenshot_url")
+
+  status      ListingStatus @default(draft)
+  publishedAt DateTime?     @map("published_at")
+
+  /// The author. Writes are scoped to this; reads of a published row are not.
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([createdBy])
+  @@index([status])
+  @@map("marketplace_listings")
+}
+
+
+/// An app a user has installed. This is the grant: `/api/sunny/token` mints for an app
+/// you installed or authored, and deleting the row revokes on the next call.
+///
+/// It used to be the `Widget` row, which welded "I want this app" to "I want it on my
+/// home page". SENSITIVE like Base44Link — reached only through src/lib/appInstall.ts,
+/// never the generic entity CRUD, and with no admin bypass.
+model AppInstall {
+  id String @id @default(cuid())
+
+  /// The Base44 app. Not an FK — apps live in Base44, not here.
+  appId String @map("app_id")
+  /// Display name at install time. The installs list and debugging; may be stale.
+  appName String? @map("app_name")
+
+  /// The installer, and therefore whose rows this install reaches.
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([appId, createdBy])
+  @@index([createdBy])
+  @@map("app_installs")
 }
