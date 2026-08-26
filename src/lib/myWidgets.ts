@@ -1,7 +1,16 @@
 /**
  * Pins a built Base44 app to My Widgets. My Tools lists the Base44 app folder
  * directly; My Widgets renders `Widget` rows, so an app shows up there only once
- * a row exists. Shared by the Add-widget picker and the builder.
+ * a row exists. Shared by the Add-widget picker, the builder, and the market.
+ *
+ * A `Widget` row is also the grant: `/api/sunny/token` mints for an app you have
+ * pinned, so pinning is what lets it read your data and unpinning revokes.
+ *
+ * Two ways a row learns its URL. An app **you built** is addressed by slug, resolved
+ * live. An app **installed from the market** has no slug you can address — it belongs
+ * to someone else, and your Base44 principal cannot see it — so the caller passes the
+ * listing's snapshot URL and leaves `slug` null. `DashboardWidgets` reads that absence
+ * as "use the stored URL", so the distinction has to be kept honestly.
  */
 import * as platform from "./base44Platform";
 import { Widget, type WireRecord } from "./entityClient";
@@ -13,13 +22,15 @@ type PinnableApp = {
   preview_screenshot_url?: string | null;
 };
 
-export async function addAppToMyWidgets(app: PinnableApp): Promise<WireRecord> {
-  let preview_url: string | null = null;
-  try {
-    const urlData = (await platform.getPreviewUrl(app.id)) as { preview_url?: string } | null;
-    if (urlData?.preview_url) preview_url = `https://${urlData.preview_url}/`;
-  } catch {
-    // The preview host can lag a fresh deploy; a null url still renders.
+export async function addAppToMyWidgets(app: PinnableApp, url?: string | null): Promise<WireRecord> {
+  let preview_url: string | null = url ?? null;
+  if (!preview_url) {
+    try {
+      const urlData = (await platform.getPreviewUrl(app.id)) as { preview_url?: string } | null;
+      if (urlData?.preview_url) preview_url = `https://${urlData.preview_url}/`;
+    } catch {
+      // The preview host can lag a fresh deploy; a null url still renders.
+    }
   }
 
   const widget = await Widget.create({

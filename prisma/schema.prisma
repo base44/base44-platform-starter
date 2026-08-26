@@ -48,6 +48,15 @@ enum ItemPriority {
   critical
 }
 
+/// A listing is only discoverable while `published`. `delisted` is kept rather than
+/// deleted so anyone already running the app keeps resolving its snapshot URL —
+/// pulling a listing is a decision about discovery, not a way to break its users.
+enum ListingStatus {
+  draft
+  published
+  delisted
+}
+
 enum Base44LinkStatus {
   pending
   linked
@@ -221,4 +230,53 @@ model Base44Link {
 
   @@index([createdBy])
   @@map("base44_links")
+}
+
+
+/// An app its author has offered to other Sunny users.
+///
+/// **The one model whose reads are not owner-scoped.** A published listing is public
+/// by intent — that is what a market is — so `listPublished()` queries it without
+/// `scopedWhere`. Writes stay owner-only. CLAUDE.md calls hand-enforced RLS the
+/// biggest correctness risk here, so treat this as a documented carve-out, not a
+/// precedent: `src/lib/marketplace.ts` is the only module that touches the model and
+/// the only place the exception lives.
+///
+/// There is no separate install record. On this shell a `Widget` row *is* the grant —
+/// pinning an app is what lets it read your data and unpinning revokes (see
+/// `/api/sunny/token`) — so the market installs by pinning and counts installs by
+/// counting rows. One concept, not two.
+///
+/// The `app*` fields are a **snapshot taken at publish time**, not a live lookup, and
+/// that is load-bearing: an installer's Base44 service principal cannot see another
+/// user's app in the shared workspace (docs/p5-base44-bridge.md), so at install or
+/// render time there is no way to ask the platform where the app lives. Publishing
+/// therefore requires a deployed app.
+model MarketplaceListing {
+  id String @id @default(cuid())
+
+  /// The Base44 app on offer. One listing per app.
+  appId String @unique @map("app_id")
+
+  title       String
+  tagline     String?
+  category    String?
+
+  /// Snapshot. `appUrl` is the resolved embed URL rather than something derived from
+  /// `appSlug` at render time, because the published host still rotates.
+  appSlug       String? @map("app_slug")
+  appUrl        String? @map("app_url")
+  screenshotUrl String? @map("screenshot_url")
+
+  status      ListingStatus @default(draft)
+  publishedAt DateTime?     @map("published_at")
+
+  /// The author. Writes are scoped to this; reads of a published row are not.
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([createdBy])
+  @@index([status])
+  @@map("marketplace_listings")
 }

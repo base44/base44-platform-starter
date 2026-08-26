@@ -1,0 +1,26 @@
+/* Shared chrome for the demo market apps. A real app would ship its own. */
+:root { color-scheme: light dark; }
+* { box-sizing: border-box; }
+body { font: 13px/1.5 ui-sans-serif, system-ui, sans-serif; margin: 0; padding: 16px;
+       background: Canvas; color: CanvasText; }
+h1 { font-size: 15px; margin: 0 0 2px; }
+.sub { font-size: 12px; opacity: .6; margin: 0 0 14px; }
+.err { color: #a33; font-size: 12px; margin: 10px 0 0; }
+.empty { opacity: .55; font-size: 12px; padding: 18px 0; text-align: center; }
+ul { list-style: none; margin: 0; padding: 0; }
+li { padding: 7px 0; border-top: 1px solid color-mix(in oklab, CanvasText 12%, transparent);
+     display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.n { opacity: .55; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.big { font-size: 28px; font-weight: 600; letter-spacing: -.02em; }
+.row { display: flex; gap: 8px; align-items: center; }
+input, select, button { font: inherit; padding: 6px 9px; border-radius: 7px;
+  border: 1px solid color-mix(in oklab, CanvasText 22%, transparent);
+  background: Canvas; color: CanvasText; }
+input { flex: 1; min-width: 0; }
+button { cursor: pointer; font-weight: 500; }
+button.primary { background: #0073EA; border-color: #0073EA; color: #fff; }
+button:disabled { opacity: .5; cursor: default; }
+.pills { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.pill { font-size: 11px; padding: 2px 8px; border-radius: 99px;
+        background: color-mix(in oklab, CanvasText 8%, transparent); }
+.ok { color: #16794a; }

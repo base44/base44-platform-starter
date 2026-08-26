@@ -11,7 +11,8 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatDistanceToNow } from "date-fns";
-import { Loader2, Plus, Check, Search, Sparkles } from "lucide-react";
+import Link from "next/link";
+import { Loader2, Plus, Check, Search, Sparkles, Store } from "lucide-react";
 import * as platform from "@/lib/base44Platform";
 import { addAppToMyWidgets } from "@/lib/myWidgets";
 
@@ -86,16 +87,31 @@ export default function AddWidgetModal({
         <p className="text-sm text-muted-foreground -mt-2 mb-3">
           Pick one of your built apps to embed as a widget on the home page.
         </p>
-        <button
-          onClick={() => {
-            onClose();
-            onBuildNew?.();
-          }}
-          className="w-full flex items-center gap-3 px-3 py-2.5 min-h-[44px] border border-dashed border-border rounded-lg text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors mb-3"
-        >
-          <Sparkles className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
-          Build a new app with the Assistant
-        </button>
+        {/*
+          Two ways to get an app that is not in the list below. Installing from the
+          market pins it on the spot — the pin *is* the install — so there is nothing
+          to come back here for afterwards.
+        */}
+        <div className="grid grid-cols-2 gap-2 mb-3">
+          <button
+            onClick={() => {
+              onClose();
+              onBuildNew?.();
+            }}
+            className="flex items-center gap-2 px-3 py-2.5 min-h-[44px] border border-dashed border-border rounded-lg text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
+          >
+            <Sparkles className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+            Build one
+          </button>
+          <Link
+            href="/Marketplace"
+            onClick={onClose}
+            className="flex items-center gap-2 px-3 py-2.5 min-h-[44px] border border-dashed border-border rounded-lg text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
+          >
+            <Store className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+            Browse the market
+          </Link>
+        </div>
 
         {apps.length > SEARCH_THRESHOLD && (
           <div className="relative mb-3">

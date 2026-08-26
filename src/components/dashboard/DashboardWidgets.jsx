@@ -136,8 +136,13 @@ function WidgetFrame({ widget, onRemove, onUpdate, onExpand, deployedAt, metaRea
   // Points at the deployed build: served statically, never asleep. The sandbox
   // preview boots on demand and answers with an error payload while it starts —
   // which a frame renders as raw JSON — so it is only the never-deployed fallback.
+  // A slug means "a Base44 app this viewer can address by convention". An app
+  // installed from the market is exactly what that is not — it belongs to someone
+  // else, and an installer's principal cannot resolve it — so it is pinned with no
+  // slug and carries its listing's snapshot URL instead. Deriving a host from an app
+  // id here is how you get Base44 answering "App not found" inside the frame.
   const baseUrl = !widget.app_slug
-    ? null
+    ? widget.preview_url || null
     : deployedAt
       ? platform.publishedUrl(widget.app_slug)
       : platform.previewUrl(widget.app_slug);

@@ -117,6 +117,7 @@ const navigationItems = [
   { title: "Calendar" },
   { title: "Analytics", url: createPageUrl("Analytics") },
   { title: "My Tools", url: "/MyTools" },
+  { title: "Market", url: "/Marketplace" },
 ];
 
 const NAV_ITEM_CLASS =
