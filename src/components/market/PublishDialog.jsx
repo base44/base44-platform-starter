@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import * as platform from "@/lib/base44Platform";
+import { announceMarketChanged } from "@/lib/marketEvents";
 
 /**
  * Offer an app to everyone else in Sunny.
@@ -39,6 +40,10 @@ export default function PublishDialog({ app, onClose, onDone }) {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || `Publish failed (${res.status})`);
+      // Announced here rather than in each caller: the builder publishes from a panel
+      // over the market, so the surface that needs to know is one nobody is thinking
+      // about at the call site.
+      announceMarketChanged();
       onDone();
     } catch (err) {
       setError(err.message);

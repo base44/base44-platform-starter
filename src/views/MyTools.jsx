@@ -15,12 +15,13 @@
  * app). The frames load without a token — built apps are `public_without_login` — and
  * then ask for one to read data.
  */
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import * as platform from "@/lib/base44Platform";
 import { useAppFrameAuth } from "@/lib/appFrameAuth";
 import { useAppRebuildNonce, withNonce } from "@/lib/appRefresh";
 import { listUsableApps } from "@/lib/usableApps";
 import PublishDialog from "@/components/market/PublishDialog";
+import { useMarketChanges } from "@/lib/marketEvents";
 import { Loader2, ArrowLeft, ExternalLink, Pencil, Store, Hammer } from "lucide-react";
 
 export default function MyTools() {
@@ -30,6 +31,25 @@ export default function MyTools() {
   const [selectedApp, setSelectedApp] = useState(null);
   const [publishing, setPublishing] = useState(null);
   const [source, setSource] = useState("all");
+
+  /** Which of these are already listed, so a card can say "In market". */
+  const refreshPublished = useCallback(async () => {
+    try {
+      const res = await fetch("/api/marketplace", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "mine" }),
+      });
+      if (!res.ok) return;
+      const { listings = [] } = await res.json();
+      setPublished(new Set(listings.filter((l) => l.status === "published").map((l) => l.app_id)));
+    } catch {
+      // A card that does not know it is listed still works; it just offers Publish.
+    }
+  }, []);
+
+  // Publishing can happen from the builder panel or the market page, not only here.
+  useMarketChanges(refreshPublished);
   const [published, setPublished] = useState(new Set());
   const frameRef = useRef(null);
 
@@ -49,19 +69,7 @@ export default function MyTools() {
         const list = await listUsableApps();
         setApps(list);
 
-        // Which of these are already in the market, so the card can say so.
-        fetch("/api/marketplace", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ action: "mine" }),
-        })
-          .then((r) => (r.ok ? r.json() : null))
-          .then((j) =>
-            setPublished(
-              new Set((j?.listings ?? []).filter((l) => l.status === "published").map((l) => l.app_id)),
-            ),
-          )
-          .catch(() => {});
+        void refreshPublished();
         // Auto-select app from ?app= query param
         const appId = new URLSearchParams(window.location.search).get("app");
         if (appId) {
@@ -74,7 +82,8 @@ export default function MyTools() {
         setIsLoading(false);
       }
     })();
-  }, []);
+    // refreshPublished is a stable useCallback, so this still runs once.
+  }, [refreshPublished]);
 
   const builtCount = apps.filter((a) => a.source === "built").length;
   const marketCount = apps.length - builtCount;

@@ -71,7 +71,15 @@ export default function AppReadyWidget({
           {isLoadingPreview ? "Opening…" : "Preview"}
         </button>
 
-        {offerMarket && !isAddedToMarket ? (
+        {isAddedToMarket ? (
+          // Confirm the destination that was actually chosen. Sending someone to Apps
+          // after they put the app in the market answers a question they did not ask.
+          <Link href="/Marketplace" onClick={onNavigate} className={done}>
+            <Check className="w-3.5 h-3.5" />
+            In the market — view it
+            <ArrowRight className="w-3.5 h-3.5 ml-auto" />
+          </Link>
+        ) : offerMarket ? (
           <button onClick={onAddToMarket} disabled={busy} className={primary}>
             {isAddingToMarket ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />

@@ -139,6 +139,26 @@ not of each row, and a badge repeated down eight rows says the same thing eight 
 Installed goes first because it is the shorter list and the newer idea: a picker that
 opens on thirteen of your own apps buries the two you just installed.
 
+## The market refreshes itself
+
+The builder is a side panel over whatever page you were on, so you can publish an app
+from the chat while looking straight at the market grid behind it — and the grid has no
+reason to refetch. The only fix was a manual reload, which reads as "it didn't work".
+
+`src/lib/marketEvents.ts` is a `market-changed` window event, the same shape as the
+`widgets-updated` and `app-rebuilt` events this codebase already uses to coordinate
+across surfaces. It is announced from **`PublishDialog`** rather than from each caller:
+the builder, the Apps page and the market page all publish through that one component,
+so a new caller gets the refresh for free instead of having to remember. Install and
+uninstall announce it too.
+
+The Apps page listens as well, so a card's *In market* marker is right without a
+reload.
+
+Related, and the same mistake in miniature: after listing an app the ready card used to
+say *"Published — view in Apps"*, confirming a destination the user had not chosen. It
+now says *"In the market — view it"*.
+
 ## Where you meet it
 
 | | |

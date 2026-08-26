@@ -5,6 +5,7 @@ import { Loader2, Search, Check, Trash2, ArrowLeft, ShieldCheck, Sparkles, Store
 import { addAppToMyWidgets } from "@/lib/myWidgets";
 import { useAppFrameAuth } from "@/lib/appFrameAuth";
 import { listUsableApps } from "@/lib/usableApps";
+import { announceMarketChanged, useMarketChanges } from "@/lib/marketEvents";
 import PublishDialog from "@/components/market/PublishDialog";
 
 /**
@@ -288,6 +289,10 @@ export default function Marketplace() {
     load(tab);
   }, [tab, load]);
 
+  // Publishing from the builder happens in a panel over this page, so the grid has to
+  // be told; nothing about the click that caused it happened here.
+  useMarketChanges(() => load(tab));
+
   /** The grant, and nothing else. Where it shows up is a separate choice. */
   const install = async () => {
     const listing = installing;
@@ -298,7 +303,8 @@ export default function Marketplace() {
         app_id: listing.app_id,
         app_name: listing.title,
       });
-      setNotice(`${listing.title} is installed. Find it in My Tools.`);
+      announceMarketChanged();
+      setNotice(`${listing.title} is installed. Find it in Apps.`);
       await load(tab);
     } catch (err) {
       setError(err.message);
@@ -314,6 +320,7 @@ export default function Marketplace() {
     try {
       await post("/api/installs", { action: "uninstall", app_id: listing.app_id });
       window.dispatchEvent(new CustomEvent("widgets-updated"));
+      announceMarketChanged();
       setNotice(`${listing.title} uninstalled. It can no longer read your boards.`);
       await load(tab);
     } catch (err) {
@@ -343,6 +350,7 @@ export default function Marketplace() {
   const unpublish = async (listing) => {
     try {
       await post("/api/marketplace", { action: "unpublish", app_id: listing.app_id });
+      announceMarketChanged();
       await load(tab);
     } catch (err) {
       setError(err.message);
