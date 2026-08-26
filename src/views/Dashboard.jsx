@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Board, Item, Team, Widget, me } from "@/lib/entityClient";
-import { Plus, Users } from "lucide-react";
+import Link from "next/link";
+import { Plus, Users, Gauge, ArrowRight } from "lucide-react";
+import { createPageUrl } from "@/utils";
 
 import RecentBoards from "../components/dashboard/RecentBoards";
 import TaskStats from "../components/dashboard/TaskStats";
@@ -185,12 +187,29 @@ export default function Dashboard() {
       <div className="mx-auto max-w-[1400px] px-4 sm:px-6 py-6 md:py-8 space-y-6">
         {team && <TeamBanner team={team} onEdit={() => setShowTeamModal(true)} />}
 
-        <TaskStats
-          buckets={stats.buckets}
-          selected={filter}
-          onSelect={setFilter}
-          isLoading={isLoading}
-        />
+        {/* The stats row was the one section without a heading, and Analytics is the
+            same numbers with history behind them — so the link belongs on it, in the
+            shape every other section here already uses. */}
+        <div>
+          <div className="flex items-center justify-between mb-3 h-6">
+            <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <Gauge className="w-4 h-4 text-muted-foreground" aria-hidden="true" />
+              Where things stand
+            </h2>
+            <Link
+              href={createPageUrl("Analytics")}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+            >
+              Analytics <ArrowRight className="w-3 h-3" aria-hidden="true" />
+            </Link>
+          </div>
+          <TaskStats
+            buckets={stats.buckets}
+            selected={filter}
+            onSelect={setFilter}
+            isLoading={isLoading}
+          />
+        </div>
 
         <div className="grid lg:grid-cols-3 gap-6 items-start">
           <div className="lg:col-span-2">

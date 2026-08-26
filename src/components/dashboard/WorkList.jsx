@@ -17,7 +17,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { formatDistanceToNow, isToday, isPast } from "date-fns";
-import { ChevronDown, Inbox } from "lucide-react";
+import { ChevronDown, Inbox, CalendarDays } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -125,11 +125,23 @@ export default function WorkList({ items, boardsById, isLoading, filter, onStatu
           <Inbox className="w-4 h-4 text-muted-foreground" aria-hidden="true" />
           {filter ? "Filtered tasks" : "Pick up where you left off"}
         </h2>
-        {items.length > LIMIT && (
-          <span className="text-xs text-muted-foreground">
-            showing {LIMIT} of {items.length}
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          {items.length > LIMIT && (
+            <span className="text-xs text-muted-foreground">
+              showing {LIMIT} of {items.length}
+            </span>
+          )}
+          {/* The calendar is these same tasks arranged by date, so it belongs next to
+              them rather than in the header. Someone scanning due dates finds it
+              without having gone looking. */}
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent("open-calendar"))}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <CalendarDays className="w-3.5 h-3.5" aria-hidden="true" />
+            Calendar
+          </button>
+        </div>
       </div>
 
       <div className="bg-card border border-border rounded-lg shadow-sm overflow-hidden">

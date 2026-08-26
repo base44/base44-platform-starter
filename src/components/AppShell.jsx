@@ -105,17 +105,23 @@ function AccountMenu() {
 }
 
 /**
- * `Calendar` has no url because it is still an overlay rather than a route. It
- * belongs here anyway: it is a view of the whole workspace's due dates, and its
- * only entry point used to be one tile in a Quick actions block on the home
- * page — so nobody who did not already know about it would ever find it. Being
- * shell-level is also why the modal is mounted here and not on the dashboard.
+ * Four items, because the header should hold the places you go, not everything you
+ * can reach.
+ *
+ * Calendar and Analytics came out of it and now sit beside the content they are about:
+ * Calendar in the header of the dated-work list, Analytics on the stats row that is
+ * already a summary of the same numbers. Both were once buried in a Quick actions
+ * block, which is why they were promoted here in the first place — the fix for that
+ * was never the nav, it was putting them somewhere they make sense. A calendar link
+ * next to a list of due dates is found by someone who was not looking for it.
+ *
+ * The calendar modal stays mounted at shell level, since it is a view of the whole
+ * workspace rather than of the dashboard. It is opened by an `open-calendar` window
+ * event, the same way the builder panel is opened from anywhere.
  */
 const navigationItems = [
   { title: "Home", url: createPageUrl("Dashboard") },
   { title: "Boards", url: createPageUrl("Boards") },
-  { title: "Calendar" },
-  { title: "Analytics", url: createPageUrl("Analytics") },
   { title: "Apps", url: "/MyTools" },
   { title: "Market", url: "/Marketplace" },
 ];
@@ -127,6 +133,12 @@ export default function AppShell({ children }) {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
+
+  useEffect(() => {
+    const open = () => setCalendarOpen(true);
+    window.addEventListener("open-calendar", open);
+    return () => window.removeEventListener("open-calendar", open);
+  }, []);
   // Always false on the server and on the first client render: reading storage
   // during render would make the two disagree and hydration would tear.
   const [builderOpen, setBuilderOpen] = useState(false);
@@ -194,29 +206,19 @@ export default function AppShell({ children }) {
             </Link>
 
             <div className="hidden md:flex items-center gap-1 flex-1 flex-nowrap overflow-hidden">
-              {navigationItems.map((item) =>
-                item.url ? (
-                  <Link
-                    key={item.title}
-                    href={item.url}
-                    className={`${NAV_ITEM_CLASS} ${
-                      isActive(item.url)
-                        ? "text-primary font-semibold bg-primary/10"
-                        : "text-muted-foreground hover:text-foreground hover:bg-secondary"
-                    }`}
-                  >
-                    {item.title}
-                  </Link>
-                ) : (
-                  <button
-                    key={item.title}
-                    onClick={() => setCalendarOpen(true)}
-                    className={`${NAV_ITEM_CLASS} text-muted-foreground hover:text-foreground hover:bg-secondary`}
-                  >
-                    {item.title}
-                  </button>
-                ),
-              )}
+              {navigationItems.map((item) => (
+                <Link
+                  key={item.title}
+                  href={item.url}
+                  className={`${NAV_ITEM_CLASS} ${
+                    isActive(item.url)
+                      ? "text-primary font-semibold bg-primary/10"
+                      : "text-muted-foreground hover:text-foreground hover:bg-secondary"
+                  }`}
+                >
+                  {item.title}
+                </Link>
+              ))}
             </div>
 
             <div className="hidden md:flex items-center gap-3 ml-auto justify-end flex-1">
@@ -260,33 +262,20 @@ export default function AppShell({ children }) {
         {mobileMenuOpen && (
           <div className="md:hidden border-t border-border bg-card">
             <div className="px-4 sm:px-6 py-3 space-y-1">
-              {navigationItems.map((item) =>
-                item.url ? (
-                  <Link
-                    key={item.title}
-                    href={item.url}
-                    onClick={() => setMobileMenuOpen(false)}
-                    className={`block px-3 py-2 min-h-[40px] rounded-md text-sm transition-colors ${
-                      isActive(item.url)
-                        ? "text-primary font-semibold bg-primary/10"
-                        : "text-muted-foreground hover:text-foreground hover:bg-secondary"
-                    }`}
-                  >
-                    {item.title}
-                  </Link>
-                ) : (
-                  <button
-                    key={item.title}
-                    onClick={() => {
-                      setMobileMenuOpen(false);
-                      setCalendarOpen(true);
-                    }}
-                    className="block w-full text-left px-3 py-2 min-h-[40px] rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-                  >
-                    {item.title}
-                  </button>
-                ),
-              )}
+              {navigationItems.map((item) => (
+                <Link
+                  key={item.title}
+                  href={item.url}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={`block px-3 py-2 min-h-[40px] rounded-md text-sm transition-colors ${
+                    isActive(item.url)
+                      ? "text-primary font-semibold bg-primary/10"
+                      : "text-muted-foreground hover:text-foreground hover:bg-secondary"
+                  }`}
+                >
+                  {item.title}
+                </Link>
+              ))}
             </div>
           </div>
         )}
