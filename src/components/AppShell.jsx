@@ -103,15 +103,24 @@ export default function AppShell({ children }) {
   // never on whatever a previous caller asked for.
   const openAssistant = () => {
     setBuilderInitialMode(null);
+    setBuilderOrigin(null);
+    setBuilderRequest((n) => n + 1);
     setBuilderOpen(true);
   };
   const [builderInitialAppId, setBuilderInitialAppId] = useState(null);
+  // "home-widget" means the user started in the Add-widget picker.
+  const [builderOrigin, setBuilderOrigin] = useState(null);
+  // Counts requests, not their contents: two identical requests set the same
+  // values, React bails out of the re-render, and the second is never heard.
+  const [builderRequest, setBuilderRequest] = useState(0);
 
   useEffect(() => {
     const handler = (e) => {
       const detail = e.detail;
       setBuilderInitialMode(detail?.mode || null);
       setBuilderInitialAppId(detail?.appId || null);
+      setBuilderOrigin(detail?.origin || null);
+      setBuilderRequest((n) => n + 1);
       setBuilderOpen(true);
     };
     window.addEventListener("open-assistant", handler);
@@ -209,6 +218,8 @@ export default function AppShell({ children }) {
         onClose={() => setBuilderOpen(false)}
         initialMode={builderInitialMode}
         initialAppId={builderInitialAppId}
+        origin={builderOrigin}
+        requestId={builderRequest}
       />
     </div>
   );
