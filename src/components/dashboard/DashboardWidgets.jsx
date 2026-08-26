@@ -9,16 +9,14 @@
  * with one scoped to the current viewer. That is what makes an installed app read the
  * installer's data rather than its author's.
  *
- * That same handshake is the only honest signal this page has about what a widget is
- * showing. Two widgets can sit side by side, look identical, and one of them be
- * rendering invented sample rows — which is exactly what a user cannot afford to
- * mistake for their own work. An app that never asks for a viewer token is not
- * reading their data, and the header says so.
+ * When that handshake is refused the header says so, since an app denied its token
+ * may otherwise fail quietly. Nothing is claimed in the other direction: see
+ * `AccessDenied` for why "not reading your data" is not a thing this page knows.
  */
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import { Widget } from "@/lib/entityClient";
 import { useAppFrameAuth } from "@/lib/appFrameAuth";
-import { X, Loader2, LayoutGrid, Maximize, Pencil, Plug, PlugZap } from "lucide-react";
+import { X, Loader2, LayoutGrid, Maximize, Pencil, PlugZap } from "lucide-react";
 import * as platform from "@/lib/base44Platform";
 import AppPreviewModal from "@/components/AppPreviewModal";
 import { useAppRebuildNonce, withNonce, APP_REBUILT } from "@/lib/appRefresh";
@@ -57,38 +55,54 @@ function pinHeight(widgetId) {
 const WIDTH_SNAP_PX = 140;
 
 /**
- * Says whether this widget is reading the viewer's Sunny data, on the evidence of
- * whether it ever asked for a viewer token. Stays quiet while the frame is still
- * loading — an app that has not booted has not asked yet, and flashing "sample
- * data" at every widget on every page load would be worse than saying nothing.
+ * Shown only when the app asked Sunny for a viewer token and Sunny refused —
+ * an observed failure, not a guess about what the frame is rendering.
+ *
+ * There is deliberately no counterpart for "this widget is not reading your
+ * data". Whether an app has asked yet is not evidence that it never will: one
+ * that fetches on a click, or on a tab switch, has asked nothing at load. And
+ * plenty of useful widgets — a calculator, a scratchpad, a chart of something
+ * external — read no Sunny data by design and are not mislabelled lightly.
  */
-function DataBadge({ state, ready }) {
-  if (!ready) return null;
-
-  if (state === "granted") {
-    return (
-      <span
-        title="This widget is reading your Sunny boards."
-        className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 bg-primary/10 text-primary"
-      >
-        <PlugZap className="w-3 h-3" aria-hidden="true" />
-        Your data
-      </span>
-    );
-  }
-
+function AccessDenied() {
   return (
     <span
-      title={
-        state === "denied"
-          ? "This widget asked for your data and was refused."
-          : "This widget never asked for your Sunny data, so anything it shows is its own — often sample rows."
-      }
-      className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 bg-muted text-muted-foreground"
+      title="This widget asked for your Sunny data and was refused."
+      className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 bg-destructive/10 text-destructive"
     >
-      <Plug className="w-3 h-3" aria-hidden="true" />
-      {state === "denied" ? "No access" : "Sample data"}
+      <PlugZap className="w-3 h-3" aria-hidden="true" />
+      No access
     </span>
+  );
+}
+
+/**
+ * Why there is no frame. These are different failures and the old copy — "This
+ * app hasn't been built yet. Build it from the Assistant" — claimed the first
+ * for both. An app with a slug *is* built; if there is still no url, the shell
+ * has no app host to put it on, and telling the user to rebuild a working app
+ * sends them to do work that cannot help. A missing env var after a deploy would
+ * otherwise look, to every user at once, like their apps had un-built themselves.
+ */
+function NoFrame({ reason }) {
+  return (
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center px-4">
+      {reason === "unbuilt" ? (
+        <>
+          <p className="text-xs text-muted-foreground">This app hasn't been built yet.</p>
+          <p className="text-xs text-muted-foreground">
+            Build it from the Assistant to embed it here.
+          </p>
+        </>
+      ) : (
+        <>
+          <p className="text-xs text-muted-foreground">App previews aren't configured here.</p>
+          <p className="text-xs text-muted-foreground">
+            The app is fine — this Sunny has no <code>NEXT_PUBLIC_BASE44_APP_HOST</code> set.
+          </p>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -99,8 +113,8 @@ function WidgetFrame({ widget, onRemove, onUpdate, onExpand, deployedAt, metaRea
   // Also gates the shield below: a drag crossing the iframe would otherwise hand
   // the mouse to the frame and stop the resize dead.
   const [resizing, setResizing] = useState(null);
-  // "idle" until the embedded app asks for a viewer token; see useAppFrameAuth.
-  const [authState, setAuthState] = useState("idle");
+  // Set only if the app asked for a viewer token and was refused.
+  const [authDenied, setAuthDenied] = useState(false);
   const dragRef = useRef(null);
   const frameRef = useRef(null);
   const cardRef = useRef(null);
@@ -129,7 +143,7 @@ function WidgetFrame({ widget, onRemove, onUpdate, onExpand, deployedAt, metaRea
       : platform.previewUrl(widget.app_slug);
   const rebuildNonce = useAppRebuildNonce(widget.app_id);
   const url = withNonce(baseUrl, rebuildNonce);
-  useAppFrameAuth(frameRef, widget.app_id, url, setAuthState);
+  useAppFrameAuth(frameRef, widget.app_id, url, (state) => setAuthDenied(state === "denied"));
 
   // Grow to fit whatever the app says it needs, unless this widget was sized by
   // hand. Persisted so the height survives a reload instead of snapping back to
@@ -145,23 +159,6 @@ function WidgetFrame({ widget, onRemove, onUpdate, onExpand, deployedAt, metaRea
       return next;
     });
   }, [reportedHeight, widget.id, onUpdate]);
-
-  // An app asks for its token after it boots, so "idle" right after load means
-  // "not yet", not "never". Give it a beat before labelling the widget, or every
-  // widget on the page flashes "Sample data" on the way to the truth.
-  const [badgeReady, setBadgeReady] = useState(false);
-  useEffect(() => {
-    if (loading) {
-      setBadgeReady(false);
-      return;
-    }
-    if (authState !== "idle") {
-      setBadgeReady(true);
-      return;
-    }
-    const timer = setTimeout(() => setBadgeReady(true), 2500);
-    return () => clearTimeout(timer);
-  }, [loading, authState]);
 
   // Land the eye on a widget that was just added or restored.
   useEffect(() => {
@@ -230,7 +227,7 @@ function WidgetFrame({ widget, onRemove, onUpdate, onExpand, deployedAt, metaRea
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border flex-shrink-0">
         <p className="text-xs font-medium text-foreground truncate">{widget.app_name}</p>
-        <DataBadge state={authState} ready={badgeReady} />
+        {authDenied && <AccessDenied />}
         <div className="flex items-center gap-0.5 flex-shrink-0 ml-auto">
           {widget.app_id && (
             <button
@@ -277,12 +274,7 @@ function WidgetFrame({ widget, onRemove, onUpdate, onExpand, deployedAt, metaRea
             <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
           </div>
         ) : !url ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center px-4">
-            <p className="text-xs text-muted-foreground">This app hasn't been built yet.</p>
-            <p className="text-xs text-muted-foreground">
-              Build it from the Assistant to embed it here.
-            </p>
-          </div>
+          <NoFrame reason={widget.app_slug ? "unconfigured" : "unbuilt"} />
         ) : (
           <>
             {loading && (
