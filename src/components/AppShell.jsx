@@ -30,6 +30,7 @@ import { signOut, useSession } from "next-auth/react";
 import { LogOut, Menu as MenuIcon, Sparkles, X } from "lucide-react";
 
 import AppBuilderSidebar from "@/components/AppBuilderSidebar";
+import CalendarModal from "@/components/dashboard/CalendarModal";
 import SunnyLogo from "@/components/SunnyLogo";
 import {
   DropdownMenu,
@@ -103,16 +104,28 @@ function AccountMenu() {
   );
 }
 
+/**
+ * `Calendar` has no url because it is still an overlay rather than a route. It
+ * belongs here anyway: it is a view of the whole workspace's due dates, and its
+ * only entry point used to be one tile in a Quick actions block on the home
+ * page — so nobody who did not already know about it would ever find it. Being
+ * shell-level is also why the modal is mounted here and not on the dashboard.
+ */
 const navigationItems = [
   { title: "Home", url: createPageUrl("Dashboard") },
   { title: "Boards", url: createPageUrl("Boards") },
+  { title: "Calendar" },
   { title: "Analytics", url: createPageUrl("Analytics") },
   { title: "My Tools", url: "/MyTools" },
 ];
 
+const NAV_ITEM_CLASS =
+  "px-3 py-1.5 rounded-md text-sm transition-colors whitespace-nowrap cursor-pointer";
+
 export default function AppShell({ children }) {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
   // Always false on the server and on the first client render: reading storage
   // during render would make the two disagree and hydration would tear.
   const [builderOpen, setBuilderOpen] = useState(false);
@@ -180,19 +193,29 @@ export default function AppShell({ children }) {
             </Link>
 
             <div className="hidden md:flex items-center gap-1 flex-1 flex-nowrap overflow-hidden">
-              {navigationItems.map((item) => (
-                <Link
-                  key={item.title}
-                  href={item.url}
-                  className={`px-3 py-1.5 rounded-md text-sm transition-colors whitespace-nowrap ${
-                    isActive(item.url)
-                      ? "text-primary font-semibold bg-primary/10"
-                      : "text-muted-foreground hover:text-foreground hover:bg-secondary"
-                  }`}
-                >
-                  {item.title}
-                </Link>
-              ))}
+              {navigationItems.map((item) =>
+                item.url ? (
+                  <Link
+                    key={item.title}
+                    href={item.url}
+                    className={`${NAV_ITEM_CLASS} ${
+                      isActive(item.url)
+                        ? "text-primary font-semibold bg-primary/10"
+                        : "text-muted-foreground hover:text-foreground hover:bg-secondary"
+                    }`}
+                  >
+                    {item.title}
+                  </Link>
+                ) : (
+                  <button
+                    key={item.title}
+                    onClick={() => setCalendarOpen(true)}
+                    className={`${NAV_ITEM_CLASS} text-muted-foreground hover:text-foreground hover:bg-secondary`}
+                  >
+                    {item.title}
+                  </button>
+                ),
+              )}
             </div>
 
             <div className="hidden md:flex items-center gap-3 ml-auto justify-end flex-1">
@@ -236,26 +259,41 @@ export default function AppShell({ children }) {
         {mobileMenuOpen && (
           <div className="md:hidden border-t border-border bg-card">
             <div className="px-4 sm:px-6 py-3 space-y-1">
-              {navigationItems.map((item) => (
-                <Link
-                  key={item.title}
-                  href={item.url}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className={`block px-3 py-2 rounded-md text-sm transition-colors ${
-                    isActive(item.url)
-                      ? "text-primary font-semibold bg-primary/10"
-                      : "text-muted-foreground hover:text-foreground hover:bg-secondary"
-                  }`}
-                >
-                  {item.title}
-                </Link>
-              ))}
+              {navigationItems.map((item) =>
+                item.url ? (
+                  <Link
+                    key={item.title}
+                    href={item.url}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={`block px-3 py-2 min-h-[40px] rounded-md text-sm transition-colors ${
+                      isActive(item.url)
+                        ? "text-primary font-semibold bg-primary/10"
+                        : "text-muted-foreground hover:text-foreground hover:bg-secondary"
+                    }`}
+                  >
+                    {item.title}
+                  </Link>
+                ) : (
+                  <button
+                    key={item.title}
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      setCalendarOpen(true);
+                    }}
+                    className="block w-full text-left px-3 py-2 min-h-[40px] rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                  >
+                    {item.title}
+                  </button>
+                ),
+              )}
             </div>
           </div>
         )}
       </nav>
 
       <main className="flex-1 overflow-y-auto overflow-x-hidden">{children}</main>
+
+      <CalendarModal isOpen={calendarOpen} onClose={() => setCalendarOpen(false)} />
 
       <AppBuilderSidebar
         open={builderOpen}

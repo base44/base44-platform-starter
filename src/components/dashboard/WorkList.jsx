@@ -7,13 +7,17 @@
  * editable inline here, against the board's own status column, so the common
  * case — mark the thing you just did as done — never costs a page load.
  *
- * The two actions that are genuinely not in the nav (Build a tool, Calendar)
- * survive as a footer strip.
+ * It carries no action strip of its own. "Build a tool" sat in this card's footer
+ * only because removing Quick actions would otherwise have dropped an entry
+ * point — a bad reason: a tool built from here appears in My Widgets far below,
+ * so the affordance promised something the card it lived in could not deliver.
+ * The Assistant button in the nav and "+ Add widget" both already lead there.
+ * Calendar is a view of the workspace, so it moved to the nav.
  */
 import React, { useState } from "react";
 import Link from "next/link";
 import { formatDistanceToNow, isToday, isPast } from "date-fns";
-import { Calendar, ChevronDown, Inbox, Sparkles } from "lucide-react";
+import { ChevronDown, Inbox } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,7 +26,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { createPageUrl } from "@/utils";
-import { columnOfType, dueDateOf, statusOf } from "@/lib/taskStats";
+import { columnOfType, dueDateOf, isDone, statusOf } from "@/lib/taskStats";
 
 const FALLBACK_CHOICES = [
   { label: "Not Started", color: "#C4C4C4" },
@@ -41,12 +45,18 @@ const EMPTY_COPY = {
 
 const LIMIT = 6;
 
-function DueLabel({ due }) {
+/**
+ * `done` matters: a finished task with a date in the past is not overdue, and the
+ * stat cards already exclude it. Without this the counts and the rows disagree —
+ * "Overdue: 2" above three rows each labelled Overdue.
+ */
+function DueLabel({ due, done }) {
   if (!due) return null;
-  const overdue = isPast(due) && !isToday(due);
+  const overdue = !done && isPast(due) && !isToday(due);
+  const prefix = overdue ? "Overdue · " : isToday(due) ? "Due today · " : "Due ";
   return (
     <span className={`text-xs ${overdue ? "text-destructive" : "text-muted-foreground"}`}>
-      {overdue ? "Overdue · " : isToday(due) ? "Due today · " : "Due "}
+      {prefix}
       {formatDistanceToNow(due, { addSuffix: true })}
     </span>
   );
@@ -105,14 +115,7 @@ function StatusPicker({ item, board, onChange }) {
   );
 }
 
-export default function WorkList({
-  items,
-  boardsById,
-  isLoading,
-  filter,
-  onStatusChange,
-  onOpenCalendar,
-}) {
+export default function WorkList({ items, boardsById, isLoading, filter, onStatusChange }) {
   const visible = items.slice(0, LIMIT);
 
   return (
@@ -147,6 +150,7 @@ export default function WorkList({
             {visible.map((item) => {
               const board = boardsById.get(item.board_id);
               const due = dueDateOf(item, board);
+              const done = isDone(item, board);
               return (
                 <li key={item.id} className="flex items-center gap-3 px-4 py-2.5">
                   <div className="flex-1 min-w-0">
@@ -161,7 +165,7 @@ export default function WorkList({
                         {board?.title || "Unknown board"}
                       </span>
                       {due && <span className="w-1 h-1 rounded-full bg-border" />}
-                      <DueLabel due={due} />
+                      <DueLabel due={due} done={done} />
                     </div>
                   </div>
                   <StatusPicker item={item} board={board} onChange={onStatusChange} />
@@ -171,24 +175,6 @@ export default function WorkList({
           </ul>
         )}
 
-        <div className="border-t border-border px-2 py-1.5 flex items-center gap-1">
-          <button
-            onClick={() =>
-              window.dispatchEvent(
-                new CustomEvent("open-assistant", { detail: { mode: "build" } }),
-              )
-            }
-            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground px-2 py-1.5 min-h-[36px] rounded hover:bg-secondary transition-colors"
-          >
-            <Sparkles className="w-3.5 h-3.5" aria-hidden="true" /> Build a tool
-          </button>
-          <button
-            onClick={onOpenCalendar}
-            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground px-2 py-1.5 min-h-[36px] rounded hover:bg-secondary transition-colors"
-          >
-            <Calendar className="w-3.5 h-3.5" aria-hidden="true" /> Calendar
-          </button>
-        </div>
       </div>
     </div>
   );

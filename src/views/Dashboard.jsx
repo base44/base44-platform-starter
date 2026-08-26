@@ -5,7 +5,6 @@ import { Plus, Users } from "lucide-react";
 import RecentBoards from "../components/dashboard/RecentBoards";
 import TaskStats from "../components/dashboard/TaskStats";
 import WorkList from "../components/dashboard/WorkList";
-import CalendarModal from "../components/dashboard/CalendarModal";
 import CreateBoardModal from "../components/boards/CreateBoardModal";
 import DashboardWidgets from "../components/dashboard/DashboardWidgets";
 import AddWidgetModal from "../components/dashboard/AddWidgetModal";
@@ -30,7 +29,6 @@ export default function Dashboard() {
   const [widgets, setWidgets] = useState([]);
   const [showAddWidget, setShowAddWidget] = useState(false);
   const [showCreateBoard, setShowCreateBoard] = useState(false);
-  const [showCalendar, setShowCalendar] = useState(false);
   const [team, setTeam] = useState(null);
   const [showTeamModal, setShowTeamModal] = useState(false);
   const [filter, setFilter] = useState(null);
@@ -201,7 +199,6 @@ export default function Dashboard() {
               isLoading={isLoading}
               filter={filter}
               onStatusChange={handleStatusChange}
-              onOpenCalendar={() => setShowCalendar(true)}
             />
           </div>
           <RecentBoards
@@ -233,8 +230,6 @@ export default function Dashboard() {
         onClose={() => setShowCreateBoard(false)}
         onSubmit={handleCreateBoard}
       />
-
-      <CalendarModal isOpen={showCalendar} onClose={() => setShowCalendar(false)} />
 
       <AddWidgetModal
         open={showAddWidget}

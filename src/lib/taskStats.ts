@@ -46,9 +46,21 @@ export function isDone(item: ItemLike, board: BoardLike | undefined): boolean {
   return status !== null && DONE_LABELS.has(status.trim().toLowerCase());
 }
 
+/** `<input type="date">` — which is what the board's date cell is — writes this. */
+const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
+
 export function dueDateOf(item: ItemLike, board: BoardLike | undefined): Date | null {
   const value = cellValue(item, columnOfType(board, "date"));
   if (typeof value !== "string" && typeof value !== "number") return null;
+
+  // `new Date("2026-08-26")` is UTC midnight by spec, which is the *previous*
+  // day anywhere west of UTC — so a task due today reads as overdue in New York.
+  // A bare date carries no timezone and means that day where the reader is.
+  if (typeof value === "string") {
+    const parts = DATE_ONLY.exec(value.trim());
+    if (parts) return new Date(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]));
+  }
+
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
 }
