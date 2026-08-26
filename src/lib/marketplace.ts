@@ -164,6 +164,19 @@ export async function listInstalled(actor: RlsActor): Promise<ListingCard[]> {
   return toCards(actor, rows);
 }
 
+/**
+ * Is this app on offer? Asked by `appInstall.install()`, which must not accept an
+ * arbitrary app id — an install is a grant, and you can only be granted what someone
+ * published. Lives here because this module owns the model.
+ */
+export async function isPublished(appId: string): Promise<boolean> {
+  const row = await prisma.marketplaceListing.findFirst({
+    where: { appId, status: "published" },
+    select: { id: true },
+  });
+  return Boolean(row);
+}
+
 async function ownsApp(actor: RlsActor, appId: string): Promise<boolean> {
   const row = await prisma.appOwnership.findFirst({
     where: { appId, ...ownerFields(actor) },
@@ -193,6 +206,25 @@ export async function publish(
 
   if (!(await ownsApp(actor, appId))) {
     throw new ListingError("You can only publish an app you built.", "not_the_author", 403);
+  }
+
+  /**
+   * Owning the app is not the same as owning its listing. `AppOwnership` is unique on
+   * `(appId, createdBy)`, so an app can have several owners — the old `resolveScope`
+   * handled exactly that — and the upsert below keys on `appId` alone. Without this a
+   * co-owner could overwrite someone else's listing, including its embed URL, while
+   * `createdBy` kept crediting the original author.
+   */
+  const existing = await prisma.marketplaceListing.findUnique({
+    where: { appId },
+    select: { createdBy: true },
+  });
+  if (existing && existing.createdBy !== ownerFields(actor).createdBy) {
+    throw new ListingError(
+      "Someone else already listed this app.",
+      "listed_by_another",
+      409,
+    );
   }
 
   const title = text(input.title, MAX_TITLE);

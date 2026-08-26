@@ -16,7 +16,6 @@
  * then ask for one to read data.
  */
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import * as platform from "@/lib/base44Platform";
 import { useAppFrameAuth } from "@/lib/appFrameAuth";
 import { useAppRebuildNonce, withNonce } from "@/lib/appRefresh";
 import { listUsableApps } from "@/lib/usableApps";

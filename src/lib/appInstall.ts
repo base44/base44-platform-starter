@@ -26,6 +26,7 @@
 
 import type { AppInstall } from "@prisma/client";
 
+import { isPublished } from "@/lib/marketplace";
 import { prisma } from "@/lib/prisma";
 import { ownerFields, type RlsActor } from "@/lib/rls";
 
@@ -70,13 +71,30 @@ export async function listInstalls(actor: RlsActor): Promise<AppInstall[]> {
   });
 }
 
-/** Idempotent: re-installing an app you already have is not an error. */
+/**
+ * Idempotent: re-installing an app you already have is not an error.
+ *
+ * Only an app that is actually on offer, or one you built. The id arrives from the
+ * request, so without this any string would create a grant — installs for apps that
+ * were never published, and rows referring to nothing. An author is allowed because
+ * installing your own app before listing it is reasonable; the token route lets them
+ * through on authorship anyway.
+ */
 export async function install(
   actor: RlsActor,
   appId: string,
   appName?: string | null,
 ): Promise<AppInstall> {
   const owner = ownerFields(actor);
+
+  const [offered, authored] = await Promise.all([
+    isPublished(appId),
+    prisma.appOwnership.findFirst({ where: { appId, ...owner }, select: { id: true } }),
+  ]);
+  if (!offered && !authored) {
+    throw new InstallError("That app is not available to install.", "not_available", 404);
+  }
+
   return prisma.appInstall.upsert({
     where: { appId_createdBy: { appId, createdBy: owner.createdBy } },
     create: { appId, appName: appName ?? null, ...owner },

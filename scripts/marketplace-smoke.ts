@@ -28,6 +28,10 @@ const TAG = "market-smoke";
 const AUTHOR = `${TAG}-author@example.com`;
 const OTHER = `${TAG}-other@example.com`;
 const THIRD = `${TAG}-third@example.com`;
+// A second owner of APP, kept apart from OTHER: /api/sunny/token grants on
+// authorship, so giving OTHER an ownership row would quietly satisfy the
+// "a pin alone grants nothing" checks for the wrong reason.
+const COOWNER = `${TAG}-coowner@example.com`;
 const APP = `${TAG}-app`;
 const DRAFT_APP = `${TAG}-draftapp`;
 const FOREIGN_APP = `${TAG}-foreignapp`;
@@ -101,7 +105,9 @@ async function main() {
   }
   await cleanup();
 
-  await prisma.user.createMany({ data: [{ email: AUTHOR }, { email: OTHER }, { email: THIRD }] });
+  await prisma.user.createMany({
+    data: [{ email: AUTHOR }, { email: OTHER }, { email: THIRD }, { email: COOWNER }],
+  });
   await prisma.appOwnership.createMany({
     data: [
       { appId: APP, appName: "Weekly report", createdBy: AUTHOR },
@@ -109,7 +115,7 @@ async function main() {
       { appId: FOREIGN_APP, appName: "Someone else's", createdBy: OTHER },
     ],
   });
-  await Promise.all([mintCookie(AUTHOR), mintCookie(OTHER), mintCookie(THIRD)]);
+  await Promise.all([mintCookie(AUTHOR), mintCookie(OTHER), mintCookie(THIRD), mintCookie(COOWNER)]);
 
   try {
     await fetch(`${BASE_URL}/api/marketplace`, { method: "POST" });
@@ -134,10 +140,31 @@ async function main() {
   check("...with code not_deployed", noUrl.body.code === "not_deployed");
   check("a blank title is refused", (await market({ ...PUBLISH, title: "  " }, AUTHOR)).status === 400);
 
+  /**
+   * An app can have several AppOwnership rows, so owning the app is not the same as
+   * owning its listing — and the upsert keys on app_id alone. Without a guard a
+   * co-owner overwrites someone else's listing, embed URL included, while createdBy
+   * keeps crediting the original author.
+   */
+  await prisma.appOwnership.create({ data: { appId: APP, appName: "co-owned", createdBy: COOWNER } });
+
   const ok = await market(PUBLISH, AUTHOR);
   check("the author publishes", ok.status === 200, JSON.stringify(ok.body));
   check("...as published", (ok.body.listing as Rec)?.status === "published");
   check("...and is flagged as the author to themselves", (ok.body.listing as Rec)?.is_author === true);
+
+  const hijack = await market(
+    { ...PUBLISH, title: "Hijacked", app_url: "https://evil.invalid/app" },
+    COOWNER,
+  );
+  check("a co-owner of the app cannot overwrite its listing", hijack.status === 409, JSON.stringify(hijack.body));
+  check("...with code listed_by_another", hijack.body.code === "listed_by_another");
+  check(
+    "...and the listing is untouched",
+    (await prisma.marketplaceListing.findUnique({ where: { appId: APP } }))?.appUrl ===
+      "https://example.invalid/app",
+  );
+  check("...while the real author can still re-publish", (await market(PUBLISH, AUTHOR)).status === 200);
 
   // === 2. the non-scoped read ==============================================
   console.log("\n2. the non-scoped read");
@@ -166,6 +193,14 @@ async function main() {
   console.log("\n3. a listing is metadata, not access");
   check("browsing does not grant a token", (await token(APP, THIRD)).status === 403);
   check("anonymous cannot install", (await installs({ action: "install", app_id: APP })).status === 401);
+  // The id comes from the request, so an unlisted one must not create a grant.
+  const unlisted = await installs({ action: "install", app_id: `${TAG}-never-listed` }, THIRD);
+  check("an app that was never listed cannot be installed", unlisted.status === 404, JSON.stringify(unlisted.body));
+  check("...with code not_available", unlisted.body.code === "not_available");
+  check(
+    "...but your own unlisted app can be",
+    (await installs({ action: "install", app_id: DRAFT_APP }, AUTHOR)).status === 200,
+  );
 
   check("installing does", (await installs({ action: "install", app_id: APP }, THIRD)).status === 200);
   check("...the token is now minted", (await token(APP, THIRD)).status === 200);
