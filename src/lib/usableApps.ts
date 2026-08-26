@@ -12,7 +12,7 @@
  * convention", which an installed app is not, and `DashboardWidgets` reads its absence
  * as "use the URL you were given". Anything pinning an app must preserve it honestly.
  *
- * My Tools and the Add-widget picker both read through here so they cannot disagree
+ * The Apps page and the Add-widget picker both read through here so they cannot disagree
  * about what you have.
  */
 
@@ -46,7 +46,7 @@ type Base44App = {
 /**
  * The deployed build is static and always up; the sandbox preview boots on demand and
  * answers with an error payload while it starts, which a frame renders as raw JSON. So
- * the sandbox is the never-deployed fallback, matching My Tools and the widgets.
+ * the sandbox is the never-deployed fallback, matching the Apps page and the widgets.
  */
 function builtUrl(app: Base44App): string | null {
   if (!app.slug) return null;

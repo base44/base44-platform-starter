@@ -120,11 +120,31 @@ is any good, which is the worst possible moment to be asked where to file it.
 Note that "Publish" in the ready card already means `deployApp`. Hence **"Add to the
 market"** for the listing, so the two are not the same word.
 
+## "Apps", not "My Tools"
+
+Half of what is on that page is not the user's — an installed app is someone else's
+code they were granted the right to run — so the page is **Apps**. The route stays
+`/MyTools`: `?app=` deep links point at it from the builder and the widgets, and a
+rename there buys nothing.
+
+The two sources are a **filter**, not tabs: All · Built by me · From the market, with
+counts, and a badge on every card. Opening an app is the common action and people do
+not reliably remember whether they built the thing they are looking for, so *All* has
+to be the default; the filter is for when you already know. Tabs would make the common
+case a guess. (Hard tabs are a one-line change if that turns out to be wrong.)
+
+The Add-widget picker **groups** instead — installed apps first, then yours, with
+headers only when both are present. Where an app came from is a property of the group,
+not of each row, and a badge repeated down eight rows says the same thing eight times.
+Installed goes first because it is the shorter list and the newer idea: a picker that
+opens on thirteen of your own apps buries the two you just installed.
+
 ## Where you meet it
 
 | | |
 | --- | --- |
 | **Market** in the top nav | the catalogue: Browse / Installed / Published by me |
+| **Apps** in the top nav | everything you can open, filtered by source |
 | Home | an App market card with a live count, and *Build your own* |
 | Add widget | links to the market and the builder |
 | My Tools | a store icon on each app card publishes it |

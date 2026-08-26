@@ -74,7 +74,7 @@ function EmbeddedApp({ listing, onBack }) {
 }
 
 /**
- * "How do I get my app in here?" is asked *on this page*, not in My Tools, so the
+ * "How do I get my app in here?" is asked *on this page*, not on the Apps page, so the
  * answer lives here too. Lists the apps you built and hands the chosen one to the
  * same PublishDialog that My Tools uses.
  */

@@ -116,7 +116,7 @@ const navigationItems = [
   { title: "Boards", url: createPageUrl("Boards") },
   { title: "Calendar" },
   { title: "Analytics", url: createPageUrl("Analytics") },
-  { title: "My Tools", url: "/MyTools" },
+  { title: "Apps", url: "/MyTools" },
   { title: "Market", url: "/Marketplace" },
 ];
 

@@ -1,5 +1,13 @@
 /**
- * "My Tools" — every app this user can open, each embedded full-height in an iframe.
+ * "Apps" — every app this user can open, each embedded full-height in an iframe.
+ *
+ * Called Apps rather than My Tools because half of what is here is not the user's: an
+ * installed app is someone else's code they were granted the right to run. The route
+ * stays `/MyTools` — `?app=` deep links point at it from the builder and the widgets.
+ *
+ * The two sources are filtered rather than tabbed. Opening an app is the common action
+ * and people do not reliably remember whether they built the thing they are looking
+ * for, so "All" has to be the default; the filter is for when you do know.
  *
  * Two sources, merged in `listUsableApps()`: apps they built (the Base44 folder,
  * filtered against local `AppOwnership` rows) and apps they installed from the market
@@ -13,7 +21,7 @@ import { useAppFrameAuth } from "@/lib/appFrameAuth";
 import { useAppRebuildNonce, withNonce } from "@/lib/appRefresh";
 import { listUsableApps } from "@/lib/usableApps";
 import PublishDialog from "@/components/market/PublishDialog";
-import { Loader2, ArrowLeft, ExternalLink, Pencil, Store } from "lucide-react";
+import { Loader2, ArrowLeft, ExternalLink, Pencil, Store, Hammer } from "lucide-react";
 
 export default function MyTools() {
   const [apps, setApps] = useState([]);
@@ -21,6 +29,7 @@ export default function MyTools() {
   const [error, setError] = useState(null);
   const [selectedApp, setSelectedApp] = useState(null);
   const [publishing, setPublishing] = useState(null);
+  const [source, setSource] = useState("all");
   const [published, setPublished] = useState(new Set());
   const frameRef = useRef(null);
 
@@ -66,6 +75,10 @@ export default function MyTools() {
       }
     })();
   }, []);
+
+  const builtCount = apps.filter((a) => a.source === "built").length;
+  const marketCount = apps.length - builtCount;
+  const shown = source === "all" ? apps : apps.filter((a) => a.source === source);
 
   if (selectedApp) {
     const url = selectedUrl;
@@ -124,14 +137,38 @@ export default function MyTools() {
       <div className="border-b border-border">
         <div className="max-w-7xl mx-auto px-6 py-8 md:py-10">
           <p className="text-xs font-medium text-muted-foreground mb-1">Workspace</p>
-          <h1 className="font-display text-3xl md:text-4xl text-foreground">My Tools</h1>
+          <h1 className="font-display text-3xl md:text-4xl text-foreground">Apps</h1>
           <p className="text-muted-foreground text-sm mt-2">
-            Apps you built and apps you installed — click any to open it.
+            Apps you built and apps you installed from the market — click any to open it.
           </p>
         </div>
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-8">
+        {!isLoading && !error && apps.length > 0 && (
+          <div className="mb-6 flex flex-wrap items-center gap-2">
+            {[
+              ["all", "All", apps.length],
+              ["built", "Built by me", builtCount],
+              ["market", "From the market", marketCount],
+            ]
+              // A filter with nothing behind it is noise, not a choice.
+              .filter(([key, , n]) => key === "all" || n > 0)
+              .map(([key, label, n]) => (
+                <button
+                  key={key}
+                  onClick={() => setSource(key)}
+                  className={`rounded-md px-3 py-1.5 text-sm transition-colors ${
+                    source === key
+                      ? "bg-primary/10 font-semibold text-primary"
+                      : "text-muted-foreground hover:bg-secondary"
+                  }`}
+                >
+                  {label} <span className="text-xs opacity-60">{n}</span>
+                </button>
+              ))}
+          </div>
+        )}
         {isLoading ? (
           <div className="flex items-center justify-center py-24">
             <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
@@ -148,7 +185,7 @@ export default function MyTools() {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
-            {apps.map((app) => (
+            {shown.map((app) => (
               <div
                 key={app.id}
                 className="group text-left rounded-lg border border-border bg-card overflow-hidden shadow-sm hover:border-primary/40 hover:shadow-md transition-all"
@@ -162,11 +199,17 @@ export default function MyTools() {
                         {(app.name || "?")[0].toUpperCase()}
                       </span>
                     )}
-                    {app.source === "market" && (
-                      <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-card/90 px-2 py-0.5 text-[10px] text-muted-foreground shadow-sm">
-                        <Store className="w-2.5 h-2.5" /> Installed
-                      </span>
-                    )}
+                    <span className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-card/90 px-2 py-0.5 text-[10px] text-muted-foreground shadow-sm">
+                      {app.source === "market" ? (
+                        <>
+                          <Store className="w-2.5 h-2.5" /> From the market
+                        </>
+                      ) : (
+                        <>
+                          <Hammer className="w-2.5 h-2.5" /> Built by me
+                        </>
+                      )}
+                    </span>
                   </div>
                 </button>
                 <div className="p-3 flex items-center justify-between gap-2">

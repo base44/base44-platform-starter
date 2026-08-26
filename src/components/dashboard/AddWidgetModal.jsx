@@ -64,6 +64,23 @@ export default function AddWidgetModal({
     );
   }, [apps, query]);
 
+  /**
+   * Installed apps first: they are the shorter list and the newer idea, and a picker
+   * that opens on eight of your own apps buries the two you just installed. Headers
+   * are hidden when only one kind is present — a lone "Built by you" header labels
+   * nothing.
+   */
+  const groups = useMemo(() => {
+    const market = matches.filter((a) => a.source === "market");
+    const built = matches.filter((a) => a.source !== "market");
+    return [
+      { key: "market", label: "From the market", items: market },
+      { key: "built", label: "Built by you", items: built },
+    ].filter((g) => g.items.length > 0);
+  }, [matches]);
+
+  const showGroups = groups.length > 1;
+
   const handleAdd = async (app) => {
     setAdding(app.id);
     try {
@@ -143,8 +160,19 @@ export default function AddWidgetModal({
             No app matches “{query}”.
           </p>
         ) : (
-          <div className="divide-y divide-border max-h-80 overflow-y-auto rounded border border-border">
-            {matches.map((app) => {
+          <div className="max-h-80 overflow-y-auto rounded border border-border">
+            {groups.map(({ key, label, items }) => (
+              <div key={key}>
+                {/* Grouped rather than badged per row: the two kinds differ in where
+                    they came from, which is a property of the group, not the app. A
+                    badge on every row says the same thing eight times. */}
+                {showGroups && (
+                  <p className="sticky top-0 bg-secondary/70 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground backdrop-blur-sm">
+                    {label} <span className="opacity-60">{items.length}</span>
+                  </p>
+                )}
+                <div className="divide-y divide-border">
+                  {items.map((app) => {
               const already = existingAppIds.includes(app.id);
               const busy = adding === app.id;
               const thumb = app.screenshot;
@@ -191,7 +219,10 @@ export default function AddWidgetModal({
                   )}
                 </button>
               );
-            })}
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </DialogContent>
