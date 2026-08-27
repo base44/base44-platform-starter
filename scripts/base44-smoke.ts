@@ -242,7 +242,9 @@ async function main() {
   const rejectedSecret = await platform(withSecrets(["BASE44_SVC_KEY"]), USER);
   check(
     "...and the rejection names no value, only names",
-    !JSON.stringify(rejectedSecret.body).includes(process.env.SUNNY_API_TOKEN ?? "\0") &&
+    // `||`, not `??`: the var is often present-but-blank, and `.includes("")` is
+    // always true — which failed this check on every run rather than never.
+    !JSON.stringify(rejectedSecret.body).includes(process.env.SUNNY_API_TOKEN || "\0") &&
       !JSON.stringify(rejectedSecret.body).includes("b44k_"),
     JSON.stringify(rejectedSecret.body).slice(0, 140),
   );

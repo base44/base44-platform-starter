@@ -22,6 +22,7 @@ export default function ApprovalWidget({
     appId,
     toolCallId: toolCall.id,
     messageId,
+    kind: toolCall.waiting_on_kind ?? toolCall.waiting_on?.kind,
     onSubmitted,
   });
 

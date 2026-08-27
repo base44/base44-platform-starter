@@ -102,8 +102,9 @@ user's apps" is a local join. This repo keeps an `AppOwnership` row per created 
 
 Three fields do different jobs and all must be set **here**:
 
-- `initial_message` kicks off the first build inside this same call — so this request blocks on an
-  LLM turn, and anything you patch afterwards misses that turn.
+- `initial_message` kicks off the first build. It is *scheduled*, not awaited — Base44 spawns a
+  background task and this call returns as soon as the app exists — but it is create-only, so
+  anything you patch afterwards misses that first turn.
 - `custom_instructions` is persisted on the app and re-applied on every later turn.
 - `secrets` are written before that turn is scheduled, so the app never builds without its
   credentials. `POST /api/apps/{id}/secrets` exists too, but it races the turn. Resolve the values
@@ -170,6 +171,134 @@ Empty body. Publishes the app.
 
 ---
 
+## The push channel
+
+Everything above is the polling mechanism, and it has four costs you feel immediately: writes block
+for the length of an LLM turn, progress costs a full transcript read every 2.5 seconds, there is no
+completion signal so you infer one from a polling edge, and there is no way to cancel.
+
+Base44's build-session API replaces all four. Set `NEXT_PUBLIC_BASE44_BUILD_SESSIONS=1` to use it
+here; the old path stays intact so you can compare them. It needs the `base44-for-platforms` flag
+enabled for your workspace — without it every endpoint below answers **404**, deliberately, so an
+unenrolled workspace cannot tell the surface exists.
+
+### The shape
+
+```
+your server  ──POST /build/grants────────────►  Base44   (your API key; mints a grant)
+                                                   │
+browser      ──POST /build/tickets───────────────►─┤     (grant in a header → 60s ticket)
+browser      ──GET  /build/events?ticket=────────►─┘     (SSE)
+your server  ──POST /build/messages──────────►           (202, turn runs detached)
+```
+
+Writes stay on your server, because they need your Base44 credential. The **stream goes
+browser-direct** — Base44 serves it with wildcard CORS and no credentials, and a serverless function
+is the worst place to sit in the middle of a long-lived stream.
+
+The grant never appears in a URL. `EventSource` cannot set headers, so the grant is exchanged — in a
+header, where it belongs — for a **single-use ticket** valid for a minute. What lands in an access
+log is then a credential that is already spent. A client streaming with `fetch` and a
+`ReadableStream` can skip the ticket and send the grant in `Authorization` directly.
+
+### Trigger endpoints (your server)
+
+Everything lives under one path family: `/api/v1/apps/{id}/build/*`.
+
+| Endpoint | Answers | Notes |
+| --- | --- | --- |
+| `POST .../build/grants` | `201` | `{grant_id, token, expires_in, expires_at, events_url}`. Read-only, single-session, 15 min by default and 1 h at most |
+| `DELETE .../build/grants/{grant_id}` | `204` | Revoke before expiry. Idempotent, and says nothing about whether the id was real |
+| `POST .../build/messages` | `202` | `{content, file_urls?}` → `{turn_id}` plus `Location`. Accepted, not performed |
+| `POST .../build/responses` | `202` | `{kind: "approval", waitpoint_id, approved}` or `{kind: "input"\|"choice", waitpoint_id, value?}` |
+| `POST .../build/cancel` | `200` | Stops the running turn |
+
+Send an **`Idempotency-Key`** on both writes. A turn costs credits and a 202 that never arrives
+invites a retry, so the key names the turn: a retry claims the same one instead of starting a second.
+It is also the `turn_id` you get back, and what `Location` points at.
+
+**Mint a fresh key per send, and never derive one from the message.** The claim is held for ten
+minutes, so a key derived from the content makes sending the same text twice — "continue", a re-send
+after a cancelled build — a silent no-op: the write still answers `202` and the turn is dropped
+inside the detached task, which from the outside is indistinguishable from a slow build. Long keys
+are truncated at 255 characters, so two long messages sharing a prefix collide the same way. A
+message body is not a legal header value either — a newline or an emoji makes `fetch` throw before
+the request leaves. An *answer* is the opposite case: it is keyed by the waitpoint id, because
+answering the same waitpoint twice is the retry.
+
+`/responses` is discriminated on the waitpoint kind and validated against the **live** waitpoint, so
+a stale id — or the wrong kind — returns a clear conflict rather than being silently coerced.
+Omitting `value` declines a question; there is no separate reject field.
+
+`/messages` refuses a second turn while one is running, or while a waitpoint is unanswered — the two
+are distinguished, because the remedies differ (wait, versus answer it).
+
+### Read endpoints (browser)
+
+The grant goes in `Authorization: Bearer`. For `EventSource`, exchange it at `POST .../build/tickets`
+and pass `?ticket=`.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET .../build/events` | SSE. What you should use |
+| `GET .../build/state` | Current state. The documented polling floor |
+| `GET .../build/messages` | History, for reconciling after a long outage |
+| `GET .../build/turns/{turn_id}` | One turn's outcome, without holding the stream |
+| `POST .../build/tickets` | A one-shot 60s ticket for `EventSource` |
+
+History pages by cursor: follow `next_after` rather than counting rows, and an append cannot shift
+the pages beneath you. `offset` still works and is deprecated for one release — it counted back from
+the newest row, so a message arriving mid-walk shifted every later page by one, which is worst in
+this route's own use case. Mixing the two in one walk is a `400`.
+
+### The events
+
+`turn.started`, `turn.finished`, `message.updated`, `state.changed`, `error`, plus `conversation.reset`
+and `files.changed`. **Ignore types you do not recognise** — that rule is what lets Base44 add events
+without a release on your side. Every frame carries `turn_id`, so a resumed stream stays attributable
+to the right turn.
+
+The last two are the ones worth reading the contract twice on, because "ignore what you don't know"
+is the wrong reflex for them. They report work done to the app from **outside** the turn you are
+watching — `conversation.reset` means a checkpoint restore or a branch sync rewrote the history you
+are showing, `files.changed` means files moved with no turn to attribute them to — so both carry no
+payload and no `turn_id`, and the only useful response is to re-read. Nothing follows either one, so
+a client that drops them keeps a stale view on screen indefinitely. This repo re-reads the
+conversation on the first and remounts the preview frame on the second.
+
+Status is `idle | running | waiting | blocked | error`. `waiting` carries a `waiting_on` saying
+*why*, and every kind is answerable through `/responses`:
+
+| `waiting_on.kind` | Render |
+| --- | --- |
+| `approval` | Approve / reject |
+| `choice` | A picker over the options the tool offered |
+| `input` | A form (secrets, field values) |
+
+Running out of credits is **not** a waitpoint — no answer clears it. It arrives as
+`status: "blocked"` with `reason: "quota"`: nothing failed, and the turn resumes when there is
+budget.
+
+`message.updated` is a **snapshot per `message_id`**, not a delta: replace what you hold for that id,
+never concatenate. Its tool calls carry `arguments` — which is what makes an interrupt renderable —
+and never `results`. Both the stream and the history route return the same projection of the same
+message set, including your own user messages, so reconciling cannot produce a different transcript
+than you streamed.
+
+### Resuming
+
+Every frame's SSE `id` is the journal sequence. Reconnect with `Last-Event-ID` (the browser does this
+itself) or `?last_event_id=` (which you need when *you* reconnect deliberately, to refresh an
+expiring token) and only the gap is replayed. The replay window is finite and published in
+`X-Base44-Stream-Retention-Seconds` rather than left for you to discover. Offline longer than that,
+reconcile through `/messages`.
+
+Reconnecting with no resume point replays the whole retained window. That is harmless — snapshots are
+last-write-wins — but hold the last seq you saw so a token refresh doesn't re-send a build's history
+every fifteen minutes.
+
+---
+
 ## Timeouts
 
 The single most common self-inflicted bug: a blanket 30s timeout on calls that wait on an LLM.
@@ -177,7 +306,11 @@ The single most common self-inflicted bug: a blanket 30s timeout on calls that w
 | Action | Timeout here | Why |
 | --- | --- | --- |
 | `sendMessage`, `createApp`, `deployApp`, `submitToolCallInput` | 120s | A build turn measures ~28–30s against a live app; a 30s ceiling aborts working builds intermittently and reports them as upstream faults. Deploy bundles, so a large app can exceed 30s too |
+| the `build/*` writes | 30s | They answer before the turn runs, so the CRUD default is the honest one — a slow answer here means the platform is unwell, not that a build is long |
 | everything else | 30s | Plain CRUD |
+
+This whole table is a symptom of the blocking mechanism. On the push channel there is nothing to
+size: the only long-lived connection is the stream, and the browser holds that one itself.
 
 Keep them well under your function/platform ceiling (300s on Vercel), so a genuinely hung upstream
 still fails rather than holding the function open.

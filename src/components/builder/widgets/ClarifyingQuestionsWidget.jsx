@@ -24,6 +24,7 @@ export default function ClarifyingQuestionsWidget({
     appId,
     toolCallId: toolCall.id,
     messageId,
+    kind: toolCall.waiting_on_kind ?? toolCall.waiting_on?.kind,
     onSubmitted,
   });
   const questions = Array.isArray(parsedArgs?.questions) ? parsedArgs.questions : [];

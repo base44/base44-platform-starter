@@ -19,6 +19,8 @@
     "sunny:smoke": "tsx --env-file=.env scripts/sunny-api-smoke.ts",
     "market:smoke": "tsx --env-file=.env scripts/marketplace-smoke.ts",
     "base44:smoke": "tsx --env-file=.env scripts/base44-smoke.ts",
+    "session:smoke": "tsx --env-file=.env scripts/build-session-smoke.ts",
+    "dev:session": "tsx --env-file=.env scripts/dev-session.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

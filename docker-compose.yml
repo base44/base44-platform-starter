@@ -1,0 +1,30 @@
+# Local Postgres for development. Nothing else belongs here: the shell itself
+# runs with `npm run dev`, and Base44 is a remote host, not a service to stand up.
+#
+# Prod is Neon, which is pooled — hence the DATABASE_URL / DIRECT_URL split in
+# .env.example. There is no pooler locally, so both point at this container and
+# `prisma migrate` works against the same URL as the app.
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: sunny-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sunny
+      POSTGRES_PASSWORD: sunny
+      POSTGRES_DB: sunny
+    ports:
+      - "5432:5432"
+    volumes:
+      - sunny-pgdata:/var/lib/postgresql/data
+    # Prisma migrations run immediately after `up`, and Postgres accepts TCP a
+    # moment before it will accept queries. Without this gate the first
+    # `migrate deploy` loses that race about half the time.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sunny -d sunny"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  sunny-pgdata:

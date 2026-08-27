@@ -29,6 +29,7 @@ Next.js App Router · TypeScript · Tailwind 4 · Postgres + Prisma · NextAuth 
 | 1. Your own auth and database | `src/lib/auth.ts`, `src/lib/rls.ts`, `prisma/schema.prisma`, `src/lib/entities.ts`, `src/lib/entityCrud.ts` |
 | 2. One Base44 identity per user | `src/lib/base44Link.ts`, `src/app/api/base44/link/route.ts` |
 | 3. A server-side allow-list in front of Base44's REST API | `src/app/api/base44/platform/route.ts` |
+| 3b. A push channel the browser holds itself | `src/lib/buildSession.ts`, `src/components/builder/useBuildSessionStream.js` |
 | 4. A public data API the built apps call | `src/app/api/sunny/route.ts`, `src/lib/builderInstructions.ts` |
 
 ## Conventions
@@ -39,7 +40,18 @@ Next.js App Router · TypeScript · Tailwind 4 · Postgres + Prisma · NextAuth 
   biggest correctness risk in the codebase, and ESLint bans by-id `update`/`delete` on those models
   to keep it that way.
 - **`src/lib/base44Link.ts` is the only module that touches `Base44Link`**, and it never returns a
-  token to a caller. Vended tokens stay server-side.
+  token to a caller. Vended access tokens stay server-side.
+- **One credential does reach the browser, and only one**: the build-session *grant* minted by
+  `mintBuildSessionToken`. It is a different class from the vended access token above — read-only,
+  ~15 minutes, scoped to a single session id, revocable by id, and useless for anything else — which
+  is what makes it safe to ship to a client that then streams directly from Base44. The access token
+  it was minted with never leaves the server. The grant itself never goes in a URL either: it is
+  exchanged in a header for a single-use 60-second ticket, so what can appear in an access log is
+  already spent. `subscribeToSession` also *hands each grant back* when it is done with it — a build
+  re-mints every twelve minutes, so revoking on teardown is the difference between one live read
+  credential and one per refresh. Do not generalise from this to "tokens may reach the browser": a
+  browser-held token that were merely *user*-scoped would be a broken-object-authorization hole with
+  extra steps.
 - **Server-only secrets** (`BASE44_SVC_KEY`, workspace id, platform host) live in env and are never
   shipped to the client, and never caller-supplied — a request-controlled host would be an SSRF and
   a request-controlled workspace id would defeat the tenancy boundary.
@@ -64,6 +76,7 @@ npm run rls:smoke        # boundary 1: the owner predicate, including the traps
 npm run auth:smoke       # boundary 1: session → actor
 npm run entities:smoke   # boundary 1: whitelisting, scoping, wire shape
 npm run base44:smoke     # boundaries 2–3: token containment, allow-list, session keying
+npm run session:smoke    # boundary 3b: the build-session trigger allow-list
 npm run sunny:smoke     # boundary 4: the public contract, action by action
 ```
 

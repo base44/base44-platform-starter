@@ -24,6 +24,7 @@ export default function SecretsWidget({
     appId,
     toolCallId: toolCall.id,
     messageId,
+    kind: toolCall.waiting_on_kind ?? toolCall.waiting_on?.kind,
     onSubmitted,
   });
   const schema = Array.isArray(parsedArgs?.secrets_schema) ? parsedArgs.secrets_schema : [];

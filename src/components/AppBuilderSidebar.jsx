@@ -12,14 +12,26 @@
  *   2. First submit → `platform.createApp()` with the prompt, a locally-derived
  *      name, and `buildCustomInstructions()` — the text Base44's builder applies on
  *      every turn. Later submits → `platform.sendMessage()` on the same app.
- *   3. **Base44 builds asynchronously**, so there is no completion callback: this
- *      polls `getApp` + `getConversation` (fast while `status.state === "processing"`,
- *      slowly when idle) and re-renders from whatever the platform reports.
+ *   3. **Base44 builds asynchronously**, and there are two ways to find out what
+ *      a build is doing. Which one is live is the only real branch in this file:
+ *
+ *      - **Push** (`NEXT_PUBLIC_BASE44_BUILD_SESSIONS=1`): one SSE stream, held
+ *        open by the browser, reports state, completion, and the transcript
+ *        itself — see `useBuildSessionStream`. A streaming build makes **no**
+ *        reads: `message.updated` carries the whole message, so it is merged
+ *        straight into state. One `getConversation` runs when the turn ends, to
+ *        backfill the tool `results` the stream withholds.
+ *      - **Poll** (unset): `getApp` + `getConversation` on a timer, fast while
+ *        `status.state === "processing"` and slow when idle, with completion
+ *        inferred from the edge where an app stops being `processing`.
+ *
+ *      Both are kept so the two can be compared; the push path is the one to
+ *      copy.
  *   4. A builder turn can *pause* on a tool call needing input — approval,
  *      clarifying questions, secrets. Those arrive as `tool_calls` with status
  *      `waiting_for_user_input`, get rendered as widgets
- *      (`src/components/builder/`), and resume the turn via
- *      `submitToolCallInput()`.
+ *      (`src/components/builder/`), and resume the turn via `respondToBuildSession()`
+ *      or, on the poll path, `submitToolCallInput()`.
  *   5. Preview boots a sandbox (`getPreviewUrl`, up to ~40s) into an iframe; "Save
  *      to My Tools" deploys and records local ownership.
  *
@@ -30,6 +42,8 @@
  */
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import * as platform from "@/lib/base44Platform";
+import { useBuildSessionStream } from "@/components/builder/useBuildSessionStream";
+import { mergeStreamedMessage } from "@/components/builder/streamTranscript";
 import { Board } from "@/lib/entityClient";
 import { useAuth } from "@/lib/AuthContext";
 import { suggestAppName } from "@/lib/appName";
@@ -54,6 +68,8 @@ import {
   LayoutGrid,
   Sparkles,
   Hammer,
+  Square,
+  CreditCard,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
@@ -61,8 +77,11 @@ import { widgetFor } from "@/components/builder/toolWidgets";
 import AppReadyWidget from "@/components/builder/widgets/AppReadyWidget";
 import PublishDialog from "@/components/market/PublishDialog";
 
+// Poll intervals, used only when the push channel is switched off.
 const BUILDING_POLL_MS = 2500;
 const IDLE_POLL_MS = 8000;
+// How long a burst of stream events is allowed to collapse into one transcript read.
+const REFRESH_DEBOUNCE_MS = 600;
 const TOOL_PENDING = ["running", "waiting_for_user_input"];
 const TOOL_FAILED = ["error", "stopped"];
 
@@ -254,8 +273,8 @@ export default function AppBuilderSidebar({
   // is otherwise progressing fine.
   const refreshInFlightRef = useRef(false);
 
+  const [isCancelling, setIsCancelling] = useState(false);
   const activeAppId = activeApp?.id || null;
-  const isBuilding = activeApp?.status?.state === "processing";
 
   // Where the builder was opened from is already a statement of intent, so it picks
   // the finished app's primary destination rather than asking. From the Add-widget
@@ -345,7 +364,8 @@ export default function AppBuilderSidebar({
       .finally(() => setIsLoadingApps(false));
   }, [linked]);
 
-  // Poll for build updates
+  // Re-read the app and its transcript. In push mode this is driven by
+  // `message.updated`; otherwise by the poll timer below.
   const refresh = useCallback(async (appId) => {
     const [app, conversation] = await Promise.all([
       platform.getApp(appId),
@@ -361,8 +381,121 @@ export default function AppBuilderSidebar({
     setBuildMessages(visible);
   }, []);
 
+  // The transcript alone. `message.updated` says the conversation moved and
+  // nothing else did, and the builder flushes it about once a second — so
+  // re-reading the app document alongside it was a second request per second for
+  // fields that only a turn boundary changes.
+  const refreshConversation = useCallback(async (appId) => {
+    const conversation = await platform.getConversation(appId, { limit: 100 });
+    if (shownAppIdRef.current !== appId) return;
+    setBuildMessages((conversation?.messages || []).filter((m) => !m.hidden));
+  }, []);
+
+  // One refresh at a time, and never more often than REFRESH_DEBOUNCE_MS. A
+  // conversation read grows with the build, so a burst of `message.updated`
+  // events must not each start one — that is how the old poll loop ended up
+  // queueing reads behind each other until the proxy timed out.
+  const refreshDebounceRef = useRef(null);
+  // Whether the next debounced read has to cover the app document too. A `full`
+  // request upgrades one already scheduled, so a turn boundary can never be
+  // swallowed by a transcript tick that got there first.
+  const pendingFullRef = useRef(false);
+  const requestRefresh = useCallback(
+    (appId, { full = false } = {}) => {
+      if (full) pendingFullRef.current = true;
+      if (refreshDebounceRef.current) return;
+      const run = () => {
+        refreshDebounceRef.current = null;
+        if (refreshInFlightRef.current) {
+          // Re-arm rather than drop. The read already on its way back may have
+          // started before the event that asked for this one, so skipping leaves
+          // the older answer on screen — survivable for `message.updated`, where
+          // another event follows, and permanent for `conversation.reset`, which
+          // is the only notice there is.
+          refreshDebounceRef.current = setTimeout(run, REFRESH_DEBOUNCE_MS);
+          return;
+        }
+        const wantsApp = pendingFullRef.current;
+        pendingFullRef.current = false;
+        refreshInFlightRef.current = true;
+        (wantsApp ? refresh(appId) : refreshConversation(appId))
+          .catch(() => {})
+          .finally(() => {
+            refreshInFlightRef.current = false;
+          });
+      };
+      refreshDebounceRef.current = setTimeout(run, REFRESH_DEBOUNCE_MS);
+    },
+    [refresh, refreshConversation],
+  );
+
+  useEffect(
+    () => () => {
+      if (refreshDebounceRef.current) clearTimeout(refreshDebounceRef.current);
+    },
+    [],
+  );
+
+  // The frame is the message, so this is the whole handler: no read, no
+  // debounce, nothing to collapse. What used to be here asked the platform to
+  // repeat what it had just said, once a second, for the length of a build.
+  const onStreamMessage = useCallback((message, appId) => {
+    if (!message || shownAppIdRef.current !== appId) return;
+    setBuildMessages((held) => mergeStreamedMessage(held, message));
+  }, []);
+
+  // Keyed to the app the chat is showing, so a turn finishing for one the user
+  // has left cannot reset filing state on another. The ready card itself is
+  // derived from the transcript, so pulling the finished transcript is the whole
+  // job — there is nothing to remember.
+  //
+  // This is also the only conversation read a build performs, and the only
+  // reason it performs one: tool `results` are never streamed, so they are
+  // backfilled here, once, when there is nothing left to be in flight.
+  const onTurnFinished = useCallback(() => {
+    const appId = shownAppIdRef.current;
+    if (!appId) return;
+    requestRefresh(appId, { full: true });
+    setSavedAs(null);
+  }, [requestRefresh]);
+
+  // The conversation was rewritten upstream — a checkpoint restore, a branch
+  // sync — so what is on screen is simply wrong. Re-read; there is nothing to
+  // reconcile against and no second notice coming.
+  const onConversationReset = useCallback(() => {
+    // Full: a checkpoint restore rewinds the files with the history, so the
+    // commit hash moves too.
+    if (shownAppIdRef.current) requestRefresh(shownAppIdRef.current, { full: true });
+  }, [requestRefresh]);
+
+  // Files moved with no turn to attribute it to. The app document is the point
+  // here: it carries `last_git_commit_hash`, and the effect watching that is
+  // what re-resolves an open preview.
+  const onFilesChanged = useCallback(() => {
+    if (shownAppIdRef.current) requestRefresh(shownAppIdRef.current, { full: true });
+  }, [requestRefresh]);
+
+  const { sessionState, streamError, live } = useBuildSessionStream({
+    appId: activeAppId,
+    onMessage: onStreamMessage,
+    onTurnFinished,
+    onConversationReset,
+    onFilesChanged,
+  });
+
+  // Push mode reads the state it was told; the fallback reads the app it polled.
+  const isBuilding = live
+    ? sessionState?.status === "running"
+    : activeApp?.status?.state === "processing";
+  // A blocked turn is stopped but intact: nothing failed and no answer to
+  // /responses clears it, which is why it is not a waitpoint.
+  const quotaBlocked =
+    sessionState?.status === "blocked" && sessionState?.reason === "quota";
+
   useEffect(() => {
-    if (!activeAppId) return;
+    // The poll loop is the off-switch path only. Leaving it running alongside the
+    // stream would reintroduce exactly the load the stream exists to remove.
+    if (live || !activeAppId) return;
     const id = setInterval(() => {
       if (refreshInFlightRef.current) return;
       refreshInFlightRef.current = true;
@@ -373,7 +506,7 @@ export default function AppBuilderSidebar({
         });
     }, isBuilding ? BUILDING_POLL_MS : IDLE_POLL_MS);
     return () => clearInterval(id);
-  }, [activeAppId, isBuilding, refresh]);
+  }, [live, activeAppId, isBuilding, refresh]);
 
   // The one way to get to an empty composer. Clearing `shownAppIdRef` is the part
   // that matters: it invalidates any refresh already in flight for the app we are
@@ -499,6 +632,11 @@ export default function AppBuilderSidebar({
         setApps((prev) => [app, ...prev]);
         setActiveApp(app);
         await refresh(app.id);
+      } else if (live) {
+        // 202: the turn has been accepted, not performed. Deliberately not
+        // followed by a refresh — the stream is what reports the turn, and
+        // awaiting a read here would just put back the latency this removes.
+        await platform.sendBuildSessionMessage(activeApp.id, content);
       } else {
         await platform.sendMessage(activeApp.id, content);
         await refresh(activeApp.id);
@@ -595,9 +733,17 @@ export default function AppBuilderSidebar({
   );
   // Turn paused on a user-input widget — lock the build composer so a typed
   // message can't race into the paused turn.
-  const awaitingInput = buildMessages.some((m) =>
+  //
+  // Push mode is told; the fallback has to look. Both are kept because the
+  // transcript scan is also what decides *which* widget renders, so it earns its
+  // place either way — but only the streamed state is authoritative about
+  // whether the turn is blocked right now.
+  const pendingToolCall = buildMessages.some((m) =>
     (m.tool_calls || []).some((tc) => tc.status === "waiting_for_user_input"),
   );
+  const awaitingInput = live
+    ? sessionState?.status === "waiting" && !quotaBlocked
+    : pendingToolCall;
 
   const userMessageCount = buildMessages.filter((m) => m.role === "user").length;
   const lastAssistantId =
@@ -669,9 +815,13 @@ export default function AppBuilderSidebar({
     };
   }, [activeAppId, savedAs]);
 
-  // The builder reports no completion, so "finished" is an edge in the poll.
+  // On the poll path the builder reports no completion, so "finished" is an edge
+  // in the poll: an app seen `processing` that stops being `processing` without
+  // pausing for input. Push mode is told outright — `turn.finished`, handled by
+  // `onTurnFinished` above — so none of this runs there.
   const buildingAppIdRef = useRef(null);
   useEffect(() => {
+    if (live) return;
     if (!activeAppId) {
       buildingAppIdRef.current = null;
       return;
@@ -684,7 +834,7 @@ export default function AppBuilderSidebar({
     if (buildingAppIdRef.current !== activeAppId || awaitingInput) return;
     buildingAppIdRef.current = null;
     setSavedAs(null);
-  }, [activeAppId, isBuilding, awaitingInput]);
+  }, [live, activeAppId, isBuilding, awaitingInput]);
 
   /**
    * A finished build refreshes the preview only. Widgets and My Tools show the
@@ -704,6 +854,19 @@ export default function AppBuilderSidebar({
     seenCommitRef.current = { appId: activeAppId, commit: currentCommit };
     if (previewOpen) openPreviewRef.current?.();
   }, [activeAppId, currentCommit, isBuilding, previewOpen]);
+
+  const cancelTurn = async () => {
+    if (!activeAppId || isCancelling) return;
+    setIsCancelling(true);
+    try {
+      await platform.cancelBuildSessionTurn(activeAppId);
+      await refresh(activeAppId);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsCancelling(false);
+    }
+  };
 
   return (
     <AnimatePresence>
@@ -749,6 +912,22 @@ export default function AppBuilderSidebar({
                         <Loader2 className="w-2.5 h-2.5 animate-spin" /> Building
                       </span>
                     ) : null}
+                    {/* Only offered in push mode: the blocking path has no
+                        endpoint to stop a turn through. */}
+                    {live && isBuilding && (
+                      <button
+                        onClick={cancelTurn}
+                        disabled={isCancelling}
+                        className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-secondary transition-colors disabled:opacity-50"
+                      >
+                        {isCancelling ? (
+                          <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                        ) : (
+                          <Square className="w-2.5 h-2.5" />
+                        )}
+                        Stop
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -791,6 +970,29 @@ export default function AppBuilderSidebar({
               <div className="mx-4 mt-3 flex gap-2 items-start bg-destructive/10 border border-destructive/20 rounded px-3 py-2.5 flex-shrink-0">
                 <AlertTriangle className="w-3.5 h-3.5 text-destructive mt-0.5 flex-shrink-0" />
                 <p className="text-xs text-destructive">{error}</p>
+              </div>
+            )}
+
+            {/* Out of credits is a wait, not a failure: the turn is intact and
+                resumes once the workspace has budget again, so it must not read
+                as a build that broke. The old mechanism could not tell the two
+                apart — it only ever saw `status: error`. */}
+            {quotaBlocked && (
+              <div className="mx-4 mt-3 flex gap-2 items-start bg-amber-500/10 border border-amber-500/20 rounded px-3 py-2.5 flex-shrink-0">
+                <CreditCard className="w-3.5 h-3.5 text-amber-600 mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-amber-700">
+                  This build is paused — the workspace is out of Base44 credits. It picks up
+                  where it left off once there is budget.
+                </p>
+              </div>
+            )}
+
+            {/* Transient by design: a reconnect is already scheduled, so this
+                says what is happening rather than asking the user to act. */}
+            {streamError && !error && (
+              <div className="mx-4 mt-3 flex gap-2 items-start bg-secondary border border-border rounded px-3 py-2 flex-shrink-0">
+                <Loader2 className="w-3.5 h-3.5 text-muted-foreground mt-0.5 flex-shrink-0 animate-spin" />
+                <p className="text-xs text-muted-foreground">{streamError}</p>
               </div>
             )}
 
