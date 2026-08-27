@@ -22,5 +22,5 @@ export default function proxy(request: NextRequest) {
 export const config = {
   // Page routes only: API routes authenticate themselves and static assets have
   // no business paying for this.
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!api|_next/static|_next/image|icon.svg).*)"],
 };
