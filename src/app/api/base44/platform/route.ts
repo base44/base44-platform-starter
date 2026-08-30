@@ -120,16 +120,7 @@ const OPS: Record<string, Op> = {
     method: "GET",
     path: (p) => `/api/apps/${str(p.appId)}`,
   },
-  /**
-   * The only field this is allowed to touch is `name`. `createApp` sets it once from
-   * the first prompt, and iterating in the chat changes the app's code but never its
-   * record — so without this an app keeps whatever it was called before anyone knew
-   * what it did.
-   *
-   * PUT, not PATCH: the app route has no PATCH handler (404), and PUT with a
-   * one-field body **merges** rather than replacing — verified against
-   * app.base44.com by diffing all 144 fields of an app either side of the call.
-   */
+  /** `name` only. PUT, not PATCH — see docs/base44-platform-api.md. */
   renameApp: {
     method: "PUT",
     path: (p) => `/api/apps/${str(p.appId)}`,

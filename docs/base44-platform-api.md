@@ -192,26 +192,9 @@ still fails rather than holding the function open.
 
 ## Renaming an app
 
-`createApp` sets an app's name once, from the first prompt. Iterating in the chat
-changes the app's code and never its record, so an app keeps whatever it was called
-before anyone knew what it did.
-
-`renameApp` sends **`PUT /api/apps/{id}`** with a one-field body, `{name}`.
-
-The verb is not obvious and was established by probing `app.base44.com`:
-
-| attempt | result |
-| --- | --- |
-| `PATCH /api/apps/{id}` | 404 — no handler |
-| `PUT /api/apps/{id}` | **200** |
-| `POST /api/apps/{id}`, `/settings`, `/rename`, `?id=` | 404 |
-
-PUT usually means replace, which would clear every field the body omits. It does not
-here: an app read before and after a one-field PUT had the same 144 fields, with
-nothing lost. Re-check that if you ever send more than `name`.
-
-The input is validated before anything is sent — non-empty, 60 characters, clean id —
-and asserted in `npm run base44:smoke`, which needs no upstream.
+`renameApp` sends **`PUT /api/apps/{id}`** with `{name}`. Not PATCH — that route 404s.
+A one-field PUT merges rather than replacing; verified by diffing an app's fields
+either side of the call. Re-check that if anything ever sends more than `name`.
 
 | Missing env var (thrown before any call) | Deployment isn't configured | `501 bridge_misconfigured` — **not** 400 and **not** 502. Echoing env var names into a response body is also worth avoiding |
 

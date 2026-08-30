@@ -104,7 +104,6 @@ export default function MyTools() {
     // refreshPublished is a stable useCallback, so this still runs once.
   }, [refreshPublished]);
 
-  /** Reflect a rename everywhere without refetching the whole folder. */
   const handleRenamed = useCallback((id, name) => {
     setApps((prev) => prev.map((a) => (a.id === id ? { ...a, name } : a)));
     setSelectedApp((prev) => (prev?.id === id ? { ...prev, name } : prev));
@@ -125,9 +124,6 @@ export default function MyTools() {
           >
             <ArrowLeft className="w-3.5 h-3.5" /> Back
           </button>
-          {/* Renaming lives here because this is where you find out the name is wrong:
-              you are looking at the app. Built apps only — you cannot rename someone
-              else's. */}
           {selectedApp.source === "built" ? (
             <AppNameField app={selectedApp} onRenamed={handleRenamed} className="max-w-xs" />
           ) : (

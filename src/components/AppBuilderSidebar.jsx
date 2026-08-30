@@ -474,7 +474,6 @@ export default function AppBuilderSidebar({
     }
   };
 
-  /** A rename lands in two places: the open app, and its row in the app list. */
   const handleRenamed = useCallback((id, name) => {
     setActiveApp((prev) => (prev?.id === id ? { ...prev, name } : prev));
     setApps((prev) => prev.map((a) => (a.id === id ? { ...a, name } : a)));
@@ -746,8 +745,6 @@ export default function AppBuilderSidebar({
               )}
               <div className="flex-1 min-w-0 flex items-center gap-2">
                 <Sparkles className="w-3.5 h-3.5 text-accent flex-shrink-0" />
-                {/* Renameable here too: the chat is where an app stops being what its
-                    first prompt described, so it is where the name goes stale. */}
                 {buildView === "chat" && activeApp ? (
                   <AppNameField app={activeApp} onRenamed={handleRenamed} />
                 ) : (

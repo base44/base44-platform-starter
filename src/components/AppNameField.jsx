@@ -5,11 +5,7 @@ import { Loader2, Pencil } from "lucide-react";
 
 import * as platform from "@/lib/base44Platform";
 
-/**
- * The app's name, editable in place. `createApp` sets it once from the first prompt and
- * nothing since has changed it, so by the time an app does something useful its name is
- * usually a description of a guess.
- */
+/** The app's name, editable in place. Enter saves, Escape cancels, blur commits. */
 export default function AppNameField({ app, onRenamed, className = "" }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(app.name);
