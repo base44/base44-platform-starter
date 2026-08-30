@@ -207,16 +207,35 @@ export const getPreviewUrl = (appId: string) => call("getPreviewUrl", { appId })
 export const deployApp = (appId: string) => call("deployApp", { appId });
 
 /**
- * The request id a submit travels under. Derived, never passed in: it must be
+ * The request id an *answer* travels under. Derived, never passed in: it must be
  * *stable per logical submit*, so a network-retried POST dedupes on
  * (request id, tool call id) instead of resuming the turn — and charging for it —
  * a second time. A tool call is resolved once, so its id is exactly that identity.
  *
- * A deliberate retry — resuming the same turn again on purpose, which must NOT
- * dedupe — would need a fresh id. Nothing offers that today, so it isn't here.
+ * Sends are the opposite case and use `newSendKey()` — see the note there.
  */
 export function submitRequestId(toolCallId: string): string {
   return `submit-${toolCallId}`;
+}
+
+/**
+ * The key a *send* travels under. Fresh per send, and that asymmetry with
+ * `submitRequestId` is the point.
+ *
+ * The platform claims the key for ten minutes and reads a second arrival as a
+ * network retry, so anything derived from the message makes sending the same
+ * text twice — "continue", a re-send after a cancelled build — a silent no-op:
+ * the write still answers 202 and the turn is dropped inside the detached task,
+ * which is indistinguishable from a slow build. The first-party builder mints a
+ * fresh id per send for exactly this reason. What must reuse a key is a retry of
+ * *one* send, so it is minted here, once, before the request that carries it.
+ *
+ * It also has to be a legal header value, which a message body is not: a newline
+ * or an emoji in the text made the proxy's own `fetch` throw before the request
+ * left, surfacing as a 502 that blamed Base44 for a two-line prompt.
+ */
+export function newSendKey(): string {
+  return `send-${crypto.randomUUID()}`;
 }
 
 export const submitToolCallInput = (
@@ -234,6 +253,84 @@ export const submitToolCallInput = (
     messageId,
     requestId: submitRequestId(toolCallId),
   });
+
+// --- build sessions --------------------------------------------------------
+//
+// The push-channel counterparts to `sendMessage` and `submitToolCallInput`.
+// Each returns once the work is *accepted*; progress arrives on the stream (see
+// `src/lib/buildSession.ts`). Selected by `buildSessionsEnabled()`.
+
+export type MintedSessionToken = {
+  /** Read-only, single-session, short-lived. Safe to hold in the browser. */
+  token: string;
+  /** Names the grant, so it can be revoked before it expires. */
+  grant_id: string;
+  expires_in: number;
+  expires_at: string;
+  /** Absolute — the server joins it onto the platform host before answering. */
+  events_url: string;
+};
+
+/** Mints the browser's stream token. The one call here that must be server-side. */
+export const mintBuildSessionToken = (appId: string) =>
+  call("mintBuildSessionToken", { appId }) as Promise<MintedSessionToken>;
+
+/**
+ * Starts a build turn and returns immediately — 202, not 200. Nothing about the
+ * build has happened yet when this resolves; watch the stream.
+ */
+export const sendBuildSessionMessage = (appId: string, content: string) =>
+  call("sendBuildSessionMessage", {
+    appId,
+    content,
+    // One key per send, minted before the request — never derived from the
+    // message. See `newSendKey`.
+    requestId: newSendKey(),
+  });
+
+/**
+ * Answers the waitpoint holding the turn open.
+ *
+ * `kind` is required because upstream discriminates the body on it: an approval
+ * carries a decision, a question carries its answer. `decision` stays the
+ * local name for approve-versus-decline because the proxy spends the top-level
+ * `action` key on which op to run.
+ *
+ * The request id is derived the same way `submitToolCallInput`'s is, and for the
+ * same reason: stable per logical answer, so a network-retried POST dedupes
+ * instead of resuming — and charging — the turn a second time.
+ */
+export const respondToBuildSession = (
+  appId: string,
+  waitpointId: string,
+  kind: "approval" | "input" | "choice",
+  decision: "approved" | "rejected",
+  input: Json = {},
+) =>
+  call("respondToBuildSession", {
+    appId,
+    waitpointId,
+    kind,
+    decision,
+    input,
+    requestId: submitRequestId(waitpointId),
+  });
+
+/** Stops the running turn. Answers inline — a user pressing Stop needs to know. */
+export const cancelBuildSessionTurn = (appId: string) =>
+  call("cancelBuildSessionTurn", { appId });
+
+/**
+ * Withdraws a grant before its TTL runs out.
+ *
+ * Best-effort on purpose: the grant expires on its own, so a failed revoke is
+ * not worth showing anyone. What it prevents is the accumulation — a build
+ * re-mints every twelve minutes, and a flapping stream re-mints on every retry,
+ * each one otherwise leaving a live read credential behind for the rest of its
+ * hour.
+ */
+export const revokeBuildSessionGrant = (appId: string, grantId: string) =>
+  call("revokeBuildSessionGrant", { appId, grantId });
 
 // --- pure helpers ----------------------------------------------------------
 

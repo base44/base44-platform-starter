@@ -43,6 +43,11 @@ type Op = {
   headers?: (p: Params) => Record<string, string>;
   /** Override `DEFAULT_TIMEOUT_MS` for actions that wait on a builder turn. */
   timeoutMs?: number;
+  /**
+   * Rewrite the upstream body before it reaches the browser. Only `mintBuildSessionToken`
+   * needs it, to absolutize the stream URL — see the note there.
+   */
+  transform?: (body: unknown) => unknown;
 };
 
 /** Plenty for a CRUD call against the platform REST API. */
@@ -176,6 +181,103 @@ const OPS: Record<string, Op> = {
     headers: (p): Record<string, string> =>
       p.requestId ? { "X-Request-ID": String(p.requestId) } : {},
   },
+
+  // --- build sessions: the push channel -------------------------------------
+  //
+  // The two above that drive a build (`sendMessage`, `submitToolCallInput`)
+  // answer only when the whole builder turn is done, which is why they carry
+  // BUILDER_TIMEOUT_MS. These five replace them: each returns as soon as the
+  // work is *accepted*, and progress arrives on a stream the browser holds open
+  // itself.
+  // Both sets are kept so `NEXT_PUBLIC_BASE44_BUILD_SESSIONS` can select
+  // between them — see `buildSessionsEnabled` in src/lib/base44Config.ts.
+
+  /**
+   * Mints the short-lived, read-only token the browser streams with.
+   *
+   * The only one of the five that must be server-side on principle rather than
+   * convention: minting is the privilege-granting step, so it is the one that
+   * has to present this user's Base44 credential.
+   */
+  mintBuildSessionToken: {
+    method: "POST",
+    path: (p) => `/api/v1/apps/${str(p.appId)}/build/grants`,
+    body: (p) => ({
+      subject: p.subject || undefined,
+      token_ttl_seconds: Number(p.ttlSeconds) > 0 ? Number(p.ttlSeconds) : undefined,
+    }),
+    /**
+     * Upstream returns `events_url` as a path. Joining it onto the host here —
+     * rather than shipping the host to the browser as another `NEXT_PUBLIC_`
+     * var — keeps one source of truth for it and keeps it server-authoritative:
+     * a request-controlled Base44 host on a path that carries credentials is
+     * the SSRF this file's header warns about, and a second copy of the value
+     * is a footgun the moment the two disagree.
+     */
+    transform: (body) => {
+      if (!body || typeof body !== "object") return body;
+      const { events_url: eventsUrl, ...rest } = body as Record<string, unknown>;
+      if (typeof eventsUrl !== "string" || !eventsUrl) return body;
+      return { ...rest, events_url: `${platformHost()}${eventsUrl}` };
+    },
+  },
+
+  /** Starts a build turn. 202 — watch the stream for turn.started/turn.finished. */
+  sendBuildSessionMessage: {
+    method: "POST",
+    path: (p) => `/api/v1/apps/${str(p.appId)}/build/messages`,
+    body: (p) => ({ content: p.content, file_urls: p.fileUrls ?? undefined }),
+    // A turn costs credits, and a 202 that never arrives invites a retry, so the
+    // caller names the turn and the platform dedupes on the name.
+    headers: (p): Record<string, string> =>
+      p.requestId ? { "Idempotency-Key": String(p.requestId) } : {},
+    // No BUILDER_TIMEOUT_MS on purpose: this returns before the turn runs, so
+    // the default CRUD timeout is the honest one. A slow answer here means the
+    // platform is unwell, not that a build is long.
+  },
+
+  /** Answers the waitpoint holding the turn open, and resumes it. 202. */
+  respondToBuildSession: {
+    method: "POST",
+    path: (p) => `/api/v1/apps/${str(p.appId)}/build/responses`,
+    /**
+     * Shaped by the waitpoint kind, which is what upstream discriminates on. An
+     * approval is a decision; a question's answer *is* the payload, and omitting
+     * it declines — so there is no separate reject field to keep consistent.
+     */
+    body: (p) => {
+      const kind = str(p.kind);
+      const approved = p.decision === "approved";
+      if (kind === "approval") {
+        return { kind, waitpoint_id: p.waitpointId, approved };
+      }
+      return {
+        kind,
+        waitpoint_id: p.waitpointId,
+        value: approved ? (p.input ?? {}) : undefined,
+      };
+    },
+    // Same contract as the message send: a network-retried POST must not resume
+    // — and charge — the turn twice.
+    headers: (p): Record<string, string> =>
+      p.requestId ? { "Idempotency-Key": String(p.requestId) } : {},
+  },
+
+  /** Stops the running turn. Answers inline, unlike the two above. */
+  cancelBuildSessionTurn: {
+    method: "POST",
+    path: (p) => `/api/v1/apps/${str(p.appId)}/build/cancel`,
+    body: () => ({}),
+  },
+
+  /**
+   * Withdraws a grant before it expires. 204, and idempotent — it says nothing
+   * about whether the id was real, so a stale one is not a way to enumerate.
+   */
+  revokeBuildSessionGrant: {
+    method: "DELETE",
+    path: (p) => `/api/v1/apps/${str(p.appId)}/build/grants/${str(p.grantId)}`,
+  },
 };
 
 /**
@@ -189,7 +291,18 @@ const APP_SCOPED = [
   "getPreviewUrl",
   "deployApp",
   "submitToolCallInput",
+  "mintBuildSessionToken",
+  "sendBuildSessionMessage",
+  "respondToBuildSession",
+  "cancelBuildSessionTurn",
+  "revokeBuildSessionGrant",
 ];
+
+/** The two answers `/build/responses` accepts; anything else is a 422 upstream. */
+const RESPOND_ACTIONS = ["approved", "rejected"];
+// The three answerable waitpoint kinds. `quota` is deliberately absent: it is
+// a blocked status upstream, not something /responses can resolve.
+const RESPOND_KINDS = ["approval", "input", "choice"];
 
 const CLEAN_ID = /^[A-Za-z0-9_-]+$/;
 
@@ -250,6 +363,27 @@ function validate(action: string, params: Params): string | null {
   // clean shape: it is caller-supplied and provider-assigned (`toolu_…`/`call_…`).
   if (action === "submitToolCallInput" && !CLEAN_ID.test(str(params.toolCallId))) {
     return 'Action "submitToolCallInput" needs a valid "toolCallId".';
+  }
+  if (action === "sendBuildSessionMessage" && !params.content) {
+    return 'Action "sendBuildSessionMessage" needs a "content" string.';
+  }
+  if (action === "respondToBuildSession") {
+    // Same clean shape as toolCallId: it is the tool call id, caller-supplied
+    // and provider-assigned (`toolu_…`/`call_…`).
+    if (!CLEAN_ID.test(str(params.waitpointId))) {
+      return 'Action "respondToBuildSession" needs a valid "waitpointId".';
+    }
+    if (!RESPOND_KINDS.includes(str(params.kind))) {
+      return `Action "respondToBuildSession" needs "kind" to be one of ${RESPOND_KINDS.join(", ")}.`;
+    }
+    if (!RESPOND_ACTIONS.includes(str(params.decision))) {
+      return `Action "respondToBuildSession" needs "decision" to be one of ${RESPOND_ACTIONS.join(", ")}.`;
+    }
+  }
+  // The grant id lands in the path, so it gets the same treatment as an app id.
+  // Upstream mints it with `token_urlsafe`, which is exactly this alphabet.
+  if (action === "revokeBuildSessionGrant" && !CLEAN_ID.test(str(params.grantId))) {
+    return 'Action "revokeBuildSessionGrant" needs a valid "grantId".';
   }
   return null;
 }
@@ -371,7 +505,8 @@ export async function POST(req: NextRequest) {
     if (!text) return NextResponse.json({ ok: true });
 
     try {
-      return NextResponse.json(JSON.parse(text));
+      const parsed = JSON.parse(text);
+      return NextResponse.json(op.transform ? op.transform(parsed) : parsed);
     } catch {
       console.error(`[base44/platform] END action=${action} non-JSON response`);
       return NextResponse.json(

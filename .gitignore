@@ -47,3 +47,6 @@ scripts/.mint.ts
 
 # netlify build output
 .netlify
+
+# Local dev session cookie minted by scripts/dev-session.ts — never commit.
+.dev-session-cookie.js

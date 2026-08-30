@@ -61,11 +61,15 @@ export const provisionKey = () => process.env.BASE44_PROVISION_KEY?.trim() || sv
 export const orgId = () => required("BASE44_ORG_ID");
 
 /**
- * Host for both the platform REST API and the provision/mint endpoints. One value
- * here, but architecturally two: in production these are the data host and the
- * token issuer, so keep them separable.
+ * The one Base44 host: the platform REST API, the identity endpoints
+ * (provision, mint, revoke) and the build-session surface are all served from
+ * it. They were briefly separable, while the two halves of this integration sat
+ * on different unmerged branches; both have landed, so there is one value again.
  *
  * NB the value in `.env` today is a Base44 PR-preview host, and **it rotates**.
+ *
+ * Server-only and never caller-supplied: a request-controlled base URL on code
+ * holding user credentials is an SSRF.
  */
 export const platformHost = () => required("BASE44_PLATFORM_HOST").replace(/\/+$/, "");
 
@@ -94,6 +98,25 @@ export const SERVICE_PRINCIPAL_EMAIL_DOMAIN = "svc.base44.invalid";
  * `cursor_`, `oauth_`) is rejected everywhere except `/mcp`.
  */
 export const SERVICE_CLIENT_ID = "svc_delegate";
+
+/**
+ * Whether to drive builds through the push channel (`/build/*` plus the
+ * SSE stream) instead of the blocking `sendMessage` + polling pair.
+ *
+ * `NEXT_PUBLIC_`, unlike everything else in this file, because the browser is
+ * what branches on it: it decides whether to open an `EventSource` or start a
+ * poll timer. It is a mode switch, not a secret — same class as
+ * `NEXT_PUBLIC_BASE44_APP_HOST`.
+ *
+ * Two prerequisites, and both fail as a flat 404 rather than anything
+ * descriptive: the platform host must be running a build carrying the endpoints,
+ * and `base44-for-platforms` must be enabled for `BASE44_ORG_ID`'s workspace. A
+ * header override cannot substitute for the second — `EventSource` cannot set
+ * request headers, so it would cover the server-side calls and leave the stream
+ * 404ing.
+ */
+export const buildSessionsEnabled = () =>
+  process.env.NEXT_PUBLIC_BASE44_BUILD_SESSIONS === "1";
 
 /**
  * Re-mint this far before the stated expiry, so a slow call cannot land after it.
