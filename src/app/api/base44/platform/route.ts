@@ -120,6 +120,12 @@ const OPS: Record<string, Op> = {
     method: "GET",
     path: (p) => `/api/apps/${str(p.appId)}`,
   },
+  /** `name` only. PUT, not PATCH — see docs/base44-platform-api.md. */
+  renameApp: {
+    method: "PUT",
+    path: (p) => `/api/apps/${str(p.appId)}`,
+    body: (p) => ({ name: str(p.name).trim() }),
+  },
   /** Moves apps into the folder. Returns an empty body on success. */
   fileAppsInFolder: {
     method: "POST",
@@ -184,6 +190,7 @@ const OPS: Record<string, Op> = {
  */
 const APP_SCOPED = [
   "getApp",
+  "renameApp",
   "getConversation",
   "sendMessage",
   "getPreviewUrl",
@@ -232,6 +239,11 @@ function validate(action: string, params: Params): string | null {
   }
   if (action === "createApp" && !params.prompt)
     return 'Action "createApp" needs a "prompt" string.';
+  if (action === "renameApp") {
+    const name = str(params.name).trim();
+    if (!name) return 'Action "renameApp" needs a non-empty "name".';
+    if (name.length > 60) return 'Action "renameApp" needs a "name" of 60 characters or fewer.';
+  }
   if (action === "createApp" && params.secrets !== undefined) {
     // Names only — a caller-supplied value would mean "write anything into this app".
     const names = params.secrets;

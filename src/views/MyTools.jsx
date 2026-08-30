@@ -16,6 +16,7 @@ import { useAppFrameAuth } from "@/lib/appFrameAuth";
 import { useAppRebuildNonce, withNonce } from "@/lib/appRefresh";
 import { listUsableApps } from "@/lib/usableApps";
 import PublishDialog from "@/components/market/PublishDialog";
+import AppNameField from "@/components/AppNameField";
 import { announceMarketChanged, useMarketChanges } from "@/lib/marketEvents";
 import { Loader2, ArrowLeft, ExternalLink, Pencil, Store, Hammer, Trash2 } from "lucide-react";
 
@@ -103,6 +104,11 @@ export default function MyTools() {
     // refreshPublished is a stable useCallback, so this still runs once.
   }, [refreshPublished]);
 
+  const handleRenamed = useCallback((id, name) => {
+    setApps((prev) => prev.map((a) => (a.id === id ? { ...a, name } : a)));
+    setSelectedApp((prev) => (prev?.id === id ? { ...prev, name } : prev));
+  }, []);
+
   const builtCount = apps.filter((a) => a.source === "built").length;
   const marketCount = apps.length - builtCount;
   const shown = source === "all" ? apps : apps.filter((a) => a.source === source);
@@ -118,9 +124,11 @@ export default function MyTools() {
           >
             <ArrowLeft className="w-3.5 h-3.5" /> Back
           </button>
-          <span className="text-sm font-medium text-foreground truncate">
-            {selectedApp.name || "Untitled"}
-          </span>
+          {selectedApp.source === "built" ? (
+            <AppNameField app={selectedApp} onRenamed={handleRenamed} className="max-w-xs" />
+          ) : (
+            <span className="text-sm font-medium text-foreground truncate">{selectedApp.name}</span>
+          )}
           {url && (
             <a
               href={url}

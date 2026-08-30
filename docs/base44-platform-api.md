@@ -189,6 +189,13 @@ still fails rather than holding the function open.
 | `401` | Token died early — usually the workspace grant changed, which Base44 re-validates per request | Re-mint **once**, retry **once**, then `428 reauthorize_required` |
 | `403` containing `scoped to MCP` | The minted token's `client_id` has an MCP prefix (`chatgpt_`, `claude_`, `cursor_`, `oauth_`), making it valid only at `/mcp` | `500` — this is a wiring regression, not a user problem |
 | other `4xx`/`5xx` | Upstream refusal | Pass the status through with a truncated detail |
+
+## Renaming an app
+
+`renameApp` sends **`PUT /api/apps/{id}`** with `{name}`. Not PATCH — that route 404s.
+A one-field PUT merges rather than replacing; verified by diffing an app's fields
+either side of the call. Re-check that if anything ever sends more than `name`.
+
 | Missing env var (thrown before any call) | Deployment isn't configured | `501 bridge_misconfigured` — **not** 400 and **not** 502. Echoing env var names into a response body is also worth avoiding |
 
 Client-side, three codes should collapse into one UI state ("show the Connect button"):
