@@ -14,10 +14,79 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useAppFrameAuth } from "@/lib/appFrameAuth";
 import { useAppRebuildNonce, withNonce } from "@/lib/appRefresh";
+import * as platform from "@/lib/base44Platform";
 import { listUsableApps } from "@/lib/usableApps";
 import PublishDialog from "@/components/market/PublishDialog";
 import { announceMarketChanged, useMarketChanges } from "@/lib/marketEvents";
 import { Loader2, ArrowLeft, ExternalLink, Pencil, Store, Hammer, Trash2 } from "lucide-react";
+
+/**
+ * The app's name, editable in place. `createApp` sets it once from the first prompt and
+ * nothing since has changed it, so by the time an app does something useful its name is
+ * usually a description of a guess.
+ */
+function RenameField({ app, onRenamed }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(app.name);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    setValue(app.name);
+  }, [app.name]);
+
+  const save = async () => {
+    const name = value.trim();
+    if (!name || name === app.name) return setEditing(false);
+    setBusy(true);
+    setError(null);
+    try {
+      await platform.renameApp(app.id, name);
+      onRenamed(app.id, name);
+      setEditing(false);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!editing) {
+    return (
+      <button
+        onClick={() => setEditing(true)}
+        title="Rename"
+        className="group flex items-center gap-1.5 text-sm font-medium text-foreground truncate hover:text-primary transition-colors"
+      >
+        {app.name}
+        <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-60 transition-opacity flex-shrink-0" />
+      </button>
+    );
+  }
+
+  return (
+    <span className="flex items-center gap-2 min-w-0">
+      <input
+        autoFocus
+        value={value}
+        maxLength={60}
+        disabled={busy}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") save();
+          if (e.key === "Escape") {
+            setValue(app.name);
+            setEditing(false);
+          }
+        }}
+        onBlur={save}
+        className="rounded border border-border bg-background px-2 py-1 text-sm text-foreground min-w-0 w-56"
+      />
+      {busy && <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />}
+      {error && <span className="text-xs text-destructive truncate">{error}</span>}
+    </span>
+  );
+}
 
 export default function MyTools() {
   const [apps, setApps] = useState([]);
@@ -103,6 +172,12 @@ export default function MyTools() {
     // refreshPublished is a stable useCallback, so this still runs once.
   }, [refreshPublished]);
 
+  /** Reflect a rename everywhere without refetching the whole folder. */
+  const handleRenamed = useCallback((id, name) => {
+    setApps((prev) => prev.map((a) => (a.id === id ? { ...a, name } : a)));
+    setSelectedApp((prev) => (prev?.id === id ? { ...prev, name } : prev));
+  }, []);
+
   const builtCount = apps.filter((a) => a.source === "built").length;
   const marketCount = apps.length - builtCount;
   const shown = source === "all" ? apps : apps.filter((a) => a.source === source);
@@ -118,9 +193,14 @@ export default function MyTools() {
           >
             <ArrowLeft className="w-3.5 h-3.5" /> Back
           </button>
-          <span className="text-sm font-medium text-foreground truncate">
-            {selectedApp.name || "Untitled"}
-          </span>
+          {/* Renaming lives here because this is where you find out the name is wrong:
+              you are looking at the app. Built apps only — you cannot rename someone
+              else's. */}
+          {selectedApp.source === "built" ? (
+            <RenameField app={selectedApp} onRenamed={handleRenamed} />
+          ) : (
+            <span className="text-sm font-medium text-foreground truncate">{selectedApp.name}</span>
+          )}
           {url && (
             <a
               href={url}
