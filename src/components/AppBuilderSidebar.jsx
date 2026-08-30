@@ -60,6 +60,7 @@ import Link from "next/link";
 import { widgetFor } from "@/components/builder/toolWidgets";
 import AppReadyWidget from "@/components/builder/widgets/AppReadyWidget";
 import PublishDialog from "@/components/market/PublishDialog";
+import AppNameField from "@/components/AppNameField";
 
 const BUILDING_POLL_MS = 2500;
 const IDLE_POLL_MS = 8000;
@@ -473,6 +474,12 @@ export default function AppBuilderSidebar({
     }
   };
 
+  /** A rename lands in two places: the open app, and its row in the app list. */
+  const handleRenamed = useCallback((id, name) => {
+    setActiveApp((prev) => (prev?.id === id ? { ...prev, name } : prev));
+    setApps((prev) => prev.map((a) => (a.id === id ? { ...a, name } : a)));
+  }, []);
+
   // App build submit
   const submitBuild = async () => {
     const content = buildInput.trim();
@@ -739,9 +746,13 @@ export default function AppBuilderSidebar({
               )}
               <div className="flex-1 min-w-0 flex items-center gap-2">
                 <Sparkles className="w-3.5 h-3.5 text-accent flex-shrink-0" />
-                <p className="text-sm font-medium text-foreground truncate">
-                  {buildView === "chat" && activeApp ? activeApp.name : "Build an app"}
-                </p>
+                {/* Renameable here too: the chat is where an app stops being what its
+                    first prompt described, so it is where the name goes stale. */}
+                {buildView === "chat" && activeApp ? (
+                  <AppNameField app={activeApp} onRenamed={handleRenamed} />
+                ) : (
+                  <p className="text-sm font-medium text-foreground truncate">Build an app</p>
+                )}
                 {buildView === "chat" && activeApp && (
                   <div className="flex items-center gap-2 ml-1">
                     {isBuilding ? (
