@@ -188,6 +188,10 @@ export async function createApp({
   return app;
 }
 
+/** Renames an app. The only field the bridge will change. */
+export const renameApp = (appId: string, name: string) =>
+  call("renameApp", { appId, name }) as Promise<App>;
+
 export const getApp = (appId: string) => call("getApp", { appId }) as Promise<App>;
 
 /** The builder conversation, chronological, newest last. */

@@ -192,6 +192,26 @@ async function main() {
   const bad = async (body: unknown) => (await platform(body, USER)).status;
   check("an unknown action is 400", (await bad({ action: "deleteEverything" })) === 400);
   check("a missing action is 400", (await bad({})) === 400);
+
+  // renameApp is the one action that writes to an app record, so its input is
+  // checked before anything reaches upstream — these run without a live platform.
+  check("renameApp needs an appId", (await bad({ action: "renameApp", name: "x" })) === 400);
+  check(
+    "renameApp needs a name",
+    (await bad({ action: "renameApp", appId: "abc123" })) === 400,
+  );
+  check(
+    "...a blank one does not count",
+    (await bad({ action: "renameApp", appId: "abc123", name: "   " })) === 400,
+  );
+  check(
+    "...and it is length-capped",
+    (await bad({ action: "renameApp", appId: "abc123", name: "x".repeat(61) })) === 400,
+  );
+  check(
+    "renameApp rejects a path-shaped appId",
+    (await bad({ action: "renameApp", appId: "../../apps", name: "x" })) === 400,
+  );
   check(
     "a path-traversing appId is 400",
     (await bad({ action: "getApp", appId: "../../admin" })) === 400,

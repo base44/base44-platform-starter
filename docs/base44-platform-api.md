@@ -189,6 +189,26 @@ still fails rather than holding the function open.
 | `401` | Token died early — usually the workspace grant changed, which Base44 re-validates per request | Re-mint **once**, retry **once**, then `428 reauthorize_required` |
 | `403` containing `scoped to MCP` | The minted token's `client_id` has an MCP prefix (`chatgpt_`, `claude_`, `cursor_`, `oauth_`), making it valid only at `/mcp` | `500` — this is a wiring regression, not a user problem |
 | other `4xx`/`5xx` | Upstream refusal | Pass the status through with a truncated detail |
+
+## `renameApp` is unverified upstream
+
+`createApp` sets an app's name once, from the first prompt. Iterating in the chat
+changes the app's code and never its record, so an app keeps whatever it was called
+before anyone knew what it did.
+
+`renameApp` sends `PATCH /api/apps/{id}` with a one-field body, `{name}`. **The verb and
+shape are a guess.** Base44's public docs do not cover the platform REST API, and the
+host this repo points at was suspended when it was written, so it could not be probed.
+
+A one-field PATCH is safe if the upstream merges, which is what PATCH means. If it turns
+out to replace, this action is wrong and must be removed rather than patched around —
+it would clear every field it does not send. Anyone with a live platform host should
+confirm before relying on it: rename a throwaway app, then `getApp` and check nothing
+else moved.
+
+The input is validated before anything is sent — non-empty, 60 characters, clean id —
+and asserted in `npm run base44:smoke`, which needs no upstream.
+
 | Missing env var (thrown before any call) | Deployment isn't configured | `501 bridge_misconfigured` — **not** 400 and **not** 502. Echoing env var names into a response body is also worth avoiding |
 
 Client-side, three codes should collapse into one UI state ("show the Connect button"):

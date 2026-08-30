@@ -120,6 +120,21 @@ const OPS: Record<string, Op> = {
     method: "GET",
     path: (p) => `/api/apps/${str(p.appId)}`,
   },
+  /**
+   * The only field this is allowed to touch is `name`. `createApp` sets it once from
+   * the first prompt, and iterating in the chat changes the app's code but never its
+   * record — so without this an app keeps whatever it was called before anyone knew
+   * what it did.
+   *
+   * PATCH with a one-field body, so a merge leaves everything else alone. If the
+   * upstream turns out to replace rather than merge, this is the wrong verb and the
+   * action has to go — see docs/base44-platform-api.md.
+   */
+  renameApp: {
+    method: "PATCH",
+    path: (p) => `/api/apps/${str(p.appId)}`,
+    body: (p) => ({ name: str(p.name).trim() }),
+  },
   /** Moves apps into the folder. Returns an empty body on success. */
   fileAppsInFolder: {
     method: "POST",
@@ -184,6 +199,7 @@ const OPS: Record<string, Op> = {
  */
 const APP_SCOPED = [
   "getApp",
+  "renameApp",
   "getConversation",
   "sendMessage",
   "getPreviewUrl",
@@ -232,6 +248,11 @@ function validate(action: string, params: Params): string | null {
   }
   if (action === "createApp" && !params.prompt)
     return 'Action "createApp" needs a "prompt" string.';
+  if (action === "renameApp") {
+    const name = str(params.name).trim();
+    if (!name) return 'Action "renameApp" needs a non-empty "name".';
+    if (name.length > 60) return 'Action "renameApp" needs a "name" of 60 characters or fewer.';
+  }
   if (action === "createApp" && params.secrets !== undefined) {
     // Names only — a caller-supplied value would mean "write anything into this app".
     const names = params.secrets;
