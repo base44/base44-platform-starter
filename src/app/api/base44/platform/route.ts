@@ -126,12 +126,12 @@ const OPS: Record<string, Op> = {
    * record — so without this an app keeps whatever it was called before anyone knew
    * what it did.
    *
-   * PATCH with a one-field body, so a merge leaves everything else alone. If the
-   * upstream turns out to replace rather than merge, this is the wrong verb and the
-   * action has to go — see docs/base44-platform-api.md.
+   * PUT, not PATCH: the app route has no PATCH handler (404), and PUT with a
+   * one-field body **merges** rather than replacing — verified against
+   * app.base44.com by diffing all 144 fields of an app either side of the call.
    */
   renameApp: {
-    method: "PATCH",
+    method: "PUT",
     path: (p) => `/api/apps/${str(p.appId)}`,
     body: (p) => ({ name: str(p.name).trim() }),
   },

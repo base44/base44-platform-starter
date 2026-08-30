@@ -190,21 +190,25 @@ still fails rather than holding the function open.
 | `403` containing `scoped to MCP` | The minted token's `client_id` has an MCP prefix (`chatgpt_`, `claude_`, `cursor_`, `oauth_`), making it valid only at `/mcp` | `500` — this is a wiring regression, not a user problem |
 | other `4xx`/`5xx` | Upstream refusal | Pass the status through with a truncated detail |
 
-## `renameApp` is unverified upstream
+## Renaming an app
 
 `createApp` sets an app's name once, from the first prompt. Iterating in the chat
 changes the app's code and never its record, so an app keeps whatever it was called
 before anyone knew what it did.
 
-`renameApp` sends `PATCH /api/apps/{id}` with a one-field body, `{name}`. **The verb and
-shape are a guess.** Base44's public docs do not cover the platform REST API, and the
-host this repo points at was suspended when it was written, so it could not be probed.
+`renameApp` sends **`PUT /api/apps/{id}`** with a one-field body, `{name}`.
 
-A one-field PATCH is safe if the upstream merges, which is what PATCH means. If it turns
-out to replace, this action is wrong and must be removed rather than patched around —
-it would clear every field it does not send. Anyone with a live platform host should
-confirm before relying on it: rename a throwaway app, then `getApp` and check nothing
-else moved.
+The verb is not obvious and was established by probing `app.base44.com`:
+
+| attempt | result |
+| --- | --- |
+| `PATCH /api/apps/{id}` | 404 — no handler |
+| `PUT /api/apps/{id}` | **200** |
+| `POST /api/apps/{id}`, `/settings`, `/rename`, `?id=` | 404 |
+
+PUT usually means replace, which would clear every field the body omits. It does not
+here: an app read before and after a one-field PUT had the same 144 fields, with
+nothing lost. Re-check that if you ever send more than `name`.
 
 The input is validated before anything is sent — non-empty, 60 characters, clean id —
 and asserted in `npm run base44:smoke`, which needs no upstream.
