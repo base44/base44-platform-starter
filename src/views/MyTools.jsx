@@ -2,7 +2,7 @@
  * "Apps" — every app this user can open, embedded full-height.
  *
  * Called Apps because half of what is here is not the user's. The route stays
- * `/MyTools`: `?app=` deep links point at it. Sources are filtered rather than tabbed,
+ * `/apps`: `?app=` deep links point at it. Sources are filtered rather than tabbed,
  * because opening an app is the common action and "All" has to be the default.
  *
  * Two sources, merged in `listUsableApps()`: apps they built (the Base44 folder,

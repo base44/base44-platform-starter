@@ -123,9 +123,8 @@ market"** for the listing, so the two are not the same word.
 ## "Apps", not "My Tools"
 
 Half of what is on that page is not the user's — an installed app is someone else's
-code they were granted the right to run — so the page is **Apps**. The route stays
-`/MyTools`: `?app=` deep links point at it from the builder and the widgets, and a
-rename there buys nothing.
+code they were granted the right to run — so the page is **Apps**. The route matches the
+name: `/apps`, which `?app=` deep links from the builder and the widgets point at.
 
 The two sources are a **filter**, not tabs: All · Built by me · From the market, with
 counts, and a badge on every card. Opening an app is the common action and people do

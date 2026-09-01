@@ -410,7 +410,7 @@ export default function Marketplace() {
         {notice && (
           <p className="mb-4 flex items-center gap-2 text-sm text-primary">
             <Check className="h-3.5 w-3.5" /> {notice}
-            <Link href="/Dashboard" className="underline underline-offset-2">Home</Link>
+            <Link href="/" className="underline underline-offset-2">Home</Link>
           </p>
         )}
 

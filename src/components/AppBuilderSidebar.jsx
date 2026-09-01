@@ -779,7 +779,7 @@ export default function AppBuilderSidebar({
                 )}
                 {buildView === "list" && (
                   <Link
-                    href="/AppMarket"
+                    href="/market"
                     onClick={onClose}
                     className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground px-2 py-1.5 rounded hover:bg-secondary transition-colors hidden"
                   >
@@ -931,7 +931,7 @@ export default function AppBuilderSidebar({
                         onAddToMyWidgets={addToMyWidgets}
                         isAddingToMyWidgets={pendingSave === "widgets"}
                         isAddedToMyWidgets={addedToMyWidgets || alreadyPinned}
-                        myToolsHref={activeAppId ? `/MyTools?app=${activeAppId}` : null}
+                        myToolsHref={activeAppId ? `/apps?app=${activeAppId}` : null}
                         // Close the builder on the way: the point of following the
                         // link is to look at the app, and the panel covers it.
                         onNavigate={onClose}
