@@ -138,8 +138,8 @@ export const DEFAULT_APP_SECRETS: readonly string[] = Object.freeze([]);
  *      `customInstructions` and `secrets` must already be on the app when it runs.
  *   2. `fileAppsInFolder` — `/api/apps` has no folder field on create, so a fresh
  *      app is briefly unfiled, and `listApps` reads out of the folder. An unfiled
- *      app is invisible in My apps, so this failing is loud.
- *   3. `AppOwnership` — without it the app is invisible in My apps, to everyone.
+ *      app is invisible in My Tools, so this failing is loud.
+ *   3. `AppOwnership` — without it the app is invisible in My Tools, to everyone.
  */
 export async function createApp({
   prompt,

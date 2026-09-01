@@ -1,5 +1,5 @@
 /**
- * Pins a built Base44 app to My Widgets. My apps lists the Base44 app folder
+ * Pins a built Base44 app to My Widgets. My Tools lists the Base44 app folder
  * directly; My Widgets renders `Widget` rows, so an app shows up there only once
  * a row exists. Shared by the Add-widget picker, the builder, and the market.
  *
