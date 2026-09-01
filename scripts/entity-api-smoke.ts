@@ -15,6 +15,8 @@
  *      Prisma `where` that could subvert the RLS predicate
  *   6. a board marked `shared` reads across owners and still writes to none of them
  *
+ * Console sections are numbered in run order; the list above is by property.
+ *
  * Writes throwaway rows to DATABASE_URL and cleans up. Scratch database only:
  *   npm run dev            # in another shell
  *   npm run entities:smoke
@@ -499,7 +501,7 @@ async function main() {
     `got ${adminDelete.status}`,
   );
 
-  console.log("\n6. a shared board reads across owners, and writes to none");
+  console.log("\n9. a shared board reads across owners, and writes to none");
 
   // Written straight to Postgres again: `visibility` is a writable field, but the
   // point here is what a reader sees, not how the flag got set.
@@ -554,7 +556,7 @@ async function main() {
       `${TAG} other shared board`,
   );
 
-  console.log("\n7. cascade");
+  console.log("\n10. cascade");
 
   // Cascade still applies through the API path.
   await api("DELETE", `/Board/${otherBoard.id}`, { as: OTHER });
