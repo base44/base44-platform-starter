@@ -141,7 +141,7 @@ happy path.
 
 **Board**: `title`*, `description`, `color` (hex, default `#0073EA`), `visibility`
 (`private`|`shared`), `view_type` (`table`|`kanban`|`calendar`), `columns[]`,
-`groups[]`, `team_id`.
+`groups[]`.
 - `columns[]`: `{id, title, type, width, options}`; `type` ∈ `text`, `status`,
   `date`, `people`, `number`, `budget`, `priority`, `checkbox`, `dropdown`.
   `options` is per-type and open (e.g. status labels).

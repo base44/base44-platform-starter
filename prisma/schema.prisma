@@ -9,7 +9,7 @@
 //     model has it, indexed, and is only ever queried through scopedWhere()
 //     in src/lib/rls.ts. Never query these models raw.
 //   * ids are opaque strings, so Base44's Mongo ObjectId hex values can be
-//     carried over verbatim and boardId/teamId/groupId refs stay intact.
+//     carried over verbatim and boardId/groupId refs stay intact.
 
 generator client {
   provider      = "prisma-client-js"
@@ -77,24 +77,6 @@ model User {
   @@map("users")
 }
 
-model Team {
-  id           String   @id @default(cuid())
-  name         String
-  description  String?
-  logoUrl      String?  @map("logo_url")
-  color        String   @default("#0073EA")
-  memberEmails String[] @map("member_emails")
-
-  createdBy String   @map("created_by")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  boards Board[]
-
-  @@index([createdBy])
-  @@map("teams")
-}
-
 /// Board columns and groups stay denormalized JSON, exactly as in Base44:
 ///   columns: [{ id, title, type, width, options }]
 ///   groups:  [{ id, title, color, collapsed, visible_columns[], custom_columns[] }]
@@ -111,9 +93,6 @@ model Board {
   columns     Json            @default("[]")
   groups      Json            @default("[]")
 
-  teamId String? @map("team_id")
-  team   Team?   @relation(fields: [teamId], references: [id], onDelete: SetNull)
-
   createdBy String   @map("created_by")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -121,7 +100,6 @@ model Board {
   items Item[]
 
   @@index([createdBy])
-  @@index([teamId])
   @@map("boards")
 }
 

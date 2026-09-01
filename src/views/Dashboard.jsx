@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Board, Item, Team, Widget, me } from "@/lib/entityClient";
+import { Board, Item, Widget, me } from "@/lib/entityClient";
 import Link from "next/link";
-import { Plus, Users, Gauge, ArrowRight } from "lucide-react";
+import { Plus, Gauge, ArrowRight } from "lucide-react";
 import { createPageUrl } from "@/utils";
 
 import RecentBoards from "../components/dashboard/RecentBoards";
@@ -11,8 +11,7 @@ import CreateBoardModal from "../components/boards/CreateBoardModal";
 import DashboardWidgets from "../components/dashboard/DashboardWidgets";
 import AddWidgetModal from "../components/dashboard/AddWidgetModal";
 import MarketCard from "../components/dashboard/MarketCard";
-import TeamBanner from "../components/team/TeamBanner";
-import TeamSetupModal from "../components/team/TeamSetupModal";
+import WorkspaceBanner from "../components/workspace/WorkspaceBanner";
 import { useToast } from "@/components/ui/toast";
 import { summarize } from "@/lib/taskStats";
 
@@ -32,8 +31,6 @@ export default function Dashboard() {
   const [widgets, setWidgets] = useState([]);
   const [showAddWidget, setShowAddWidget] = useState(false);
   const [showCreateBoard, setShowCreateBoard] = useState(false);
-  const [team, setTeam] = useState(null);
-  const [showTeamModal, setShowTeamModal] = useState(false);
   const [filter, setFilter] = useState(null);
   const [highlightWidgetId, setHighlightWidgetId] = useState(null);
   const { toast } = useToast();
@@ -53,18 +50,16 @@ export default function Dashboard() {
   const loadDashboardData = async () => {
     setIsLoading(true);
     try {
-      const [boardsData, itemsData, userData, widgetsData, teamsData] = await Promise.all([
+      const [boardsData, itemsData, userData, widgetsData] = await Promise.all([
         Board.list("-updated_date", COUNT_LIMIT),
         Item.list("-updated_date", COUNT_LIMIT),
         me(),
         Widget.list("order_index", 20),
-        Team.list("-created_date", 1),
       ]);
       setBoards(boardsData);
       setItems(itemsData);
       setUser(userData);
       setWidgets(widgetsData);
-      setTeam(teamsData[0] || null);
     } catch (error) {
       console.error("Error loading dashboard data:", error);
     }
@@ -163,14 +158,6 @@ export default function Dashboard() {
               </h1>
             </div>
             <div className="flex items-center gap-3">
-              {!team && (
-                <button
-                  onClick={() => setShowTeamModal(true)}
-                  className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground border border-border px-4 py-2 min-h-[40px] rounded hover:text-foreground hover:border-foreground/30 transition-colors"
-                >
-                  <Users className="w-3.5 h-3.5" aria-hidden="true" /> Create team
-                </button>
-              )}
               {/* The page's one primary control is an action, not a second route
                   to a page already in the nav. */}
               <button
@@ -185,7 +172,7 @@ export default function Dashboard() {
       </div>
 
       <div className="mx-auto max-w-[1400px] px-4 sm:px-6 py-6 md:py-8 space-y-6">
-        {team && <TeamBanner team={team} onEdit={() => setShowTeamModal(true)} />}
+        <WorkspaceBanner />
 
         {/* Analytics is these same numbers with history, so the link belongs here. */}
         <div>
@@ -238,13 +225,6 @@ export default function Dashboard() {
           onHighlightDone={() => setHighlightWidgetId(null)}
         />
       </div>
-
-      <TeamSetupModal
-        open={showTeamModal}
-        onClose={() => setShowTeamModal(false)}
-        existingTeam={team}
-        onSaved={(t) => setTeam(t)}
-      />
 
       <CreateBoardModal
         isOpen={showCreateBoard}

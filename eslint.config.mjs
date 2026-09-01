@@ -14,7 +14,7 @@ import nextTs from "eslint-config-next/typescript";
 const ownerScopedByIdWrites = {
   selector:
     "CallExpression[callee.object.object.name='prisma']" +
-    "[callee.object.property.name=/^(team|board|item|widget|appOwnership|appInstall)$/]" +
+    "[callee.object.property.name=/^(board|item|widget|appOwnership|appInstall)$/]" +
     "[callee.property.name=/^(update|delete)$/]",
   message:
     "By-id update/delete cannot carry the RLS predicate — use updateMany/deleteMany " +
