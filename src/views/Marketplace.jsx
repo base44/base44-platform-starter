@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Loader2, Search, Check, ArrowLeft, ShieldCheck, Sparkles, Store, LayoutGrid } from "lucide-react";
+import { Loader2, Search, Check, ArrowLeft, ShieldCheck, Sparkles, Store, LayoutGrid, Eye } from "lucide-react";
 
 import { addAppToMyWidgets } from "@/lib/myWidgets";
 import { useAppFrameAuth } from "@/lib/appFrameAuth";
 import { listUsableApps } from "@/lib/usableApps";
 import { announceMarketChanged, useMarketChanges } from "@/lib/marketEvents";
 import PublishDialog from "@/components/market/PublishDialog";
+import AppPreviewModal from "@/components/AppPreviewModal";
 
 /**
  * The app market.
@@ -15,6 +16,12 @@ import PublishDialog from "@/components/market/PublishDialog";
  * embedding triggers the handshake, and who the app acts for is resolved server-side
  * from the viewer token. Installing and pinning to Home are separate acts.
  */
+
+/**
+ * The same confinement for both ways the market frames someone else's app — the
+ * full-page embed and the preview. Anything a listing loads is third-party code.
+ */
+const APP_SANDBOX = "allow-scripts allow-same-origin allow-forms allow-popups";
 
 const post = async (path, body) => {
   const res = await fetch(path, {
@@ -53,7 +60,7 @@ function EmbeddedApp({ listing, onBack }) {
           src={listing.app_url}
           title={listing.title}
           className="w-full flex-1 border-0"
-          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+          sandbox={APP_SANDBOX}
         />
       ) : (
         <div className="flex flex-1 items-center justify-center">
@@ -168,18 +175,38 @@ function InstallDialog({ listing, onCancel, onConfirm }) {
   );
 }
 
-function ListingCard({ listing, onInstall, onOpen, onUnpublish, onPin }) {
+function ListingCard({ listing, onInstall, onOpen, onUnpublish, onPin, onPreview }) {
+  // An installed app has "Open", which is the same frame at full size. Offering both
+  // would be two buttons for one thing.
+  const canPreview = Boolean(listing.app_url) && !listing.installed;
+
+  const thumbnail = listing.screenshot_url ? (
+    <img src={listing.screenshot_url} alt="" className="h-full w-full object-cover" />
+  ) : (
+    <span className="select-none font-display text-4xl text-muted-foreground/20">
+      {listing.title[0].toUpperCase()}
+    </span>
+  );
+
   return (
-    <div className="flex flex-col overflow-hidden rounded-lg border border-border bg-card shadow-sm transition-all hover:border-primary/40 hover:shadow-md">
-      <div className="flex aspect-[16/9] items-center justify-center overflow-hidden bg-muted">
-        {listing.screenshot_url ? (
-          <img src={listing.screenshot_url} alt="" className="h-full w-full object-cover" />
-        ) : (
-          <span className="select-none font-display text-4xl text-muted-foreground/20">
-            {listing.title[0].toUpperCase()}
+    <div className="group flex flex-col overflow-hidden rounded-lg border border-border bg-card shadow-sm transition-all hover:border-primary/40 hover:shadow-md">
+      {canPreview ? (
+        <button
+          type="button"
+          onClick={() => onPreview(listing)}
+          aria-label={`Preview ${listing.title}`}
+          className="relative flex aspect-[16/9] items-center justify-center overflow-hidden bg-muted"
+        >
+          {thumbnail}
+          <span className="absolute inset-0 flex items-center justify-center gap-1.5 bg-foreground/50 text-xs font-medium text-background opacity-0 backdrop-blur-[1px] transition-opacity group-hover:opacity-100">
+            <Eye className="h-3.5 w-3.5" /> Preview
           </span>
-        )}
-      </div>
+        </button>
+      ) : (
+        <div className="flex aspect-[16/9] items-center justify-center overflow-hidden bg-muted">
+          {thumbnail}
+        </div>
+      )}
 
       <div className="flex-1 p-3.5">
         <div className="flex items-start justify-between gap-2">
@@ -199,6 +226,15 @@ function ListingCard({ listing, onInstall, onOpen, onUnpublish, onPin }) {
       </div>
 
       <div className="flex gap-2 border-t border-border p-2.5">
+        {canPreview && (
+          <button
+            onClick={() => onPreview(listing)}
+            title="Open it without installing it. It cannot read your data until you do."
+            className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground"
+          >
+            <Eye className="h-3.5 w-3.5" /> Preview
+          </button>
+        )}
         {listing.is_author && listing.status === "published" && (
           <button
             onClick={() => onUnpublish(listing)}
@@ -251,6 +287,7 @@ export default function Marketplace() {
   const [error, setError] = useState(null);
   const [installing, setInstalling] = useState(null);
   const [open, setOpen] = useState(null);
+  const [preview, setPreview] = useState(null);
   const [notice, setNotice] = useState(null);
   const [picking, setPicking] = useState(false);
   const [publishing, setPublishing] = useState(null);
@@ -349,6 +386,42 @@ export default function Marketplace() {
         />
       )}
 
+      {/*
+        Trying an app before granting it anything. The frame runs the same handshake
+        as everywhere else and /api/sunny/token refuses it — no install, no grant — so
+        the preview shows the app's own empty state. The author is the exception: they
+        can mint for an app they never installed, which is what makes previewing
+        something you just built useful.
+      */}
+      <AppPreviewModal
+        open={Boolean(preview)}
+        title={preview?.title}
+        url={preview?.app_url}
+        appId={preview?.app_id}
+        sandbox={APP_SANDBOX}
+        stageLabel={preview ? `Loading ${preview.title}…` : undefined}
+        onClose={() => setPreview(null)}
+        footer={
+          preview && !preview.is_author ? (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="flex items-start gap-2 text-xs text-muted-foreground">
+                <ShieldCheck className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-primary" />
+                <span>
+                  A preview by {preview.author}. It has no access to your boards yet —
+                  install it to let it read and write your data, as you.
+                </span>
+              </p>
+              <button
+                onClick={() => { const l = preview; setPreview(null); setInstalling(l); }}
+                className="flex-shrink-0 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+              >
+                Install
+              </button>
+            </div>
+          ) : null
+        }
+      />
+
       <div className="border-b border-border">
         <div className="mx-auto max-w-7xl px-6 py-8 md:py-10">
           <p className="mb-1 text-xs font-medium text-muted-foreground">Workspace</p>
@@ -410,7 +483,7 @@ export default function Marketplace() {
         {notice && (
           <p className="mb-4 flex items-center gap-2 text-sm text-primary">
             <Check className="h-3.5 w-3.5" /> {notice}
-            <Link href="/Dashboard" className="underline underline-offset-2">Home</Link>
+            <Link href="/" className="underline underline-offset-2">Home</Link>
           </p>
         )}
 
@@ -445,6 +518,7 @@ export default function Marketplace() {
                 onOpen={setOpen}
                 onUnpublish={unpublish}
                 onPin={pin}
+                onPreview={setPreview}
               />
             ))}
           </div>
