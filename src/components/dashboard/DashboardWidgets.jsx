@@ -106,7 +106,16 @@ function NoFrame({ reason }) {
   );
 }
 
-function WidgetFrame({ widget, onRemove, onUpdate, onExpand, deployedAt, metaReady, highlight }) {
+function WidgetFrame({
+  widget,
+  onRemove,
+  onUpdate,
+  onExpand,
+  deployedAt,
+  metaReady,
+  canEdit,
+  highlight,
+}) {
   const [loading, setLoading] = useState(true);
   const [height, setHeight] = useState(widget.height || DEFAULT_HEIGHT);
   const [colSpan, setColSpan] = useState(widget.col_span || 1);
@@ -232,7 +241,9 @@ function WidgetFrame({ widget, onRemove, onUpdate, onExpand, deployedAt, metaRea
         <p className="text-xs font-medium text-foreground truncate">{widget.app_name}</p>
         {authDenied && <AccessDenied />}
         <div className="flex items-center gap-0.5 flex-shrink-0 ml-auto">
-          {widget.app_id && (
+          {/* Only the app's author: an installed widget is somebody else's code,
+              and the builder would refuse the turn anyway. */}
+          {widget.app_id && canEdit && (
             <button
               // An event, not a link: the panel opens over the dashboard.
               onClick={() =>
@@ -354,6 +365,10 @@ export default function DashboardWidgets({
   // One modal for the list rather than one per card: only ever one is open.
   const [expanded, setExpanded] = useState(null);
   // app id -> last_deployed_at, one list call for every card. Null = not yet known.
+  //
+  // Doubles as the authorship check: `listAppsForUser` returns the apps this user
+  // built (all of the folder, for an admin), so a key here means the pencil is
+  // theirs to offer. An installed app is pinned by its installer and never appears.
   const [appMeta, setAppMeta] = useState(null);
 
   useEffect(() => {
@@ -425,6 +440,7 @@ export default function DashboardWidgets({
               onExpand={setExpanded}
               deployedAt={appMeta ? (appMeta[w.app_id] ?? null) : null}
               metaReady={appMeta !== null}
+              canEdit={Boolean(appMeta && Object.hasOwn(appMeta, w.app_id))}
               highlight={w.id === highlightId}
             />
           ))}
