@@ -63,7 +63,8 @@ enum Base44LinkStatus {
 /// Shell users. Created/upserted on Google sign-in, matched by email — which is
 /// what lets the email-keyed AppOwnership and Base44Link rows exist before their
 /// owner has ever signed in here.
-/// `role` is a manual DB flag: flip to `admin` by hand.
+/// `role` is a manual DB flag: flip to `admin` by hand. It grants no RLS bypass —
+/// see src/lib/rls.ts.
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
@@ -253,7 +254,7 @@ model MarketplaceListing {
 ///
 /// It used to be the `Widget` row, which welded "I want this app" to "I want it on my
 /// home page". SENSITIVE like Base44Link — reached only through src/lib/appInstall.ts,
-/// never the generic entity CRUD, and with no admin bypass.
+/// never the generic entity CRUD.
 model AppInstall {
   id String @id @default(cuid())
 

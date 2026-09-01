@@ -202,7 +202,7 @@ Building is only half of it — the app has to come home:
   create.
 - **Ownership:** record `app_id → your user` locally when you create the app. Platform apps have no
   per-your-user owner, so this local row is the only thing that makes "my apps" possible. If it
-  fails, only admins will see the app — log it loudly.
+  fails, the app is invisible in My Tools to everyone, its builder included — log it loudly.
 - **Widgets:** in this repo an app can be pinned to a dashboard as a resizable widget (`height` in
   px, `col_span` 1 or 2). Those dimensions are exactly what the always-on instructions describe, so
   the generated UI fits the frame it will actually live in.

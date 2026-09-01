@@ -456,12 +456,13 @@ async function main() {
 
   console.log("\n10. one record shape across both APIs");
 
-  const adminCookie = `next-auth.session-token=${await encode({
-    token: { email: ADMIN, role: "admin", roleCheckedAt: Date.now() },
+  // Read it as its owner: /api/entities is owner-scoped for every role.
+  const ownerCookie = `next-auth.session-token=${await encode({
+    token: { email: OWNER_A, role: "user", roleCheckedAt: Date.now() },
     secret: process.env.NEXTAUTH_SECRET!,
   })}`;
   const viaEntities = await fetch(`${BASE_URL}/api/entities/Board/${boardA.id}`, {
-    headers: { cookie: adminCookie },
+    headers: { cookie: ownerCookie },
   }).then((r) => r.json());
   const viaSunny = (await call({ action: "getBoard", board_id: boardA.id })).body.board as Rec;
   const entitiesRecord = viaEntities as Rec;

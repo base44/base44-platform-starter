@@ -34,7 +34,7 @@ Next.js App Router · TypeScript · Tailwind 4 · Postgres + Prisma · NextAuth 
 ## Conventions
 
 - **RLS is hand-enforced.** Every user-owned entity query goes through `scopedWhere(session)` in
-  `src/lib/rls.ts` (`where: { createdBy: session.email }`, admin bypass). `src/lib/entityCrud.ts` is
+  `src/lib/rls.ts` (`where: { createdBy: session.email }`, no role bypass). `src/lib/entityCrud.ts` is
   the *only* module that queries owner-scoped models — never query them raw. This is the single
   biggest correctness risk in the codebase, and ESLint bans by-id `update`/`delete` on those models
   to keep it that way.

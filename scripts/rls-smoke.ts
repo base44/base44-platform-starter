@@ -5,8 +5,8 @@
  * one user and another's boards is scopedWhere() being spread into every query.
  * This asserts the properties that matter, against real rows:
  *
- *   1. a non-admin read sees only its own rows
- *   2. an admin read sees everything
+ *   1. a read sees only its own rows
+ *   2. no role, admin included, widens that
  *   3. a cross-user write through updateMany/deleteMany affects 0 rows
  *   4. the by-id update/delete trap really is a trap (documents why *Many)
  *   5. deleting a board cascades to its items
@@ -65,7 +65,7 @@ async function main() {
     data: { title: `${TAG} bob item`, boardId: bobBoard.id, ...ownerFields(BOB) },
   });
 
-  console.log("\n1. non-admin reads are scoped");
+  console.log("\n1. reads are scoped");
   const aliceBoards = await prisma.board.findMany({
     where: { ...scopedWhere(ALICE), title: { startsWith: TAG } },
   });
@@ -73,12 +73,19 @@ async function main() {
   check("and it is hers", aliceBoards[0]?.id === aliceBoard.id);
   check("bob's board is not visible to alice", !aliceBoards.some((b) => b.id === bobBoard.id));
 
-  console.log("\n2. admin reads bypass scoping");
+  console.log("\n2. the admin role is not a bypass");
   const adminBoards = await prisma.board.findMany({
     where: { ...scopedWhere(ADMIN), title: { startsWith: TAG } },
   });
-  check("admin sees both boards", adminBoards.length === 2, `saw ${adminBoards.length}`);
-  check("scopedWhere(admin) is an empty predicate", Object.keys(scopedWhere(ADMIN)).length === 0);
+  check(
+    "admin sees neither of the other two boards",
+    adminBoards.length === 0,
+    `saw ${adminBoards.length}`,
+  );
+  check(
+    "scopedWhere(admin) still scopes to the email",
+    scopedWhere(ADMIN).createdBy === ADMIN.email,
+  );
 
   console.log("\n3. cross-user writes through *Many affect nothing");
   const stolenUpdate = await prisma.board.updateMany({
@@ -159,7 +166,14 @@ async function main() {
   check("canAccess(null, row) is false", canAccess(null, { createdBy: ALICE.email }) === false);
   check("canAccess denies a non-owner", canAccess(BOB, { createdBy: ALICE.email }) === false);
   check("canAccess allows the owner", canAccess(ALICE, { createdBy: ALICE.email }) === true);
-  check("canAccess allows an admin", canAccess(ADMIN, { createdBy: ALICE.email }) === true);
+  check(
+    "canAccess denies an admin someone else's row",
+    canAccess(ADMIN, { createdBy: ALICE.email }) === false,
+  );
+  check(
+    "canAccess allows an admin their own row",
+    canAccess(ADMIN, { createdBy: ADMIN.email }) === true,
+  );
 
   console.log("\n7. defaults and enums round-trip");
   const fresh = await prisma.board.findUniqueOrThrow({ where: { id: bobBoard.id } });
