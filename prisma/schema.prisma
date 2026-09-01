@@ -38,7 +38,6 @@ enum BoardVisibility {
 enum BoardViewType {
   table
   kanban
-  calendar
 }
 
 enum ItemPriority {

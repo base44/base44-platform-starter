@@ -141,13 +141,11 @@ export default function BoardHeader({
                             ? "Main table"
                             : currentView === "kanban"
                               ? "Kanban"
-                              : currentView === "calendar"
-                                ? "Calendar"
-                                : currentView === "timeline"
-                                  ? "Timeline"
-                                  : currentView === "unassigned"
-                                    ? "Unassigned"
-                                    : "Main table"}
+                              : currentView === "timeline"
+                                ? "Timeline"
+                                : currentView === "unassigned"
+                                  ? "Unassigned"
+                                  : "Main table"}
                           <ChevronDown className="w-3 h-3" />
                         </button>
                       </DropdownMenuTrigger>
@@ -159,10 +157,6 @@ export default function BoardHeader({
                         <DropdownMenuItem onClick={() => onViewChange("kanban")}>
                           <Table2 className="w-4 h-4 mr-2" />
                           Kanban Board
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => onViewChange("calendar")}>
-                          <Table2 className="w-4 h-4 mr-2" />
-                          Calendar View
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => onViewChange("timeline")}>
                           <Table2 className="w-4 h-4 mr-2" />
