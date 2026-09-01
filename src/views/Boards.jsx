@@ -1,4 +1,4 @@
-import { Board, Item, Team } from "@/lib/entityClient";
+import { Board, Item } from "@/lib/entityClient";
 import React, { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
@@ -10,8 +10,8 @@ import CreateBoardModal from "../components/boards/CreateBoardModal";
 import EditBoardModal from "../components/boards/EditBoardModal";
 import BoardCard from "../components/boards/BoardCard";
 import ImportBoardModal from "../components/boards/ImportBoardModal";
-import TeamBanner from "../components/team/TeamBanner";
-import TeamSetupModal from "../components/team/TeamSetupModal";
+import WorkspaceBanner from "../components/workspace/WorkspaceBanner";
+import { WORKSPACE_BRAND } from "@/lib/workspaceBrand";
 
 export default function Boards() {
   const [boards, setBoards] = useState([]);
@@ -24,8 +24,6 @@ export default function Boards() {
   const [editingBoard, setEditingBoard] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState("grid");
-  const [team, setTeam] = useState(null);
-  const [showTeamModal, setShowTeamModal] = useState(false);
 
   useEffect(() => {
     loadBoards();
@@ -36,14 +34,12 @@ export default function Boards() {
 
   const loadBoards = async () => {
     setIsLoading(true);
-    const [data, itemsData, teamsData] = await Promise.all([
+    const [data, itemsData] = await Promise.all([
       Board.list("-updated_date"),
       Item.list("-updated_date", 1000),
-      Team.list("-created_date", 1),
     ]);
     setBoards(data);
     setItems(itemsData);
-    setTeam(teamsData[0] || null);
     setIsLoading(false);
   };
 
@@ -113,7 +109,7 @@ export default function Boards() {
             <div>
               <p className="text-xs font-medium text-muted-foreground mb-1">Workspace</p>
               <h1 className="font-display text-3xl md:text-4xl text-foreground">
-                {team ? `${team.name} Boards` : "My Boards"}
+                {WORKSPACE_BRAND.name} Boards
               </h1>
             </div>
             <div className="flex items-center gap-2 self-start md:self-auto">
@@ -134,11 +130,9 @@ export default function Boards() {
         </div>
       </div>
 
-      {team && (
-        <div className="px-4 sm:px-6 pt-4">
-          <TeamBanner team={team} onEdit={() => setShowTeamModal(true)} />
-        </div>
-      )}
+      <div className="px-4 sm:px-6 pt-4">
+        <WorkspaceBanner />
+      </div>
 
       <div className="px-4 sm:px-6 py-6">
         {/* Controls */}
@@ -235,12 +229,6 @@ export default function Boards() {
         </AnimatePresence>
       </div>
 
-      <TeamSetupModal
-        open={showTeamModal}
-        onClose={() => setShowTeamModal(false)}
-        existingTeam={team}
-        onSaved={(t) => setTeam(t)}
-      />
       {/* Refetch rather than prepending the returned board: it carries no item
           count, so the card read "0 tasks" for an import that had just created
           dozens. Closing is left to the modal's own Done button, which is what

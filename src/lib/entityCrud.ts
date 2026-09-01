@@ -45,22 +45,6 @@ type Ops = {
 };
 
 const OPS: Record<UserOwnedModel, Ops> = {
-  Team: {
-    findMany: (a) => prisma.team.findMany(a as Prisma.TeamFindManyArgs),
-    findFirst: (w) => prisma.team.findFirst({ where: w as Prisma.TeamWhereInput }),
-    create: (d) => prisma.team.create({ data: d as Prisma.TeamCreateInput }),
-    createManyAndReturn: (d) =>
-      prisma.team.createManyAndReturn({ data: d as Prisma.TeamCreateManyInput[] }),
-    updateMany: (w, d) =>
-      prisma.team
-        .updateMany({
-          where: w as Prisma.TeamWhereInput,
-          data: d as Prisma.TeamUpdateManyMutationInput,
-        })
-        .then((r) => r.count),
-    deleteMany: (w) =>
-      prisma.team.deleteMany({ where: w as Prisma.TeamWhereInput }).then((r) => r.count),
-  },
   Board: {
     findMany: (a) => prisma.board.findMany(a as Prisma.BoardFindManyArgs),
     findFirst: (w) => prisma.board.findFirst({ where: w as Prisma.BoardWhereInput }),

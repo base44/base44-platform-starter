@@ -91,14 +91,6 @@ const VIEW_TYPE = ["table", "kanban"] as const;
 const PRIORITY = ["low", "medium", "high", "critical"] as const;
 
 export const ENTITY_FIELDS: Record<UserOwnedModel, Fields> = {
-  Team: {
-    ...AUTO_FIELDS,
-    name: field("name", { kind: "string" }, { required: true }),
-    description: field("description", { kind: "string" }, { nullable: true }),
-    logo_url: field("logoUrl", { kind: "string" }, { nullable: true }),
-    color: field("color", { kind: "string" }),
-    member_emails: field("memberEmails", { kind: "stringArray" }),
-  },
   Board: {
     ...AUTO_FIELDS,
     title: field("title", { kind: "string" }, { required: true }),
@@ -109,7 +101,6 @@ export const ENTITY_FIELDS: Record<UserOwnedModel, Fields> = {
     // Denormalized exactly as in Base44 — see the Board model in prisma/schema.prisma.
     columns: field("columns", { kind: "json" }),
     groups: field("groups", { kind: "json" }),
-    team_id: field("teamId", { kind: "string" }, { nullable: true }),
   },
   Item: {
     ...AUTO_FIELDS,

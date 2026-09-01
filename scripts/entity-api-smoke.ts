@@ -78,7 +78,6 @@ async function cleanup() {
   await prisma.item.deleteMany({ where: { title: { startsWith: TAG } } });
   await prisma.board.deleteMany({ where: { title: { startsWith: TAG } } });
   await prisma.widget.deleteMany({ where: { appName: { startsWith: TAG } } });
-  await prisma.team.deleteMany({ where: { name: { startsWith: TAG } } });
   await prisma.appOwnership.deleteMany({ where: { appId: { startsWith: TAG } } });
   await prisma.user.deleteMany({ where: { email: { startsWith: TAG } } });
 }
@@ -243,7 +242,7 @@ async function main() {
   console.log("\n3. the wire contract");
 
   const one = (await api("GET", `/Board/${ownerBoard.id}`, { as: OWNER })).body as Rec;
-  check("snake_case field names", "view_type" in one && "created_by" in one && "team_id" in one);
+  check("snake_case field names", "view_type" in one && "created_by" in one);
   check(
     "created_date / updated_date, not createdAt",
     "created_date" in one && !("createdAt" in one),
