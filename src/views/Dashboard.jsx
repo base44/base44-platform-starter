@@ -1,3 +1,10 @@
+/**
+ * Home. The root page (`/`) renders this directly rather than through a route
+ * file in src/app/(app)/, so — unlike the other views — it carries its own
+ * "use client".
+ */
+"use client";
+
 import React, { useState, useEffect, useMemo } from "react";
 import { Board, Item, Team, Widget, me } from "@/lib/entityClient";
 import Link from "next/link";

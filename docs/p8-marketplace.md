@@ -30,17 +30,17 @@ moving the predicate would revoke everyone at once.
 
 Two directions, and only one of them holds:
 
-* Unpinning is **not** uninstalling. Take it off Home, it still works in My Tools.
+* Unpinning is **not** uninstalling. Take it off Home, it still works — open it from
+  **Market → Installed**.
 * Uninstalling **does** unpin. A widget with no grant behind it renders as a frame that
   cannot read anything, which reads as broken rather than as revoked — so `uninstall()`
   removes the widgets too.
 
 `npm run market:smoke` asserts both, including that a pin alone grants nothing.
 
-## Two surfaces list every app you can open
+## One merge, two readings
 
-`src/lib/usableApps.ts` merges the two sources so **My Tools** and the **Add widget**
-picker cannot disagree:
+`src/lib/usableApps.ts` merges the two sources:
 
 * apps you **built** — the Base44 folder, live, which is the truth for a slug, a
   screenshot and whether the app is deployed;
@@ -48,6 +48,10 @@ picker cannot disagree:
   cannot see another user's app in the workspace at all.
 
 Neither failing takes the other down: a Base44 outage should not hide your market apps.
+
+The **Add widget** picker reads both halves. **My apps** reads only the built half. The
+merge stays in one place so the two surfaces cannot disagree about a URL or a
+screenshot — only about which apps they have reason to show.
 Publishing and *Edit in builder* only appear on apps you built — an installed app is
 somebody else's code and neither applies.
 
@@ -101,7 +105,7 @@ Three ways in, and the third is the one that matters:
 
 * **Market → Publish an app** — a picker of the apps you built. This is where the
   question gets asked, so this is where the answer lives.
-* **My Tools → Publish** on any app you built. Labelled, not a bare storefront glyph:
+* **My apps → Publish** on any app you built. Labelled, not a bare storefront glyph:
   an icon does not say "offer this to other people", and nobody hovers a control whose
   meaning they have not already guessed.
 * **From the chat.** Opening the builder from the market passes `origin: "market"`, and
@@ -120,24 +124,36 @@ is any good, which is the worst possible moment to be asked where to file it.
 Note that "Publish" in the ready card already means `deployApp`. Hence **"Add to the
 market"** for the listing, so the two are not the same word.
 
-## "Apps", not "My Tools"
+## "My apps" and "Market": authorship is the line
 
-Half of what is on that page is not the user's — an installed app is someone else's
-code they were granted the right to run — so the page is **Apps**. The route stays
-`/MyTools`: `?app=` deep links point at it from the builder and the widgets, and a
-rename there buys nothing.
+Both pages used to answer the same question. **Apps** listed everything you could open —
+built and installed, as a filter — and the market listed those same apps again under
+*Installed* and *Published by me*. Two of the market's three tabs were a second
+rendering of two of the Apps page's three filters, so "where is the app I installed" had
+two correct answers, which is the same as having none.
 
-The two sources are a **filter**, not tabs: All · Built by me · From the market, with
-counts, and a badge on every card. Opening an app is the common action and people do
-not reliably remember whether they built the thing they are looking for, so *All* has
-to be the default; the filter is for when you already know. Tabs would make the common
-case a guess. (Hard tabs are a one-line change if that turns out to be wrong.)
+The line that actually exists in the data is **authorship**:
 
-The Add-widget picker **groups** instead — installed apps first, then yours, with
-headers only when both are present. Where an app came from is a property of the group,
-not of each row, and a badge repeated down eight rows says the same thing eight times.
-Installed goes first because it is the shorter list and the newer idea: a picker that
-opens on thirteen of your own apps buries the two you just installed.
+* **My apps** — code you wrote. Open it, rename it, edit it in the builder, publish it.
+  Every affordance on the page assumes you own the thing.
+* **Market** — everything that crosses accounts. Browse and preview what other people
+  built, install it, and manage your own listings. Installed apps live here, under
+  *Installed*, because installing and uninstalling are one decision and belong in one
+  place: this is the page that granted somebody else's code access to your data, and it
+  is the page that takes it back.
+
+The route stays `/apps`, with `/MyTools` redirected: `?app=` deep links point at it from
+the builder and the widgets, and those are URLs people keep.
+
+The nav says **My apps**, not *Apps*. Beside *Market* the possessive is doing the work —
+it puts the distinction in the label itself, which "Apps" versus "Market" never did.
+
+The Add-widget picker still shows **both** sources, grouped — installed apps first, then
+yours, with headers only when both are present. Home is where you *use* things, so
+authorship is not the question being asked there. Where an app came from is a property
+of the group, not of each row, and a badge repeated down eight rows says the same thing
+eight times. Installed goes first because it is the shorter list and the newer idea: a
+picker that opens on thirteen of your own apps buries the two you just installed.
 
 ## The market refreshes itself
 
@@ -148,11 +164,11 @@ reason to refetch. The only fix was a manual reload, which reads as "it didn't w
 `src/lib/marketEvents.ts` is a `market-changed` window event, the same shape as the
 `widgets-updated` and `app-rebuilt` events this codebase already uses to coordinate
 across surfaces. It is announced from **`PublishDialog`** rather than from each caller:
-the builder, the Apps page and the market page all publish through that one component,
+the builder, the My apps page and the market page all publish through that one component,
 so a new caller gets the refresh for free instead of having to remember. Install and
 uninstall announce it too.
 
-The Apps page listens as well, so a card's *In market* marker is right without a
+The My apps page listens as well, so a card's *In market* marker is right without a
 reload.
 
 Related, and the same mistake in miniature: after listing an app the ready card used to

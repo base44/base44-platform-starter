@@ -71,7 +71,7 @@ export const platformHost = () => required("BASE44_PLATFORM_HOST").replace(/\/+$
 
 /**
  * The `sunny_widgets` folder every built app is filed into. `listApps` reads out
- * of it, so an unfiled app is invisible in My Tools. Not caller-supplied: the
+ * of it, so an unfiled app is invisible in My apps. Not caller-supplied: the
  * folder *is* the boundary, so letting the browser name it defeats the point.
  */
 export const appsFolderId = () => required("BASE44_APPS_FOLDER_ID");

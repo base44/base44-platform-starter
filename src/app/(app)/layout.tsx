@@ -16,8 +16,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
-import AppShell from "@/components/AppShell";
-import Providers from "@/components/Providers";
+import AuthenticatedShell from "@/components/AuthenticatedShell";
 import { getSessionUser } from "@/lib/auth";
 import { PATHNAME_HEADER } from "@/proxy";
 
@@ -28,9 +27,5 @@ export default async function AuthenticatedLayout({ children }: { children: Reac
     redirect(path ? `/?next=${encodeURIComponent(path)}` : "/");
   }
 
-  return (
-    <Providers>
-      <AppShell>{children}</AppShell>
-    </Providers>
-  );
+  return <AuthenticatedShell>{children}</AuthenticatedShell>;
 }

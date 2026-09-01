@@ -38,7 +38,7 @@ type Base44App = {
 /**
  * The deployed build is static and always up; the sandbox preview boots on demand and
  * answers with an error payload while it starts, which a frame renders as raw JSON. So
- * the sandbox is the never-deployed fallback, matching the Apps page and the widgets.
+ * the sandbox is the never-deployed fallback, matching the My apps page and the widgets.
  */
 function builtUrl(app: Base44App): string | null {
   if (!app.slug) return null;

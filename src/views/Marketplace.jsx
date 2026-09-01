@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Loader2, Search, Check, ArrowLeft, ShieldCheck, Sparkles, Store, LayoutGrid, Eye } from "lucide-react";
+import { Loader2, Search, Check, ArrowLeft, ShieldCheck, Sparkles, Store, LayoutGrid, Eye, Trash2 } from "lucide-react";
 
 import { addAppToMyWidgets } from "@/lib/myWidgets";
 import { useAppFrameAuth } from "@/lib/appFrameAuth";
@@ -157,7 +157,7 @@ function InstallDialog({ listing, onCancel, onConfirm }) {
           </p>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
-          It will appear in My Tools. Add it to your home page separately, if you want it there.
+          It will appear here under Installed. Add it to your home page separately, if you want it there.
         </p>
 
         <div className="mt-5 flex justify-end gap-2">
@@ -175,7 +175,7 @@ function InstallDialog({ listing, onCancel, onConfirm }) {
   );
 }
 
-function ListingCard({ listing, onInstall, onOpen, onUnpublish, onPin, onPreview }) {
+function ListingCard({ listing, busy, onInstall, onOpen, onUnpublish, onPin, onPreview, onUninstall }) {
   // An installed app has "Open", which is the same frame at full size. Offering both
   // would be two buttons for one thing.
   const canPreview = Boolean(listing.app_url) && !listing.installed;
@@ -246,7 +246,7 @@ function ListingCard({ listing, onInstall, onOpen, onUnpublish, onPin, onPreview
         )}
         {listing.is_author && listing.status === "delisted" && (
           <span className="flex-1 px-3 py-1.5 text-center text-xs text-muted-foreground">
-            Delisted — republish from My Tools
+            Delisted — republish from My apps
           </span>
         )}
         {!listing.is_author &&
@@ -255,7 +255,6 @@ function ListingCard({ listing, onInstall, onOpen, onUnpublish, onPin, onPreview
               <button onClick={() => onOpen(listing)} className="flex-1 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground">
                 Open
               </button>
-              {/* No uninstall here: a storefront is for getting things. That lives on Apps. */}
               <button
                 onClick={() => onPin(listing)}
                 disabled={listing.pinned}
@@ -264,6 +263,20 @@ function ListingCard({ listing, onInstall, onOpen, onUnpublish, onPin, onPreview
               >
                 <LayoutGrid className="h-3.5 w-3.5" />
                 {listing.pinned ? "On Home" : "Add to Home"}
+              </button>
+              {/*
+                Installing and uninstalling are the same decision, so they are the same
+                place. An installed app is somebody else's code running on your data;
+                this is the page that granted it that, and the page that takes it back.
+              */}
+              <button
+                onClick={() => onUninstall(listing)}
+                disabled={busy}
+                title="Remove it and revoke its access to your data"
+                className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-secondary hover:text-destructive disabled:opacity-40"
+              >
+                {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                Uninstall
               </button>
             </>
           ) : (
@@ -291,6 +304,7 @@ export default function Marketplace() {
   const [notice, setNotice] = useState(null);
   const [picking, setPicking] = useState(false);
   const [publishing, setPublishing] = useState(null);
+  const [busyId, setBusyId] = useState(null);
 
   const load = useCallback(async (which) => {
     setLoading(true);
@@ -323,7 +337,7 @@ export default function Marketplace() {
         app_name: listing.title,
       });
       announceMarketChanged();
-      setNotice(`${listing.title} is installed. Find it in Apps.`);
+      setNotice(`${listing.title} is installed. Find it under Installed.`);
       await load(tab);
     } catch (err) {
       setError(err.message);
@@ -346,6 +360,23 @@ export default function Marketplace() {
       await load(tab);
     } catch (err) {
       setError(err.message);
+    }
+  };
+
+  /** Revokes the grant. The app keeps existing; it just stops seeing your data. */
+  const uninstall = async (listing) => {
+    if (busyId) return;
+    setBusyId(listing.app_id);
+    try {
+      await post("/api/installs", { action: "uninstall", app_id: listing.app_id });
+      // A pinned widget for an app that can no longer read anything is a dead tile.
+      window.dispatchEvent(new CustomEvent("widgets-updated"));
+      announceMarketChanged();
+      await load(tab);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusyId(null);
     }
   };
 
@@ -428,8 +459,8 @@ export default function Marketplace() {
           <h1 className="font-display text-3xl text-foreground md:text-4xl">App market</h1>
           <div className="flex flex-wrap items-end justify-between gap-4">
             <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-              Apps built by other people in Sunny. Install one and it works on your boards — it
-              never sees anyone else&apos;s.
+              Install apps other people built — one works on your boards and never sees anyone
+              else&apos;s — and publish your own for them to install.
             </p>
             <div className="flex flex-wrap items-center gap-2">
               <button
@@ -495,7 +526,7 @@ export default function Marketplace() {
           <div className="py-24 text-center">
             <Store className="mx-auto mb-3 h-6 w-6 text-muted-foreground/40" />
             <p className="text-sm text-muted-foreground">
-              {tab === "browse" && "Nothing published yet. Build an app, then publish it from My Tools."}
+              {tab === "browse" && "Nothing published yet. Build an app, then publish it from My apps."}
               {tab === "installed" && "You haven't installed anything yet."}
               {tab === "mine" && "You haven't published anything yet."}
             </p>
@@ -514,11 +545,13 @@ export default function Marketplace() {
               <ListingCard
                 key={l.app_id}
                 listing={l}
+                busy={busyId === l.app_id}
                 onInstall={setInstalling}
                 onOpen={setOpen}
                 onUnpublish={unpublish}
                 onPin={pin}
                 onPreview={setPreview}
+                onUninstall={uninstall}
               />
             ))}
           </div>

@@ -21,7 +21,7 @@
  *      (`src/components/builder/`), and resume the turn via
  *      `submitToolCallInput()`.
  *   5. Preview boots a sandbox (`getPreviewUrl`, up to ~40s) into an iframe; "Save
- *      to My Tools" deploys and records local ownership.
+ *      to My apps" deploys and records local ownership.
  *
  * Because every reply is awaited against a moving target, `shownAppIdRef` records
  * which app the chat is *meant* to be showing and every commit checks it first —
@@ -51,12 +51,10 @@ import {
   User,
   X,
   ChevronLeft,
-  LayoutGrid,
   Sparkles,
   Hammer,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
-import Link from "next/link";
 import { widgetFor } from "@/components/builder/toolWidgets";
 import AppReadyWidget from "@/components/builder/widgets/AppReadyWidget";
 import PublishDialog from "@/components/market/PublishDialog";
@@ -260,7 +258,7 @@ export default function AppBuilderSidebar({
 
   // Where the builder was opened from is already a statement of intent, so it picks
   // the finished app's primary destination rather than asking. From the Add-widget
-  // picker: pin it. From the market: list it. Everything lands in My Tools regardless.
+  // picker: pin it. From the market: list it. Everything lands in My apps regardless.
   const cameFromWidgetPicker = origin === "home-widget";
   const cameFromMarket = origin === "market";
   const [marketApp, setMarketApp] = useState(null);
@@ -693,7 +691,7 @@ export default function AppBuilderSidebar({
   }, [activeAppId, isBuilding, awaitingInput]);
 
   /**
-   * A finished build refreshes the preview only. Widgets and My Tools show the
+   * A finished build refreshes the preview only. Widgets and My apps show the
    * deployed build, which a build does not change — deploying announces instead.
    * The preview's url carries a short-lived token, so an open panel re-resolves.
    */
@@ -776,15 +774,6 @@ export default function AppBuilderSidebar({
                       {isLoadingPreview ? "Opening…" : "Preview"}
                     </button>
                   </>
-                )}
-                {buildView === "list" && (
-                  <Link
-                    href="/AppMarket"
-                    onClick={onClose}
-                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground px-2 py-1.5 rounded hover:bg-secondary transition-colors hidden"
-                  >
-                    <LayoutGrid className="w-3.5 h-3.5" /> Market
-                  </Link>
                 )}
                 <button
                   onClick={onClose}
@@ -931,7 +920,7 @@ export default function AppBuilderSidebar({
                         onAddToMyWidgets={addToMyWidgets}
                         isAddingToMyWidgets={pendingSave === "widgets"}
                         isAddedToMyWidgets={addedToMyWidgets || alreadyPinned}
-                        myToolsHref={activeAppId ? `/MyTools?app=${activeAppId}` : null}
+                        myToolsHref={activeAppId ? `/apps?app=${activeAppId}` : null}
                         // Close the builder on the way: the point of following the
                         // link is to look at the app, and the panel covers it.
                         onNavigate={onClose}
