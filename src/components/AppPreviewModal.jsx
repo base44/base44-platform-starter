@@ -11,10 +11,6 @@ import { useAppRebuildNonce, withNonce } from "@/lib/appRefresh";
  * knows its host; the builder polls while the sandbox boots (hence error/onRetry).
  * Runs the viewer-token handshake like every other frame, or the app would load
  * and then fail to read the viewer's data.
- *
- * `footer` and `sandbox` exist for the market, which frames apps the viewer has not
- * installed: the handshake refuses them a token, so the footer is where that gets
- * said out loud, and the frame is confined the same way the market's own embed is.
  */
 function PreviewStage({ label, hint, error, onRetry }) {
   if (error) {
@@ -66,8 +62,6 @@ export default function AppPreviewModal({
   onRetry,
   stageLabel,
   stageHint,
-  footer = null,
-  sandbox,
 }) {
   const [loaded, setLoaded] = useState(false);
   const frameRef = useRef(null);
@@ -133,7 +127,6 @@ export default function AppPreviewModal({
               className={`absolute inset-0 w-full h-full border-0 transition-opacity duration-300 ${loaded ? "opacity-100" : "opacity-0"}`}
               title={title || "App Preview"}
               allow="fullscreen"
-              sandbox={sandbox}
             />
           )}
           {(!loaded || error) && (
@@ -145,9 +138,6 @@ export default function AppPreviewModal({
             />
           )}
         </div>
-        {footer && (
-          <div className="flex-shrink-0 border-t border-border bg-card px-4 py-3">{footer}</div>
-        )}
       </div>
     </div>
   );
