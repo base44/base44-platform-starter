@@ -223,7 +223,11 @@ function WidgetFrame({ widget, onRemove, onUpdate, onExpand, deployedAt, metaRea
   return (
     <div
       ref={cardRef}
-      className={`relative bg-card border rounded-lg overflow-hidden flex flex-col transition-colors duration-500${
+      // `self-start`: a grid item stretches to the tallest card in its row by
+      // default, which pads the card below the frame with dead space and leaves
+      // the resize grip sitting on that padding rather than on the widget's own
+      // edge — the drag then looks like it resizes the app but not the box.
+      className={`relative self-start bg-card border rounded-lg overflow-hidden flex flex-col transition-colors duration-500${
         colSpan === 2 ? " sm:col-span-2 xl:col-span-2" : ""
       } ${highlight ? "border-primary ring-2 ring-primary/40" : "border-border"}`}
     >
@@ -270,7 +274,7 @@ function WidgetFrame({ widget, onRemove, onUpdate, onExpand, deployedAt, metaRea
       </div>
 
       {/* Body */}
-      <div className="relative" style={{ height }}>
+      <div className="relative flex-shrink-0" style={{ height }}>
         {/* Waiting on deploy state: mounting now would load one url then the other. */}
         {!metaReady ? (
           <div className="absolute inset-0 flex items-center justify-center">
