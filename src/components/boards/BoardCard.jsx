@@ -15,8 +15,8 @@ import { getBoardColor, boardInitial, personInitial, readableText } from "@/lib/
 /**
  * `canManage` is board ownership, not a role: a board someone else marked `shared`
  * lists here and opens read-only, so offering Edit/Delete on it would be offering a
- * call the API answers with a 404. The owner's address takes the visibility pill's
- * place on those, which is the more useful of the two facts.
+ * call the API answers with a 404. The pill stays the plain visibility either way —
+ * the board view names the owner, which is where it matters.
  */
 export default function BoardCard({
   board,
@@ -44,8 +44,6 @@ export default function BoardCard({
   const boardColor = getBoardColor(board);
   const ink = readableText(boardColor);
   const taskLabel = `${itemCount} ${itemCount === 1 ? "task" : "tasks"}`;
-  const sharedWithMe = !canManage;
-  const badge = sharedWithMe ? `Shared by ${board.created_by}` : board.visibility;
 
   if (viewMode === "list") {
     return (
@@ -77,14 +75,13 @@ export default function BoardCard({
               {formatDistanceToNow(new Date(board.updated_date), { addSuffix: true })}
             </span>
             <span
-              className={`text-[11px] px-2 py-0.5 rounded-full max-w-[14rem] truncate ${
+              className={`text-[11px] px-2 py-0.5 rounded-full ${
                 board.visibility === "shared"
                   ? "bg-primary/10 text-primary"
                   : "bg-muted text-muted-foreground"
               }`}
-              title={badge}
             >
-              {badge}
+              {board.visibility}
             </span>
           </div>
         </Link>
@@ -139,11 +136,10 @@ export default function BoardCard({
             {boardInitial(board)}
           </span>
           <span
-            className="absolute top-2.5 right-2.5 text-[11px] px-2 py-0.5 rounded-full backdrop-blur-sm max-w-[85%] truncate"
+            className="absolute top-2.5 right-2.5 text-[11px] px-2 py-0.5 rounded-full backdrop-blur-sm"
             style={{ backgroundColor: `${ink}26`, color: ink }}
-            title={badge}
           >
-            {badge}
+            {board.visibility}
           </span>
         </div>
 
