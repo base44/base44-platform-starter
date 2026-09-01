@@ -87,7 +87,7 @@ const AUTO_FIELDS: Fields = {
 };
 
 const VISIBILITY = ["private", "shared"] as const;
-const VIEW_TYPE = ["table", "kanban", "calendar"] as const;
+const VIEW_TYPE = ["table", "kanban"] as const;
 const PRIORITY = ["low", "medium", "high", "critical"] as const;
 
 export const ENTITY_FIELDS: Record<UserOwnedModel, Fields> = {

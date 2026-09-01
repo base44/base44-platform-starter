@@ -31,7 +31,6 @@ import GroupByMenu from "../components/board/GroupByMenu";
 import NewColumnModal from "../components/board/NewColumnModal";
 import NewGroupModal from "../components/board/NewGroupModal";
 import KanbanView from "../components/board/views/KanbanView";
-import CalendarView from "../components/board/views/CalendarView";
 import TimelineView from "../components/board/views/TimelineView";
 
 import AnalyticsPanel from "../components/board/analytics/AnalyticsPanel";
@@ -678,16 +677,6 @@ export default function BoardPage() {
               onUpdateItem={handleUpdateItem}
               onDeleteItem={handleDeleteItem}
               onReorderItems={handleReorderItems}
-            />
-          )}
-
-          {currentView === "calendar" && (
-            <CalendarView
-              board={board}
-              items={sortedItems} // Pass sorted items
-              onAddItem={handleAddItem}
-              onUpdateItem={handleUpdateItem}
-              onDeleteItem={handleDeleteItem}
             />
           )}
 
