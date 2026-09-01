@@ -1,6 +1,11 @@
 /**
- * Landing page. Signed-in visitors go straight to where they were headed;
- * everyone else gets a sign-in card.
+ * `/` — the home page, for both kinds of visitor: a sign-in card for anyone
+ * signed out, the dashboard for anyone signed in.
+ *
+ * The two live in one route because the home page has no slug of its own, so it
+ * cannot sit in the authenticated route group. The signed-in half therefore puts
+ * on the shell that src/app/(app)/layout.tsx gives every other page, and this
+ * route repeats that layout's session check.
  *
  * `?next=` is set by the authenticated layout when it turns a signed-out visitor
  * away, and is the reason a link to a specific board survives sign-in. It is
@@ -10,11 +15,12 @@
 
 import { redirect } from "next/navigation";
 
+import HomeDashboard from "@/app/HomeDashboard";
 import GoogleSignInButton from "@/components/GoogleSignInButton";
 import SunnyLogo from "@/components/SunnyLogo";
 import { getSessionUser } from "@/lib/auth";
 
-const DEFAULT_DESTINATION = "/Dashboard";
+const HOME = "/";
 
 /**
  * A single leading slash and nothing that could re-target the browser: `//host`
@@ -22,9 +28,9 @@ const DEFAULT_DESTINATION = "/Dashboard";
  * `startsWith("/")` check is an open redirect.
  */
 function safeDestination(next: string | string[] | undefined): string {
-  if (typeof next !== "string") return DEFAULT_DESTINATION;
-  if (!next.startsWith("/")) return DEFAULT_DESTINATION;
-  if (next.startsWith("//") || next.startsWith("/\\")) return DEFAULT_DESTINATION;
+  if (typeof next !== "string") return HOME;
+  if (!next.startsWith("/")) return HOME;
+  if (next.startsWith("//") || next.startsWith("/\\")) return HOME;
   return next;
 }
 
@@ -34,7 +40,13 @@ export default async function Home({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const destination = safeDestination((await searchParams).next);
-  if (await getSessionUser()) redirect(destination);
+
+  if (await getSessionUser()) {
+    // Only travel on: landing back here is the destination, not a redirect loop.
+    if (destination !== HOME) redirect(destination);
+
+    return <HomeDashboard />;
+  }
 
   return (
     <main className="min-h-screen flex flex-col items-center justify-center gap-8 px-6 bg-background">

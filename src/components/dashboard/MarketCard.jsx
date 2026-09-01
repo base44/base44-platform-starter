@@ -40,7 +40,7 @@ export default function MarketCard() {
       </p>
 
       <Link
-        href="/Marketplace"
+        href="/market"
         className="mt-4 flex items-center justify-between rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
       >
         Browse apps <ArrowRight className="h-3.5 w-3.5" />

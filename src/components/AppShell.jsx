@@ -109,10 +109,10 @@ function AccountMenu() {
  * looking for it, which a nav item is not.
  */
 const navigationItems = [
-  { title: "Home", url: createPageUrl("Dashboard") },
+  { title: "Home", url: "/" },
   { title: "Boards", url: createPageUrl("Boards") },
-  { title: "Apps", url: "/MyTools" },
-  { title: "Market", url: "/Marketplace" },
+  { title: "Apps", url: createPageUrl("Apps") },
+  { title: "Market", url: createPageUrl("Market") },
 ];
 
 const NAV_ITEM_CLASS =
@@ -168,7 +168,7 @@ export default function AppShell({ children }) {
     return () => window.removeEventListener("open-assistant", handler);
   }, []);
 
-  const isActive = (url) => pathname === url || (url === "/Dashboard" && pathname === "/");
+  const isActive = (url) => pathname === url;
 
   return (
     <div
@@ -180,7 +180,7 @@ export default function AppShell({ children }) {
         <div className="px-4 sm:px-6">
           <div className="flex items-center h-14 gap-8">
             <Link
-              href={createPageUrl("Dashboard")}
+              href="/"
               aria-label="Sunny home"
               className="flex items-center flex-shrink-0"
             >
