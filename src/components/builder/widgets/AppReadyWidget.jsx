@@ -5,7 +5,7 @@ import { Eye, BookmarkCheck, Pencil, LayoutGrid, Loader2, Check, ArrowRight, Sto
 /**
  * The "your app is ready" card, with one filing action.
  *
- * "Publish" is what the old "Save to My Tools" did — an app is in Apps from the moment
+ * "Publish" is what the old "Save to My Tools" did — an app is in My apps from the moment
  * it is built, so nothing was being filed; `deployApp` publishes. From the
  * Add-widget picker it becomes "Add to my widgets", which publishes *and* pins.
  * Already pinned, it reverts to Publish so an app on the dashboard can still be
@@ -94,7 +94,7 @@ export default function AppReadyWidget({
         ) : settled && myToolsHref ? (
           <Link href={myToolsHref} onClick={onNavigate} className={done}>
             <Check className="w-3.5 h-3.5" />
-            Published — view in Apps
+            Published — view in My apps
             <ArrowRight className="w-3.5 h-3.5 ml-auto" />
           </Link>
         ) : (

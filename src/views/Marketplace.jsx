@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Loader2, Search, Check, ArrowLeft, ShieldCheck, Sparkles, Store, LayoutGrid, Eye } from "lucide-react";
+import { Loader2, Search, Check, ArrowLeft, ShieldCheck, Sparkles, Store, LayoutGrid, Trash2 } from "lucide-react";
 
 import { addAppToMyWidgets } from "@/lib/myWidgets";
 import { useAppFrameAuth } from "@/lib/appFrameAuth";
@@ -8,7 +8,6 @@ import { listUsableApps } from "@/lib/usableApps";
 import { announceMarketChanged, useMarketChanges } from "@/lib/marketEvents";
 import { APP_REBUILT } from "@/lib/appRefresh";
 import PublishDialog from "@/components/market/PublishDialog";
-import AppPreviewModal from "@/components/AppPreviewModal";
 
 /**
  * The app market.
@@ -18,10 +17,7 @@ import AppPreviewModal from "@/components/AppPreviewModal";
  * from the viewer token. Installing and pinning to Home are separate acts.
  */
 
-/**
- * The same confinement for both ways the market frames someone else's app — the
- * full-page embed and the preview. Anything a listing loads is third-party code.
- */
+/** The market's embed runs somebody else's code, so it is confined. */
 const APP_SANDBOX = "allow-scripts allow-same-origin allow-forms allow-popups";
 
 const post = async (path, body) => {
@@ -137,7 +133,7 @@ function InstallDialog({ listing, onCancel, onConfirm }) {
           </p>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
-          It will appear in My Tools. Add it to your home page separately, if you want it there.
+          It will appear here under Installed. Add it to your home page separately, if you want it there.
         </p>
 
         <div className="mt-5 flex justify-end gap-2">
@@ -155,11 +151,7 @@ function InstallDialog({ listing, onCancel, onConfirm }) {
   );
 }
 
-function ListingCard({ listing, onInstall, onOpen, onUnpublish, onPin, onPreview }) {
-  // An installed app has "Open", which is the same frame at full size. Offering both
-  // would be two buttons for one thing.
-  const canPreview = Boolean(listing.app_url) && !listing.installed;
-
+function ListingCard({ listing, busy, onInstall, onOpen, onUnpublish, onPin, onUninstall }) {
   const thumbnail = listing.screenshot_url ? (
     <img src={listing.screenshot_url} alt="" className="h-full w-full object-cover" />
   ) : (
@@ -170,23 +162,9 @@ function ListingCard({ listing, onInstall, onOpen, onUnpublish, onPin, onPreview
 
   return (
     <div className="group flex flex-col overflow-hidden rounded-lg border border-border bg-card shadow-sm transition-all hover:border-primary/40 hover:shadow-md">
-      {canPreview ? (
-        <button
-          type="button"
-          onClick={() => onPreview(listing)}
-          aria-label={`Preview ${listing.title}`}
-          className="relative flex aspect-[16/9] items-center justify-center overflow-hidden bg-muted"
-        >
-          {thumbnail}
-          <span className="absolute inset-0 flex items-center justify-center gap-1.5 bg-foreground/50 text-xs font-medium text-background opacity-0 backdrop-blur-[1px] transition-opacity group-hover:opacity-100">
-            <Eye className="h-3.5 w-3.5" /> Preview
-          </span>
-        </button>
-      ) : (
-        <div className="flex aspect-[16/9] items-center justify-center overflow-hidden bg-muted">
-          {thumbnail}
-        </div>
-      )}
+      <div className="flex aspect-[16/9] items-center justify-center overflow-hidden bg-muted">
+        {thumbnail}
+      </div>
 
       <div className="flex-1 p-3.5">
         <div className="flex items-start justify-between gap-2">
@@ -206,15 +184,6 @@ function ListingCard({ listing, onInstall, onOpen, onUnpublish, onPin, onPreview
       </div>
 
       <div className="flex gap-2 border-t border-border p-2.5">
-        {canPreview && (
-          <button
-            onClick={() => onPreview(listing)}
-            title="Open it without installing it. It cannot read your data until you do."
-            className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground"
-          >
-            <Eye className="h-3.5 w-3.5" /> Preview
-          </button>
-        )}
         {listing.is_author && listing.status === "published" && (
           <button
             onClick={() => onUnpublish(listing)}
@@ -226,7 +195,7 @@ function ListingCard({ listing, onInstall, onOpen, onUnpublish, onPin, onPreview
         )}
         {listing.is_author && listing.status === "delisted" && (
           <span className="flex-1 px-3 py-1.5 text-center text-xs text-muted-foreground">
-            Delisted — republish from My Tools
+            Delisted — republish from My apps
           </span>
         )}
         {!listing.is_author &&
@@ -235,7 +204,6 @@ function ListingCard({ listing, onInstall, onOpen, onUnpublish, onPin, onPreview
               <button onClick={() => onOpen(listing)} className="flex-1 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground">
                 Open
               </button>
-              {/* No uninstall here: a storefront is for getting things. That lives on Apps. */}
               <button
                 onClick={() => onPin(listing)}
                 disabled={listing.pinned}
@@ -244,6 +212,20 @@ function ListingCard({ listing, onInstall, onOpen, onUnpublish, onPin, onPreview
               >
                 <LayoutGrid className="h-3.5 w-3.5" />
                 {listing.pinned ? "On Home" : "Add to Home"}
+              </button>
+              {/*
+                Installing and uninstalling are the same decision, so they are the same
+                place. An installed app is somebody else's code running on your data;
+                this is the page that granted it that, and the page that takes it back.
+              */}
+              <button
+                onClick={() => onUninstall(listing)}
+                disabled={busy}
+                title="Remove it and revoke its access to your data"
+                className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-secondary hover:text-destructive disabled:opacity-40"
+              >
+                {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                Uninstall
               </button>
             </>
           ) : (
@@ -267,10 +249,10 @@ export default function Marketplace() {
   const [error, setError] = useState(null);
   const [installing, setInstalling] = useState(null);
   const [open, setOpen] = useState(null);
-  const [preview, setPreview] = useState(null);
   const [notice, setNotice] = useState(null);
   const [picking, setPicking] = useState(false);
   const [publishing, setPublishing] = useState(null);
+  const [busyId, setBusyId] = useState(null);
   /** The apps this user could publish. `[]` until known, so the button starts hidden. */
   const [buildable, setBuildable] = useState([]);
 
@@ -326,7 +308,7 @@ export default function Marketplace() {
         app_name: listing.title,
       });
       announceMarketChanged();
-      setNotice(`${listing.title} is installed. Find it in Apps.`);
+      setNotice(`${listing.title} is installed. Find it under Installed.`);
       await load(tab);
     } catch (err) {
       setError(err.message);
@@ -349,6 +331,23 @@ export default function Marketplace() {
       await load(tab);
     } catch (err) {
       setError(err.message);
+    }
+  };
+
+  /** Revokes the grant. The app keeps existing; it just stops seeing your data. */
+  const uninstall = async (listing) => {
+    if (busyId) return;
+    setBusyId(listing.app_id);
+    try {
+      await post("/api/installs", { action: "uninstall", app_id: listing.app_id });
+      // A pinned widget for an app that can no longer read anything is a dead tile.
+      window.dispatchEvent(new CustomEvent("widgets-updated"));
+      announceMarketChanged();
+      await load(tab);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusyId(null);
     }
   };
 
@@ -390,50 +389,14 @@ export default function Marketplace() {
         />
       )}
 
-      {/*
-        Trying an app before granting it anything. The frame runs the same handshake
-        as everywhere else and /api/sunny/token refuses it — no install, no grant — so
-        the preview shows the app's own empty state. The author is the exception: they
-        can mint for an app they never installed, which is what makes previewing
-        something you just built useful.
-      */}
-      <AppPreviewModal
-        open={Boolean(preview)}
-        title={preview?.title}
-        url={preview?.app_url}
-        appId={preview?.app_id}
-        sandbox={APP_SANDBOX}
-        stageLabel={preview ? `Loading ${preview.title}…` : undefined}
-        onClose={() => setPreview(null)}
-        footer={
-          preview && !preview.is_author ? (
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="flex items-start gap-2 text-xs text-muted-foreground">
-                <ShieldCheck className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-primary" />
-                <span>
-                  A preview by {preview.author}. It has no access to your boards yet —
-                  install it to let it read and write your data, as you.
-                </span>
-              </p>
-              <button
-                onClick={() => { const l = preview; setPreview(null); setInstalling(l); }}
-                className="flex-shrink-0 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-              >
-                Install
-              </button>
-            </div>
-          ) : null
-        }
-      />
-
       <div className="border-b border-border">
         <div className="mx-auto max-w-7xl px-6 py-8 md:py-10">
           <p className="mb-1 text-xs font-medium text-muted-foreground">Workspace</p>
           <h1 className="font-display text-3xl text-foreground md:text-4xl">App market</h1>
           <div className="flex flex-wrap items-end justify-between gap-4">
             <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-              Apps built by other people in Sunny. Install one and it works on your boards — it
-              never sees anyone else&apos;s.
+              Install apps other people built — one works on your boards and never sees anyone
+              else&apos;s — and publish your own for them to install.
             </p>
             <div className="flex flex-wrap items-center gap-2">
               {canPublish && (
@@ -499,7 +462,7 @@ export default function Marketplace() {
           <div className="py-24 text-center">
             <Store className="mx-auto mb-3 h-6 w-6 text-muted-foreground/40" />
             <p className="text-sm text-muted-foreground">
-              {tab === "browse" && "Nothing published yet. Build an app, then publish it from My Tools."}
+              {tab === "browse" && "Nothing published yet. Build an app, then publish it from My apps."}
               {tab === "installed" && "You haven't installed anything yet."}
               {tab === "mine" && "You haven't published anything yet."}
             </p>
@@ -526,11 +489,12 @@ export default function Marketplace() {
               <ListingCard
                 key={l.app_id}
                 listing={l}
+                busy={busyId === l.app_id}
                 onInstall={setInstalling}
                 onOpen={setOpen}
                 onUnpublish={unpublish}
                 onPin={pin}
-                onPreview={setPreview}
+                onUninstall={uninstall}
               />
             ))}
           </div>

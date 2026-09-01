@@ -111,7 +111,7 @@ function AccountMenu() {
 const navigationItems = [
   { title: "Home", url: "/" },
   { title: "Boards", url: createPageUrl("Boards") },
-  { title: "Apps", url: createPageUrl("Apps") },
+  { title: "My apps", url: createPageUrl("Apps") },
   { title: "Market", url: createPageUrl("Market") },
 ];
 
