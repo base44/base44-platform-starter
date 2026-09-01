@@ -7,7 +7,7 @@ import { WORKSPACE_BRAND } from "@/lib/workspaceBrand";
  * src/lib/workspaceBrand.ts.
  */
 export default function WorkspaceBanner() {
-  const { name, description, color } = WORKSPACE_BRAND;
+  const { name, description, color, logoUrl } = WORKSPACE_BRAND;
 
   const initials = name
     .trim()
@@ -24,9 +24,14 @@ export default function WorkspaceBanner() {
     >
       <div
         className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden shadow-sm"
-        style={{ backgroundColor: color }}
+        style={{ backgroundColor: logoUrl ? "#fff" : color }}
       >
-        <span className="text-white text-base font-bold">{initials}</span>
+        {logoUrl ? (
+          // Contained, not cropped: an emblem cut off at the corners reads as a bug.
+          <img src={logoUrl} alt={name} className="w-full h-full object-contain" />
+        ) : (
+          <span className="text-white text-base font-bold">{initials}</span>
+        )}
       </div>
 
       <div className="min-w-0 flex-1">

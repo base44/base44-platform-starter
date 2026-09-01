@@ -11,6 +11,8 @@
 export const WORKSPACE_BRAND = {
   name: "Summit House",
   description: "Work management for the Summit House crew.",
+  /** Square emblem for the banner thumbnail; falls back to initials when empty. */
+  logoUrl: "/brand/summit-house-emblem.png",
   /** Accent behind the banner. Same default as a new board. */
   color: "#0073EA",
 } as const;
