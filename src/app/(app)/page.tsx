@@ -2,10 +2,12 @@
  * `/` — the home page, for both kinds of visitor: a sign-in card for anyone
  * signed out, the dashboard for anyone signed in.
  *
- * The two live in one route because the home page has no slug of its own, so it
- * cannot sit in the authenticated route group. The signed-in half therefore puts
- * on the shell that src/app/(app)/layout.tsx gives every other page, and this
- * route repeats that layout's session check.
+ * It sits in the authenticated route group so that the shell around it is the
+ * same mounted component every other page gets. Outside the group it was a
+ * second copy, and navigating between `/` and anywhere else tore down the shell
+ * and everything open inside it. The group's layout leaves `/` alone when there
+ * is no session, since redirecting the sign-in page to itself is a loop, so the
+ * signed-out half below renders bare.
  *
  * `?next=` is set by the authenticated layout when it turns a signed-out visitor
  * away, and is the reason a link to a specific board survives sign-in. It is
@@ -15,10 +17,11 @@
 
 import { redirect } from "next/navigation";
 
-import HomeDashboard from "@/app/HomeDashboard";
 import GoogleSignInButton from "@/components/GoogleSignInButton";
 import SunnyLogo from "@/components/SunnyLogo";
 import { getSessionUser } from "@/lib/auth";
+
+import HomeDashboard from "./HomeDashboard";
 
 const HOME = "/";
 
