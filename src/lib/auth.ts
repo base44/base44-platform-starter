@@ -30,6 +30,7 @@ import { UnauthenticatedError, type RlsActor } from "@/lib/rls";
 const ROLE_TTL_MS = 60_000;
 
 function requiredEnv(name: string): string {
+  console.log('env', process.env);
   const value = process.env[name];
   if (!value) {
     throw new Error(`Missing required env var ${name} (see .env.example).`);
