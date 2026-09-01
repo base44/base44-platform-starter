@@ -7,7 +7,7 @@
  *   1. signIn upserts the User by lowercased email and NEVER touches `role`
  *   2. the jwt callback resolves `role` from Postgres, not from the OAuth profile
  *   3. the session callback surfaces email/role/id, and getSessionUser's shape
- *      is a usable RlsActor (an admin bypasses scoping, a user does not)
+ *      is a usable RlsActor (scoped to its email, whatever its role)
  *   4. /api/me is 401 anonymous, and returns the signed-in actor with a cookie
  *      minted from NEXTAUTH_SECRET
  *
@@ -189,7 +189,10 @@ async function main() {
     "scopedWhere(user actor) scopes to the email",
     scopedWhere(userActor).createdBy === USER_EMAIL,
   );
-  check("scopedWhere(admin actor) is unscoped", scopedWhere(adminActor).createdBy === undefined);
+  check(
+    "scopedWhere(admin actor) is scoped just the same",
+    scopedWhere(adminActor).createdBy === ADMIN_EMAIL,
+  );
 
   await prisma.board.create({ data: { title: `${TAG} user board`, createdBy: USER_EMAIL } });
   await prisma.board.create({ data: { title: `${TAG} other board`, createdBy: OTHER_EMAIL } });
@@ -200,7 +203,7 @@ async function main() {
     where: { ...scopedWhere(adminActor), title: { startsWith: TAG } },
   });
   check("the signed-in user sees only their own board", userBoards === 1, `saw ${userBoards}`);
-  check("the admin actor sees both", adminBoards === 2, `saw ${adminBoards}`);
+  check("the admin actor sees neither, owning neither", adminBoards === 0, `saw ${adminBoards}`);
 
   console.log("\n4. /api/me over HTTP");
 

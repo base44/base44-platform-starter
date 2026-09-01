@@ -52,8 +52,10 @@ Neither failing takes the other down: a Base44 outage should not hide your marke
 The **Add widget** picker reads both halves. **My apps** reads only the built half. The
 merge stays in one place so the two surfaces cannot disagree about a URL or a
 screenshot — only about which apps they have reason to show.
-Publishing and *Edit in builder* only appear on apps you built — an installed app is
-somebody else's code and neither applies.
+
+That split is what lets *Publish* and *Edit in builder* sit unconditionally on a My apps
+card: everything on that page is the user's own code, so neither control has a case to
+hide for.
 
 ## Publishing snapshots the app
 
@@ -142,8 +144,8 @@ The line that actually exists in the data is **authorship**:
   place: this is the page that granted somebody else's code access to your data, and it
   is the page that takes it back.
 
-The route stays `/apps`, with `/MyTools` redirected: `?app=` deep links point at it from
-the builder and the widgets, and those are URLs people keep.
+The route matches the name: `/apps`, which `?app=` deep links from the builder and the
+widgets point at. `/MyTools` still redirects there — those are URLs people keep.
 
 The nav says **My apps**, not *Apps*. Beside *Market* the possessive is doing the work —
 it puts the distinction in the label itself, which "Apps" versus "Market" never did.

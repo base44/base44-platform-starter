@@ -1,10 +1,13 @@
 /**
- * `/` — Home for a signed-in visitor, the sign-in card for everyone else.
+ * `/` — the home page, for both kinds of visitor: a sign-in card for anyone
+ * signed out, the dashboard for anyone signed in.
  *
- * Home is the root URL rather than a named route, so the product's front door is
- * `sunny44.com/` and not `sunny44.com/Dashboard`. That is also why this page
- * cannot live in the `(app)` route group: its layout would be a second page
- * resolving to `/`. It gates itself instead, and renders the same shell.
+ * It sits in the authenticated route group so that the shell around it is the
+ * same mounted component every other page gets. Outside the group it was a
+ * second copy, and navigating between `/` and anywhere else tore down the shell
+ * and everything open inside it. The group's layout leaves `/` alone when there
+ * is no session, since redirecting the sign-in page to itself is a loop, so the
+ * signed-out half below renders bare.
  *
  * `?next=` is set by the authenticated layout when it turns a signed-out visitor
  * away, and is the reason a link to a specific board survives sign-in. It is
@@ -14,13 +17,13 @@
 
 import { redirect } from "next/navigation";
 
-import AuthenticatedShell from "@/components/AuthenticatedShell";
 import GoogleSignInButton from "@/components/GoogleSignInButton";
 import SunnyLogo from "@/components/SunnyLogo";
 import { getSessionUser } from "@/lib/auth";
-import Home from "@/views/Dashboard";
 
-const DEFAULT_DESTINATION = "/";
+import HomeDashboard from "./HomeDashboard";
+
+const HOME = "/";
 
 /**
  * A single leading slash and nothing that could re-target the browser: `//host`
@@ -28,13 +31,13 @@ const DEFAULT_DESTINATION = "/";
  * `startsWith("/")` check is an open redirect.
  */
 function safeDestination(next: string | string[] | undefined): string {
-  if (typeof next !== "string") return DEFAULT_DESTINATION;
-  if (!next.startsWith("/")) return DEFAULT_DESTINATION;
-  if (next.startsWith("//") || next.startsWith("/\\")) return DEFAULT_DESTINATION;
+  if (typeof next !== "string") return HOME;
+  if (!next.startsWith("/")) return HOME;
+  if (next.startsWith("//") || next.startsWith("/\\")) return HOME;
   return next;
 }
 
-export default async function RootPage({
+export default async function Home({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -42,15 +45,10 @@ export default async function RootPage({
   const destination = safeDestination((await searchParams).next);
 
   if (await getSessionUser()) {
-    // A signed-in visitor with somewhere else to be still gets sent there; only
-    // the sign-in round trip puts `?next=` on this URL.
-    if (destination !== DEFAULT_DESTINATION) redirect(destination);
+    // Only travel on: landing back here is the destination, not a redirect loop.
+    if (destination !== HOME) redirect(destination);
 
-    return (
-      <AuthenticatedShell>
-        <Home />
-      </AuthenticatedShell>
-    );
+    return <HomeDashboard />;
   }
 
   return (

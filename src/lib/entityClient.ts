@@ -86,7 +86,6 @@ function entity(name: string) {
 export const Board = entity("Board");
 export const Item = entity("Item");
 export const Widget = entity("Widget");
-export const Team = entity("Team");
 export const AppOwnership = entity("AppOwnership");
 
 /** `base44.auth.me()` — see src/app/api/me/route.ts. */

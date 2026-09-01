@@ -84,9 +84,11 @@ through one helper, and one module is allowed to run those queries:
 
 ```ts
 // src/lib/rls.ts
-export const scopedWhere = (actor) =>
-  actor.role === "admin" ? {} : { createdBy: actor.email };
+export const scopedWhere = (actor) => ({ createdBy: actor.email });
 ```
+
+No role widens that predicate — an `admin` is an ordinary reader of their own rows, so nobody's
+dashboard fills up with someone else's boards, apps or widgets.
 
 That's the whole trick, and it's the single biggest correctness risk in a design like this — a
 missing `scopedWhere()` is a data leak. This repo pins it down with an ESLint rule that bans by-id

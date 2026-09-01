@@ -12,12 +12,11 @@
  * point — a bad reason: a tool built from here appears in My Widgets far below,
  * so the affordance promised something the card it lived in could not deliver.
  * The Assistant button in the nav and "+ Add widget" both already lead there.
- * Calendar is a view of the workspace, so it moved to the nav.
  */
 import React, { useState } from "react";
 import Link from "next/link";
 import { formatDistanceToNow, isToday, isPast } from "date-fns";
-import { ChevronDown, Inbox, CalendarDays } from "lucide-react";
+import { ChevronDown, Inbox } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -125,21 +124,11 @@ export default function WorkList({ items, boardsById, isLoading, filter, onStatu
           <Inbox className="w-4 h-4 text-muted-foreground" aria-hidden="true" />
           {filter ? "Filtered tasks" : "Pick up where you left off"}
         </h2>
-        <div className="flex items-center gap-3">
-          {items.length > LIMIT && (
-            <span className="text-xs text-muted-foreground">
-              showing {LIMIT} of {items.length}
-            </span>
-          )}
-          {/* The same tasks arranged by date, so it belongs next to them. */}
-          <button
-            onClick={() => window.dispatchEvent(new CustomEvent("open-calendar"))}
-            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <CalendarDays className="w-3.5 h-3.5" aria-hidden="true" />
-            Calendar
-          </button>
-        </div>
+        {items.length > LIMIT && (
+          <span className="text-xs text-muted-foreground">
+            showing {LIMIT} of {items.length}
+          </span>
+        )}
       </div>
 
       <div className="bg-card border border-border rounded-lg shadow-sm overflow-hidden">

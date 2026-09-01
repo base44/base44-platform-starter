@@ -78,7 +78,6 @@ async function cleanup() {
   await prisma.item.deleteMany({ where: { title: { startsWith: TAG } } });
   await prisma.board.deleteMany({ where: { title: { startsWith: TAG } } });
   await prisma.widget.deleteMany({ where: { appName: { startsWith: TAG } } });
-  await prisma.team.deleteMany({ where: { name: { startsWith: TAG } } });
   await prisma.appOwnership.deleteMany({ where: { appId: { startsWith: TAG } } });
   await prisma.user.deleteMany({ where: { email: { startsWith: TAG } } });
 }
@@ -194,8 +193,8 @@ async function main() {
   );
   const adminBoards = await api("GET", "/Board", { as: ADMIN });
   check(
-    "admin sees both",
-    ids(adminBoards).includes(ownerBoard.id) && ids(adminBoards).includes(otherBoard.id),
+    "admin sees neither — the role is not a bypass",
+    !ids(adminBoards).includes(ownerBoard.id) && !ids(adminBoards).includes(otherBoard.id),
   );
 
   check(
@@ -207,8 +206,8 @@ async function main() {
     (await api("GET", `/Board/${ownerBoard.id}`, { as: OWNER })).status === 200,
   );
   check(
-    "admin get-by-id crosses owners",
-    (await api("GET", `/Board/${otherBoard.id}`, { as: ADMIN })).status === 200,
+    "admin get-by-id does not cross owners",
+    (await api("GET", `/Board/${otherBoard.id}`, { as: ADMIN })).status === 404,
   );
 
   const ownerApps = await api("GET", `/AppOwnership?q=${encodeURIComponent(JSON.stringify({}))}`, {
@@ -243,7 +242,7 @@ async function main() {
   console.log("\n3. the wire contract");
 
   const one = (await api("GET", `/Board/${ownerBoard.id}`, { as: OWNER })).body as Rec;
-  check("snake_case field names", "view_type" in one && "created_by" in one && "team_id" in one);
+  check("snake_case field names", "view_type" in one && "created_by" in one);
   check(
     "created_date / updated_date, not createdAt",
     "created_date" in one && !("createdAt" in one),
@@ -493,7 +492,11 @@ async function main() {
   );
 
   const adminDelete = await api("DELETE", `/Board/${createdBoard.id as string}`, { as: ADMIN });
-  check("an admin write crosses owners", adminDelete.status === 200, `got ${adminDelete.status}`);
+  check(
+    "an admin write does not cross owners",
+    adminDelete.status === 404,
+    `got ${adminDelete.status}`,
+  );
 
   // Cascade still applies through the API path.
   await api("DELETE", `/Board/${otherBoard.id}`, { as: OTHER });

@@ -68,7 +68,7 @@ export default function AppReadyWidget({
 
         {isAddedToMarket ? (
           // Confirm the destination actually chosen, not a different one.
-          <Link href="/Marketplace" onClick={onNavigate} className={done}>
+          <Link href="/market" onClick={onNavigate} className={done}>
             <Check className="w-3.5 h-3.5" />
             In the market — view it
             <ArrowRight className="w-3.5 h-3.5 ml-auto" />

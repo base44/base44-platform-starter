@@ -102,25 +102,21 @@ export const listApps = ({ limit = 20, skip = 0 } = {}) =>
  * Platform apps carry no per-Sunny-user owner — they live under one workspace —
  * so ownership lives in the local `AppOwnership` entity, whose RLS scopes a list
  * to rows the caller created. Read the folder from the platform, keep the ids the
- * user owns. Admins skip the filter and see everything in the folder, including
- * legacy apps built before ownership was tracked.
+ * user owns.
+ *
+ * The filter has no exemption: no role sees another user's apps, and an app with
+ * no `AppOwnership` row — a legacy app built before ownership was tracked — is
+ * visible to nobody here. Recover one by inserting its row.
  */
 export async function listAppsForUser({ limit = 20, skip = 0 } = {}): Promise<App[]> {
   const apps = await listApps({ limit, skip });
 
   // Imported lazily so this module stays usable from server code that has no
   // business importing the browser entity client.
-  const [{ AppOwnership, me }] = await Promise.all([import("@/lib/entityClient")]);
+  const [{ AppOwnership }] = await Promise.all([import("@/lib/entityClient")]);
 
-  let user: { role?: string } | null = null;
-  try {
-    user = (await me()) as { role?: string };
-  } catch {
-    // Unauthenticated — fall through to the owner filter, which returns nothing
-    // for an unknown user rather than leaking the folder.
-  }
-  if (user?.role === "admin") return apps;
-
+  // Unauthenticated callers get nothing: the list below throws or comes back
+  // empty rather than leaking the folder.
   const owned = await AppOwnership.list();
   const ownedIds = new Set(owned.map((o) => o.app_id as string));
   return apps.filter((a) => ownedIds.has(a.id));
@@ -143,7 +139,7 @@ export const DEFAULT_APP_SECRETS: readonly string[] = Object.freeze([]);
  *   2. `fileAppsInFolder` — `/api/apps` has no folder field on create, so a fresh
  *      app is briefly unfiled, and `listApps` reads out of the folder. An unfiled
  *      app is invisible in My apps, so this failing is loud.
- *   3. `AppOwnership` — without it only admins would see the app.
+ *   3. `AppOwnership` — without it the app is invisible in My apps, to everyone.
  */
 export async function createApp({
   prompt,
@@ -180,7 +176,7 @@ export async function createApp({
   } catch (err) {
     console.error(
       `[base44Platform] app ${app.id} was built but ownership was not recorded — ` +
-        `only admins will see it`,
+        `nobody will see it in My Tools`,
       err,
     );
   }

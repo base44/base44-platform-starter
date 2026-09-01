@@ -112,7 +112,7 @@ export default function AddWidgetModal({
             Build one
           </button>
           <Link
-            href="/Marketplace"
+            href="/market"
             onClick={onClose}
             className="flex items-center gap-2 px-3 py-2.5 min-h-[44px] border border-dashed border-border rounded-lg text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
           >

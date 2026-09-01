@@ -9,7 +9,7 @@
 //     model has it, indexed, and is only ever queried through scopedWhere()
 //     in src/lib/rls.ts. Never query these models raw.
 //   * ids are opaque strings, so Base44's Mongo ObjectId hex values can be
-//     carried over verbatim and boardId/teamId/groupId refs stay intact.
+//     carried over verbatim and boardId/groupId refs stay intact.
 
 generator client {
   provider      = "prisma-client-js"
@@ -38,7 +38,6 @@ enum BoardVisibility {
 enum BoardViewType {
   table
   kanban
-  calendar
 }
 
 enum ItemPriority {
@@ -64,7 +63,8 @@ enum Base44LinkStatus {
 /// Shell users. Created/upserted on Google sign-in, matched by email — which is
 /// what lets the email-keyed AppOwnership and Base44Link rows exist before their
 /// owner has ever signed in here.
-/// `role` is a manual DB flag: flip to `admin` by hand.
+/// `role` is a manual DB flag: flip to `admin` by hand. It grants no RLS bypass —
+/// see src/lib/rls.ts.
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
@@ -75,24 +75,6 @@ model User {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("users")
-}
-
-model Team {
-  id           String   @id @default(cuid())
-  name         String
-  description  String?
-  logoUrl      String?  @map("logo_url")
-  color        String   @default("#0073EA")
-  memberEmails String[] @map("member_emails")
-
-  createdBy String   @map("created_by")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  boards Board[]
-
-  @@index([createdBy])
-  @@map("teams")
 }
 
 /// Board columns and groups stay denormalized JSON, exactly as in Base44:
@@ -111,9 +93,6 @@ model Board {
   columns     Json            @default("[]")
   groups      Json            @default("[]")
 
-  teamId String? @map("team_id")
-  team   Team?   @relation(fields: [teamId], references: [id], onDelete: SetNull)
-
   createdBy String   @map("created_by")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -121,7 +100,6 @@ model Board {
   items Item[]
 
   @@index([createdBy])
-  @@index([teamId])
   @@map("boards")
 }
 
@@ -276,7 +254,7 @@ model MarketplaceListing {
 ///
 /// It used to be the `Widget` row, which welded "I want this app" to "I want it on my
 /// home page". SENSITIVE like Base44Link — reached only through src/lib/appInstall.ts,
-/// never the generic entity CRUD, and with no admin bypass.
+/// never the generic entity CRUD.
 model AppInstall {
   id String @id @default(cuid())
 

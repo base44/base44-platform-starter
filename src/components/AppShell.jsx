@@ -30,7 +30,6 @@ import { signOut, useSession } from "next-auth/react";
 import { LogOut, Menu as MenuIcon, Sparkles, X } from "lucide-react";
 
 import AppBuilderSidebar from "@/components/AppBuilderSidebar";
-import CalendarModal from "@/components/dashboard/CalendarModal";
 import SunnyLogo from "@/components/SunnyLogo";
 import {
   DropdownMenu,
@@ -105,18 +104,15 @@ function AccountMenu() {
 }
 
 /**
- * The places you go, not everything you can reach. Calendar and Analytics now sit
- * beside the content they are about — a calendar link next to a column of due dates is
- * found by someone who was not looking for it, which a nav item is not.
- *
- * The calendar modal stays shell-level (it spans the workspace) and is opened by an
- * `open-calendar` window event.
+ * The places you go, not everything you can reach. Analytics sits beside the content it
+ * is about — a link next to the data it summarises is found by someone who was not
+ * looking for it, which a nav item is not.
  */
 const navigationItems = [
   { title: "Home", url: "/" },
   { title: "Boards", url: createPageUrl("Boards") },
-  { title: "My apps", url: "/apps" },
-  { title: "Market", url: "/Marketplace" },
+  { title: "My apps", url: createPageUrl("Apps") },
+  { title: "Market", url: createPageUrl("Market") },
 ];
 
 const NAV_ITEM_CLASS =
@@ -125,13 +121,6 @@ const NAV_ITEM_CLASS =
 export default function AppShell({ children }) {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [calendarOpen, setCalendarOpen] = useState(false);
-
-  useEffect(() => {
-    const open = () => setCalendarOpen(true);
-    window.addEventListener("open-calendar", open);
-    return () => window.removeEventListener("open-calendar", open);
-  }, []);
   // Always false on the server and on the first client render: reading storage
   // during render would make the two disagree and hydration would tear.
   const [builderOpen, setBuilderOpen] = useState(false);
@@ -275,8 +264,6 @@ export default function AppShell({ children }) {
       </nav>
 
       <main className="flex-1 overflow-y-auto overflow-x-hidden">{children}</main>
-
-      <CalendarModal isOpen={calendarOpen} onClose={() => setCalendarOpen(false)} />
 
       <AppBuilderSidebar
         open={builderOpen}
