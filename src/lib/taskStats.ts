@@ -49,20 +49,71 @@ export function isDone(item: ItemLike, board: BoardLike | undefined): boolean {
 /** `<input type="date">` — which is what the board's date cell is — writes this. */
 const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
 
-export function dueDateOf(item: ItemLike, board: BoardLike | undefined): Date | null {
-  const value = cellValue(item, columnOfType(board, "date"));
-  if (typeof value !== "string" && typeof value !== "number") return null;
+/**
+ * The window a date cell accepts, as `<input type="date">` min/max attributes.
+ *
+ * A native date input takes up to six year digits, so a stray keystroke turns
+ * "2029" into "20299" and the board dutifully stores a due date 18,000 years
+ * out — sorting, the calendar and the timeline all follow it there.
+ */
+export const MIN_DATE = "1900-01-01";
+export const MAX_DATE = "2099-12-31";
 
-  // `new Date("2026-08-26")` is UTC midnight by spec, which is the *previous*
-  // day anywhere west of UTC — so a task due today reads as overdue in New York.
-  // A bare date carries no timezone and means that day where the reader is.
+/**
+ * A bare `YYYY-MM-DD` as a *local* date, or null.
+ *
+ * `new Date("2026-08-26")` is UTC midnight by spec, which is the *previous* day
+ * anywhere west of UTC — so a task due today reads as overdue in New York. A
+ * bare date carries no timezone and means that day where the reader is.
+ *
+ * The parts are read back because `new Date(2026, 1, 30)` rolls into March
+ * rather than rejecting February 30th.
+ */
+function parseDateOnly(value: string): Date | null {
+  const parts = DATE_ONLY.exec(value.trim());
+  if (!parts) return null;
+  const [year, month, day] = [Number(parts[1]), Number(parts[2]), Number(parts[3])];
+  const date = new Date(year, month - 1, day);
+  const rolled =
+    date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day;
+  return rolled ? null : date;
+}
+
+/**
+ * Whatever is stored in a date cell, as a Date — or null when it isn't one.
+ *
+ * Cells hold either a bare `YYYY-MM-DD` (the grid's date input) or a full ISO
+ * timestamp (the task modal's calendar, which serialises a Date), so both have
+ * to read back.
+ */
+export function parseCellDate(value: unknown): Date | null {
   if (typeof value === "string") {
-    const parts = DATE_ONLY.exec(value.trim());
-    if (parts) return new Date(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]));
+    const dateOnly = parseDateOnly(value);
+    if (dateOnly) return dateOnly;
+  } else if (typeof value !== "number" && !(value instanceof Date)) {
+    return null;
   }
 
-  const date = new Date(value);
+  const date = new Date(value as string | number | Date);
   return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/** A Date as the `YYYY-MM-DD` an `<input type="date">` will show. */
+export function toDateInputValue(date: Date | null): string {
+  if (!date) return "";
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return `${String(date.getFullYear()).padStart(4, "0")}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/** True when a date cell may commit this input: a real day, inside the window. */
+export function isDateInputValid(value: string): boolean {
+  const trimmed = value.trim();
+  if (!parseDateOnly(trimmed)) return false;
+  return trimmed >= MIN_DATE && trimmed <= MAX_DATE;
+}
+
+export function dueDateOf(item: ItemLike, board: BoardLike | undefined): Date | null {
+  return parseCellDate(cellValue(item, columnOfType(board, "date")));
 }
 
 /** True when the board has a people column and this item leaves it empty. */
