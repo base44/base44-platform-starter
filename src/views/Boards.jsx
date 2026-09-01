@@ -1,5 +1,6 @@
 import { Board, Item } from "@/lib/entityClient";
 import React, { useState, useEffect } from "react";
+import { useSession } from "next-auth/react";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
 import { createPageUrl } from "@/utils";
@@ -14,6 +15,13 @@ import WorkspaceBanner from "../components/workspace/WorkspaceBanner";
 import { WORKSPACE_BRAND } from "@/lib/workspaceBrand";
 
 export default function Boards() {
+  // The list now returns boards this user does not own — anything anyone marked
+  // `shared` (see readWhere() in src/lib/rls.ts). Those are read-only, so the card
+  // needs to know which of them are the viewer's. Undefined while the session
+  // resolves, which reads as "not mine" and keeps the menu from flashing in.
+  const { data: session } = useSession();
+  const myEmail = session?.user?.email ?? null;
+
   const [boards, setBoards] = useState([]);
   const [items, setItems] = useState([]);
   const [filteredBoards, setFilteredBoards] = useState([]);
@@ -222,6 +230,7 @@ export default function Boards() {
                   itemCount={itemCounts[board.id] || 0}
                   onDelete={handleDeleteBoard}
                   onEdit={handleOpenEditModal}
+                  canManage={Boolean(myEmail) && board.created_by === myEmail}
                 />
               ))}
             </div>

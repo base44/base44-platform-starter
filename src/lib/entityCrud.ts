@@ -3,9 +3,12 @@
  * models, and it never sees a raw request: `src/lib/entities.ts` has already
  * whitelisted every field by the time anything gets here.
  *
- * Two invariants:
- *   * `scopedWhere(actor)` is **AND-ed** with the caller's filter, so the owner
- *     predicate can only narrow the result and a filter key cannot overwrite it.
+ * Three invariants:
+ *   * the RLS predicate is **AND-ed** with the caller's filter, so it can only
+ *     narrow the result and a filter key cannot overwrite it.
+ *   * reads use `readWhere()` and writes use `scopedWhere()`. They differ by exactly
+ *     one thing — a board marked `shared` is readable by anyone signed in — so a
+ *     board someone else shared can be opened here but never edited or deleted.
  *   * writes go through `updateMany`/`deleteMany` and check `count` — the by-id
  *     forms take a unique `where` that cannot carry `createdBy` and would silently
  *     edit other users' rows.
@@ -15,7 +18,13 @@ import type { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { toWire } from "@/lib/entities";
-import { ownerFields, scopedWhere, type RlsActor, type UserOwnedModel } from "@/lib/rls";
+import {
+  ownerFields,
+  readWhere,
+  scopedWhere,
+  type RlsActor,
+  type UserOwnedModel,
+} from "@/lib/rls";
 
 type Row = Record<string, unknown>;
 
@@ -31,9 +40,11 @@ export type ListArgs = {
  * generic over `SelectSubset`, so a single structurally-typed delegate does not
  * compile — hence one closure set per model.
  *
- * The casts are where the whitelist pays for itself: `where`/`orderBy` are plain
- * records built exclusively from declared fields in src/lib/entities.ts, so they
- * cannot contain an operator object or a relation traversal.
+ * The casts are where the whitelist pays for itself: the caller's half of
+ * `where`/`orderBy` is built exclusively from declared fields in src/lib/entities.ts,
+ * so it cannot contain an operator object or a relation traversal. The other half is
+ * the RLS predicate, which is authored in src/lib/rls.ts — that is the only source of
+ * the `OR` and the `board: { … }` traversal `readWhere()` adds.
  */
 type Ops = {
   findMany(args: ListArgs): Promise<Row[]>;
@@ -124,10 +135,11 @@ export async function listEntities(
   const rows = await OPS[model].findMany({
     ...args,
     // AND, not a spread: `created_by` is a legal filter key, and spreading would let
-    // the owner predicate silently *overwrite* it — returning rows that do not match
+    // the RLS predicate silently *overwrite* it — returning rows that do not match
     // what the caller asked for. AND-ing keeps both, so the predicate can only ever
-    // narrow the result.
-    where: { AND: [args.where, scopedWhere(actor)] },
+    // narrow the result. It matters twice over now that readWhere() can return an
+    // `OR`, which a spread would let a caller-supplied `OR` clobber outright.
+    where: { AND: [args.where, readWhere(actor, model)] },
   });
   return rows.map((row) => toWire(model, row));
 }
@@ -137,7 +149,7 @@ export async function getEntity(
   actor: RlsActor,
   id: string,
 ): Promise<Row | null> {
-  const row = await OPS[model].findFirst({ id, ...scopedWhere(actor) });
+  const row = await OPS[model].findFirst({ id, ...readWhere(actor, model) });
   return row ? toWire(model, row) : null;
 }
 
@@ -161,8 +173,11 @@ export async function bulkCreateEntities(
 }
 
 /**
- * Returns null when nothing matched — either the row is gone or it belongs to
- * someone else. The two are deliberately indistinguishable to the caller.
+ * Returns null when nothing matched — the row is gone, or it belongs to someone
+ * else, or it is only readable (a board they shared). All indistinguishable to the
+ * caller, deliberately.
+ *
+ * `scopedWhere`, not `readWhere`: a shared board is not a writable one.
  *
  * `updateMany` cannot return the row, so the write and the re-read run in one
  * transaction; without it a concurrent delete would turn a successful update into
@@ -183,7 +198,7 @@ export async function updateEntity(
   return row ? toWire(model, row) : null;
 }
 
-/** False when nothing matched (missing, or owned by someone else). */
+/** False when nothing matched (missing, or not the caller's to delete). */
 export async function deleteEntity(
   model: UserOwnedModel,
   actor: RlsActor,

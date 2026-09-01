@@ -33,11 +33,14 @@ Next.js App Router · TypeScript · Tailwind 4 · Postgres + Prisma · NextAuth 
 
 ## Conventions
 
-- **RLS is hand-enforced.** Every user-owned entity query goes through `scopedWhere(session)` in
-  `src/lib/rls.ts` (`where: { createdBy: session.email }`, no role bypass). `src/lib/entityCrud.ts` is
-  the *only* module that queries owner-scoped models — never query them raw. This is the single
-  biggest correctness risk in the codebase, and ESLint bans by-id `update`/`delete` on those models
-  to keep it that way.
+- **RLS is hand-enforced.** Every user-owned entity query goes through `src/lib/rls.ts`: writes use
+  `scopedWhere(session)` (`where: { createdBy: session.email }`, no role bypass), reads use
+  `readWhere(session, model)` — the same predicate, OR-ed with `Board.visibility = "shared"` (and,
+  for `Item`, its board's). So a shared board is readable by any signed-in user and writable only by
+  its owner; sharing is a property of the row, never of the caller. `src/lib/entityCrud.ts` is the
+  *only* module that queries owner-scoped models — never query them raw. This is the single biggest
+  correctness risk in the codebase, and ESLint bans by-id `update`/`delete` on those models to keep
+  it that way.
 - **`src/lib/base44Link.ts` is the only module that touches `Base44Link`**, and it never returns a
   token to a caller. Vended tokens stay server-side.
 - **Server-only secrets** (`BASE44_SVC_KEY`, workspace id, platform host) live in env and are never
@@ -47,7 +50,8 @@ Next.js App Router · TypeScript · Tailwind 4 · Postgres + Prisma · NextAuth 
   go through `entityCrud.ts` and it withholds `created_by`. Identity comes from a **viewer token**
   (`src/lib/appTokens.ts`) that the embedding page mints for the current user and posts into the
   frame (`src/lib/appFrameAuth.ts`); its subject drives `scopedWhere()`, so an installed app answers
-  for its installer, never its author. No token means unscoped, which is the legacy behaviour.
+  for its installer, never its author — and `scopedWhere()`, not `readWhere()`: shared boards are a
+  shell affordance, not something a deployed app you don't control gets handed. No token means unscoped, which is the legacy behaviour.
   Treat its contract as frozen once apps are built against it — they are deployed code you do not
   control.
 - **Two lint regimes.** Platform infrastructure (`src/lib`, `src/app`) is strict `.tsx`/`.ts`. The
