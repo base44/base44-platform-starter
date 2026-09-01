@@ -13,6 +13,9 @@
  *   4. `created_by` comes from the session and nowhere else (gotcha 6)
  *   5. the q/sort/body whitelists reject anything undeclared, so nothing reaches a
  *      Prisma `where` that could subvert the RLS predicate
+ *   6. a board marked `shared` reads across owners and still writes to none of them
+ *
+ * Console sections are numbered in run order; the list above is by property.
  *
  * Writes throwaway rows to DATABASE_URL and cleans up. Scratch database only:
  *   npm run dev            # in another shell
@@ -497,6 +500,63 @@ async function main() {
     adminDelete.status === 404,
     `got ${adminDelete.status}`,
   );
+
+  console.log("\n9. a shared board reads across owners, and writes to none");
+
+  // Written straight to Postgres again: `visibility` is a writable field, but the
+  // point here is what a reader sees, not how the flag got set.
+  const sharedBoard = await prisma.board.create({
+    data: { title: `${TAG} other shared board`, createdBy: OTHER, visibility: "shared" },
+  });
+  const sharedItem = await prisma.item.create({
+    data: { title: `${TAG} other shared item`, boardId: sharedBoard.id, createdBy: OTHER },
+  });
+
+  check(
+    "owner lists a board they do not own",
+    ids(await api("GET", "/Board", { as: OWNER })).includes(sharedBoard.id),
+  );
+  check(
+    "...and can get it by id",
+    (await api("GET", `/Board/${sharedBoard.id}`, { as: OWNER })).status === 200,
+  );
+  const sharedQ = encodeURIComponent(JSON.stringify({ board_id: sharedBoard.id }));
+  check(
+    "...and sees its items, which are not theirs either",
+    rows(await api("GET", `/Item?q=${sharedQ}`, { as: OWNER })).some((r) => r.id === sharedItem.id),
+  );
+  check(
+    "the read is still a filter, not a bypass: OTHER's private board stays hidden",
+    !ids(await api("GET", "/Board", { as: OWNER })).includes(otherBoard.id),
+  );
+
+  const sharedUpdate = await api("PUT", `/Board/${sharedBoard.id}`, {
+    as: OWNER,
+    body: { title: `${TAG} hijacked` },
+  });
+  check(
+    "updating a shared board is 404",
+    sharedUpdate.status === 404,
+    `got ${sharedUpdate.status}`,
+  );
+  const sharedItemUpdate = await api("PUT", `/Item/${sharedItem.id}`, {
+    as: OWNER,
+    body: { title: `${TAG} hijacked item` },
+  });
+  check(
+    "updating an item on it is 404",
+    sharedItemUpdate.status === 404,
+    `got ${sharedItemUpdate.status}`,
+  );
+  const sharedDelete = await api("DELETE", `/Board/${sharedBoard.id}`, { as: OWNER });
+  check("deleting it is 404", sharedDelete.status === 404, `got ${sharedDelete.status}`);
+  check(
+    "...and none of that landed",
+    (await prisma.board.findUniqueOrThrow({ where: { id: sharedBoard.id } })).title ===
+      `${TAG} other shared board`,
+  );
+
+  console.log("\n10. cascade");
 
   // Cascade still applies through the API path.
   await api("DELETE", `/Board/${otherBoard.id}`, { as: OTHER });

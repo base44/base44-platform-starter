@@ -11,6 +11,9 @@
  *   4. the by-id update/delete trap really is a trap (documents why *Many)
  *   5. deleting a board cascades to its items
  *   6. an unauthenticated actor throws rather than returning everything
+ *   7. schema defaults and enums round-trip
+ *   8. readWhere() adds shared boards (and their items) to a read, and only to a
+ *      read — the write predicate does not move
  *
  * Writes to whatever DATABASE_URL points at, then cleans up after itself.
  * Run against a scratch database only:  npx tsx scripts/rls-smoke.ts
@@ -19,6 +22,7 @@
 import { prisma } from "../src/lib/prisma";
 import {
   scopedWhere,
+  readWhere,
   ownerFields,
   canAccess,
   UnauthenticatedError,
@@ -187,6 +191,65 @@ async function main() {
   const item = await prisma.item.findFirstOrThrow({ where: { title: `${TAG} bob item` } });
   check("priority defaults to medium", item.priority === "medium");
   check("data defaults to {}", JSON.stringify(item.data) === "{}");
+
+  console.log("\n8. readWhere widens reads to shared boards, and nothing else");
+
+  // Bob shares his board. Nothing else about it changes.
+  await prisma.board.update({ where: { id: bobBoard.id }, data: { visibility: "shared" } });
+
+  const aliceReads = await prisma.board.findMany({
+    where: { AND: [{ title: { startsWith: TAG } }, readWhere(ALICE, "Board")] },
+  });
+  check("alice now reads 2 boards", aliceReads.length === 2, `saw ${aliceReads.length}`);
+  check("bob's shared board is one of them", aliceReads.some((b) => b.id === bobBoard.id));
+
+  const aliceItems = await prisma.item.findMany({
+    where: { AND: [{ title: { startsWith: TAG } }, readWhere(ALICE, "Item")] },
+  });
+  check(
+    "and its items come with it — a board of invisible rows is not shared",
+    aliceItems.some((i) => i.boardId === bobBoard.id),
+    `saw ${aliceItems.length} items`,
+  );
+
+  // The widening is a property of the row, not of the caller: alice's own board is
+  // still private, so bob does not get a reciprocal view.
+  const bobReads = await prisma.board.findMany({
+    where: { AND: [{ title: { startsWith: TAG } }, readWhere(BOB, "Board")] },
+  });
+  check("sharing is not mutual", !bobReads.some((b) => b.id === aliceBoard.id));
+
+  // Shared means readable. It does not mean writable.
+  const stolenShared = await prisma.board.updateMany({
+    where: { id: bobBoard.id, ...scopedWhere(ALICE) },
+    data: { title: `${TAG} alice took bob's shared board` },
+  });
+  check("alice cannot write to the board she can read", stolenShared.count === 0);
+  const stolenSharedItem = await prisma.item.deleteMany({
+    where: { boardId: bobBoard.id, ...scopedWhere(ALICE) },
+  });
+  check("nor delete an item on it", stolenSharedItem.count === 0);
+
+  // Widgets and app ownership stay personal whatever any board says.
+  check(
+    "readWhere(Widget) is the plain owner predicate",
+    JSON.stringify(readWhere(ALICE, "Widget")) === JSON.stringify(scopedWhere(ALICE)),
+  );
+  check(
+    "readWhere(AppOwnership) is the plain owner predicate",
+    JSON.stringify(readWhere(ALICE, "AppOwnership")) === JSON.stringify(scopedWhere(ALICE)),
+  );
+  check(
+    "readWhere throws unauthenticated, like scopedWhere",
+    (() => {
+      try {
+        readWhere(null, "Board");
+        return false;
+      } catch (err) {
+        return err instanceof UnauthenticatedError;
+      }
+    })(),
+  );
 
   await cleanup();
 

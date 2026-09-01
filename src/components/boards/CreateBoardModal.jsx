@@ -174,13 +174,15 @@ export default function CreateBoardModal({ isOpen, onClose, onSubmit }) {
                 <SelectItem value="private">
                   <div className="flex items-center gap-2">
                     <Lock className="w-4 h-4" />
-                    <span>Private</span>
+                    <span>Private — only you</span>
                   </div>
                 </SelectItem>
+                {/* Not a label any more: this is the flag readWhere() reads, so
+                    picking it grants the whole workspace a read. */}
                 <SelectItem value="shared">
                   <div className="flex items-center gap-2">
                     <Globe className="w-4 h-4" />
-                    <span>Shared</span>
+                    <span>Shared — anyone signed in can view</span>
                   </div>
                 </SelectItem>
               </SelectContent>

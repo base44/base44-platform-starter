@@ -1,5 +1,6 @@
 import { Board, Item } from "@/lib/entityClient";
 import React, { useState, useEffect } from "react";
+import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -45,6 +46,14 @@ export default function BoardPage() {
   // next/navigation returns the params object directly.
   const searchParams = useSearchParams();
   const boardId = searchParams.get("id");
+
+  // A board someone else marked `shared` loads here (readWhere() in src/lib/rls.ts)
+  // but every write still goes through the owner predicate, so the API would answer
+  // 404. Rather than let the UI fire calls that quietly fail, ownership gates each
+  // mutation below and the affordances that reach them. Null while the session
+  // resolves — "not mine" is the safe reading.
+  const { data: session } = useSession();
+  const myEmail = session?.user?.email ?? null;
 
   const [board, setBoard] = useState(null);
   const [items, setItems] = useState([]);
@@ -103,8 +112,10 @@ export default function BoardPage() {
     setIsLoading(false);
   };
 
+  const canEdit = Boolean(myEmail) && board?.created_by === myEmail;
+
   const handleAddItem = async (groupId, title) => {
-    if (!boardId || !board) return;
+    if (!boardId || !board || !canEdit) return;
 
     const maxOrder = Math.max(
       0,
@@ -167,6 +178,7 @@ export default function BoardPage() {
   };
 
   const handleUpdateItem = async (itemId, updates) => {
+    if (!canEdit) return;
     try {
       await Item.update(itemId, updates);
       setItems((prev) => prev.map((item) => (item.id === itemId ? { ...item, ...updates } : item)));
@@ -180,6 +192,7 @@ export default function BoardPage() {
   };
 
   const handleDeleteItem = async (itemId) => {
+    if (!canEdit) return;
     try {
       await Item.delete(itemId);
       setItems((prev) => prev.filter((item) => item.id !== itemId));
@@ -192,6 +205,7 @@ export default function BoardPage() {
   };
 
   const handleReorderItems = async (groupId, sourceIndex, destinationIndex) => {
+    if (!canEdit) return;
     const groupItems = items
       .filter((item) => item.group_id === groupId)
       .sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
@@ -232,7 +246,7 @@ export default function BoardPage() {
   };
 
   const handleAddColumn = async (columnData) => {
-    if (!board) return;
+    if (!board || !canEdit) return;
     const newColumn = { ...columnData, id: generateId(), width: columnData.width || 150 };
     const updatedColumns = [...(board.columns || []), newColumn];
 
@@ -263,7 +277,7 @@ export default function BoardPage() {
   };
 
   const handleUpdateColumn = async (columnId, updatedData) => {
-    if (!board) return;
+    if (!board || !canEdit) return;
     const updatedColumns = board.columns.map((col) =>
       col.id === columnId ? { ...col, ...updatedData } : col,
     );
@@ -276,7 +290,7 @@ export default function BoardPage() {
   };
 
   const handleDeleteColumn = async (columnId) => {
-    if (!board) return;
+    if (!board || !canEdit) return;
     const updatedColumns = board.columns.filter((col) => col.id !== columnId);
     const updatedItems = items.map((item) => {
       const newData = { ...item.data };
@@ -294,7 +308,7 @@ export default function BoardPage() {
   };
 
   const handleAddGroup = async (groupData) => {
-    if (!board) return;
+    if (!board || !canEdit) return;
     const newGroup = { ...groupData, id: generateId(), collapsed: false };
     const updatedGroups = [...(board.groups || []), newGroup];
     try {
@@ -307,7 +321,7 @@ export default function BoardPage() {
   };
 
   const handleRenameGroup = async (groupId, newTitle) => {
-    if (!board || !newTitle.trim()) return;
+    if (!board || !newTitle.trim() || !canEdit) return;
     const updatedGroups = board.groups.map((g) =>
       g.id === groupId ? { ...g, title: newTitle.trim() } : g,
     );
@@ -320,7 +334,7 @@ export default function BoardPage() {
   };
 
   const handleDeleteGroup = async (groupIdToDelete) => {
-    if (!board) return;
+    if (!board || !canEdit) return;
 
     if (
       !window.confirm(
@@ -347,7 +361,7 @@ export default function BoardPage() {
   };
 
   const handleHideColumnFromGroup = async (groupId, columnId) => {
-    if (!board) return;
+    if (!board || !canEdit) return;
 
     const updatedGroups = board.groups.map((group) => {
       if (group.id === groupId) {
@@ -371,7 +385,7 @@ export default function BoardPage() {
   };
 
   const handleReorderColumns = async (sourceIndex, destinationIndex) => {
-    if (!board) return;
+    if (!board || !canEdit) return;
     const cols = [...(board.columns || [])];
     const [moved] = cols.splice(sourceIndex, 1);
     cols.splice(destinationIndex, 0, moved);
@@ -489,21 +503,37 @@ export default function BoardPage() {
             onShowIntegrations={() => setShowIntegrations(true)}
             onShowAutomations={() => setShowAutomations(true)}
             onBoardUpdate={(updated) => setBoard(updated)}
+            canEdit={canEdit}
           />
         </div>
 
         <div className="px-6 py-6">
           {currentView === "table" && (
             <div className="flex items-center gap-3 mb-5 flex-wrap">
-              <button
-                onClick={() => setShowNewTaskModal(true)}
-                className="inline-flex items-center gap-2 bg-primary text-primary-foreground text-sm font-medium px-3.5 py-2 rounded hover:bg-primary/90 transition-colors"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                New Task
-              </button>
+              {canEdit ? (
+                <>
+                  <button
+                    onClick={() => setShowNewTaskModal(true)}
+                    className="inline-flex items-center gap-2 bg-primary text-primary-foreground text-sm font-medium px-3.5 py-2 rounded hover:bg-primary/90 transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    New Task
+                  </button>
 
-              <div className="w-px h-5 bg-border" />
+                  <div className="w-px h-5 bg-border" />
+                </>
+              ) : (
+                <>
+                  {/* Filtering, sorting and the views all stay: this board is
+                      readable, just not the viewer's to change. */}
+                  <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground border border-border rounded px-2.5 py-1.5">
+                    <Eye className="w-3.5 h-3.5" />
+                    Read-only · shared by {board.created_by}
+                  </span>
+
+                  <div className="w-px h-5 bg-border" />
+                </>
+              )}
 
               <div className="relative">
                 <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground" />

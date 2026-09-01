@@ -34,6 +34,7 @@ export default function BoardHeader({
   onShowIntegrations,
   onShowAutomations,
   onBoardUpdate,
+  canEdit = true,
 }) {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isFavorited, setIsFavorited] = useState(false);
@@ -65,7 +66,7 @@ export default function BoardHeader({
   const boardColor = board?.color || "#0E2E56";
 
   const handleSaveTitle = async () => {
-    if (!editedTitle.trim() || !board?.id) {
+    if (!canEdit || !editedTitle.trim() || !board?.id) {
       setIsEditing(false);
       return;
     }
@@ -103,7 +104,7 @@ export default function BoardHeader({
 
               <div className="flex items-center gap-3">
                 <div className="space-y-0.5">
-                  {isEditing ? (
+                  {isEditing && canEdit ? (
                     <div className="flex items-center gap-2">
                       <Input
                         value={editedTitle}
@@ -124,11 +125,15 @@ export default function BoardHeader({
                     </div>
                   ) : (
                     <h1
-                      className="text-base font-semibold text-foreground cursor-pointer flex items-center gap-1.5 group"
-                      onClick={() => setIsEditing(true)}
+                      className={`text-base font-semibold text-foreground flex items-center gap-1.5 group ${
+                        canEdit ? "cursor-pointer" : ""
+                      }`}
+                      onClick={canEdit ? () => setIsEditing(true) : undefined}
                     >
                       {board?.title}
-                      <Edit3 className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                      {canEdit && (
+                        <Edit3 className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                      )}
                     </h1>
                   )}
 

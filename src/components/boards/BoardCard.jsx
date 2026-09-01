@@ -12,7 +12,21 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { getBoardColor, boardInitial, personInitial, readableText } from "@/lib/boardColor";
 
-export default function BoardCard({ board, viewMode, index, itemCount = 0, onDelete, onEdit }) {
+/**
+ * `canManage` is board ownership, not a role: a board someone else marked `shared`
+ * lists here and opens read-only, so offering Edit/Delete on it would be offering a
+ * call the API answers with a 404. The owner's address takes the visibility pill's
+ * place on those, which is the more useful of the two facts.
+ */
+export default function BoardCard({
+  board,
+  viewMode,
+  index,
+  itemCount = 0,
+  onDelete,
+  onEdit,
+  canManage = true,
+}) {
   const handleDelete = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -30,6 +44,8 @@ export default function BoardCard({ board, viewMode, index, itemCount = 0, onDel
   const boardColor = getBoardColor(board);
   const ink = readableText(boardColor);
   const taskLabel = `${itemCount} ${itemCount === 1 ? "task" : "tasks"}`;
+  const sharedWithMe = !canManage;
+  const badge = sharedWithMe ? `Shared by ${board.created_by}` : board.visibility;
 
   if (viewMode === "list") {
     return (
@@ -61,40 +77,43 @@ export default function BoardCard({ board, viewMode, index, itemCount = 0, onDel
               {formatDistanceToNow(new Date(board.updated_date), { addSuffix: true })}
             </span>
             <span
-              className={`text-[11px] px-2 py-0.5 rounded-full ${
+              className={`text-[11px] px-2 py-0.5 rounded-full max-w-[14rem] truncate ${
                 board.visibility === "shared"
                   ? "bg-primary/10 text-primary"
                   : "bg-muted text-muted-foreground"
               }`}
+              title={badge}
             >
-              {board.visibility}
+              {badge}
             </span>
           </div>
         </Link>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              className="reveal-on-hover p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-secondary"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-            >
-              <MoreHorizontal className="w-4 h-4" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={handleEdit}>
-              <Edit3 className="w-3.5 h-3.5 mr-2" /> Edit
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={handleDelete}
-              className="text-destructive focus:text-destructive"
-            >
-              <Trash2 className="w-3.5 h-3.5 mr-2" /> Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {canManage && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="reveal-on-hover p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-secondary"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+              >
+                <MoreHorizontal className="w-4 h-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={handleEdit}>
+                <Edit3 className="w-3.5 h-3.5 mr-2" /> Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={handleDelete}
+                className="text-destructive focus:text-destructive"
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-2" /> Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </motion.div>
     );
   }
@@ -120,10 +139,11 @@ export default function BoardCard({ board, viewMode, index, itemCount = 0, onDel
             {boardInitial(board)}
           </span>
           <span
-            className="absolute top-2.5 right-2.5 text-[11px] px-2 py-0.5 rounded-full backdrop-blur-sm"
+            className="absolute top-2.5 right-2.5 text-[11px] px-2 py-0.5 rounded-full backdrop-blur-sm max-w-[85%] truncate"
             style={{ backgroundColor: `${ink}26`, color: ink }}
+            title={badge}
           >
-            {board.visibility}
+            {badge}
           </span>
         </div>
 
@@ -156,30 +176,32 @@ export default function BoardCard({ board, viewMode, index, itemCount = 0, onDel
             <Sparkles className="w-3 h-3" />
             Build an app
           </button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }}
-              >
-                <MoreHorizontal className="w-3.5 h-3.5" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={handleEdit}>
-                <Edit3 className="w-3.5 h-3.5 mr-2" /> Edit
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={handleDelete}
-                className="text-destructive focus:text-destructive"
-              >
-                <Trash2 className="w-3.5 h-3.5 mr-2" /> Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {canManage && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                >
+                  <MoreHorizontal className="w-3.5 h-3.5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleEdit}>
+                  <Edit3 className="w-3.5 h-3.5 mr-2" /> Edit
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={handleDelete}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-2" /> Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>
     </motion.div>

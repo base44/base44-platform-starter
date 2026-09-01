@@ -90,8 +90,21 @@ export const scopedWhere = (actor) => ({ createdBy: actor.email });
 No role widens that predicate — an `admin` is an ordinary reader of their own rows, so nobody's
 dashboard fills up with someone else's boards, apps or widgets.
 
+Sharing, when you want it, is a property of the **row**, never of the caller. A board carries a
+`visibility` flag, so reads use a second predicate built from the first:
+
+```ts
+// src/lib/rls.ts — reads only
+export const readWhere = (actor, model) =>
+  model === "Board" ? { OR: [scopedWhere(actor), { visibility: "shared" }] } : scopedWhere(actor);
+```
+
+Writes stay on `scopedWhere()`. A shared board is readable by the workspace and writable by its
+owner alone, which is why the two helpers exist instead of one: widening the owner predicate itself
+would have made every shared board editable by everyone who could see it.
+
 That's the whole trick, and it's the single biggest correctness risk in a design like this — a
-missing `scopedWhere()` is a data leak. This repo pins it down with an ESLint rule that bans by-id
+missing predicate is a data leak. This repo pins it down with an ESLint rule that bans by-id
 `update`/`delete` (those can't carry an owner predicate) and a smoke test (`npm run rls:smoke`).
 
 **Takeaway:** decide up front that Base44 is downstream of your auth, not the other way around.
