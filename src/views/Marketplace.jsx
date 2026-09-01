@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Loader2, Search, Check, ArrowLeft, ShieldCheck, Sparkles, Store, LayoutGrid, Trash2 } from "lucide-react";
+import { Loader2, Search, Check, ArrowLeft, ShieldCheck, Sparkles, Store, Plus, Trash2 } from "lucide-react";
 
 import { addAppToMyWidgets } from "@/lib/myWidgets";
 import { useAppFrameAuth } from "@/lib/appFrameAuth";
@@ -151,7 +151,34 @@ function InstallDialog({ listing, onCancel, onConfirm }) {
   );
 }
 
+/**
+ * An action with no room for its label. The label is the tooltip, anchored right so a
+ * long one grows inward rather than clipping on the card's edge.
+ */
+function IconAction({ onClick, disabled, label, children }) {
+  return (
+    <span className="relative flex flex-shrink-0">
+      <button
+        onClick={onClick}
+        disabled={disabled}
+        aria-label={label}
+        className="peer flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:bg-secondary hover:text-destructive disabled:opacity-40"
+      >
+        {children}
+      </button>
+      <span className="pointer-events-none absolute bottom-full right-0 z-10 mb-1.5 whitespace-nowrap rounded bg-foreground px-2 py-1 text-[11px] text-background opacity-0 transition-opacity peer-hover:opacity-100 peer-focus-visible:opacity-100">
+        {label}
+      </span>
+    </span>
+  );
+}
+
 function ListingCard({ listing, busy, onInstall, onOpen, onUnpublish, onPin, onUninstall }) {
+  /** Anything you can run: installed, or yours to begin with. */
+  const canOpen = listing.installed || listing.is_author;
+  const canUninstall = listing.installed && !listing.is_author;
+  const canDelist = listing.is_author && listing.status === "published";
+
   const thumbnail = listing.screenshot_url ? (
     <img src={listing.screenshot_url} alt="" className="h-full w-full object-cover" />
   ) : (
@@ -162,18 +189,31 @@ function ListingCard({ listing, busy, onInstall, onOpen, onUnpublish, onPin, onU
 
   return (
     <div className="group flex flex-col overflow-hidden rounded-lg border border-border bg-card shadow-sm transition-all hover:border-primary/40 hover:shadow-md">
-      <div className="flex aspect-[16/9] items-center justify-center overflow-hidden bg-muted">
+      <div className="flex aspect-[16/9] items-center justify-center overflow-hidden border-b border-border bg-muted">
         {thumbnail}
       </div>
 
       <div className="flex-1 p-3.5">
         <div className="flex items-start justify-between gap-2">
           <p className="text-sm font-medium text-foreground">{listing.title}</p>
-          {listing.installed && (
-            <span className="flex flex-shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] text-primary">
-              <Check className="h-2.5 w-2.5" /> Installed
-            </span>
-          )}
+          <div className="flex flex-shrink-0 items-center gap-1">
+            {listing.is_author && (
+              <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] text-muted-foreground">Yours</span>
+            )}
+            {listing.status === "delisted" && (
+              <span
+                title="Off the market. Republish it from My apps."
+                className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground"
+              >
+                Delisted
+              </span>
+            )}
+            {listing.installed && (
+              <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] text-primary">
+                <Check className="h-2.5 w-2.5" /> Installed
+              </span>
+            )}
+          </div>
         </div>
         {listing.tagline && <p className="mt-1 text-xs text-muted-foreground">{listing.tagline}</p>}
         <p className="mt-2 text-[11px] text-muted-foreground">
@@ -183,59 +223,64 @@ function ListingCard({ listing, busy, onInstall, onOpen, onUnpublish, onPin, onU
         </p>
       </div>
 
+      {/*
+        One grammar in every state: run it · put it in Widgets · take something away.
+        Only the third slot changes by ownership — someone else's app you can uninstall,
+        your own you can pull from the market. An app you have not installed offers the
+        one thing you can do with it.
+      */}
       <div className="flex gap-2 border-t border-border p-2.5">
-        {listing.is_author && listing.status === "published" && (
-          <button
-            onClick={() => onUnpublish(listing)}
-            title="Stop offering it. Anyone who already installed it keeps working."
-            className="flex-1 rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-secondary hover:text-destructive"
-          >
-            Remove from market
-          </button>
-        )}
-        {listing.is_author && listing.status === "delisted" && (
-          <span className="flex-1 px-3 py-1.5 text-center text-xs text-muted-foreground">
-            Delisted — republish from My apps
-          </span>
-        )}
-        {!listing.is_author &&
-          (listing.installed ? (
-            <>
-              <button onClick={() => onOpen(listing)} className="flex-1 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground">
-                Open
-              </button>
-              <button
-                onClick={() => onPin(listing)}
-                disabled={listing.pinned}
-                title={listing.pinned ? "Already on your home page" : "Show it on your home page"}
-                className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-40"
-              >
-                <LayoutGrid className="h-3.5 w-3.5" />
-                {listing.pinned ? "On Home" : "Add to Home"}
-              </button>
-              {/*
-                Installing and uninstalling are the same decision, so they are the same
-                place. An installed app is somebody else's code running on your data;
-                this is the page that granted it that, and the page that takes it back.
-              */}
-              <button
+        {canOpen ? (
+          <>
+            <button
+              onClick={() => onOpen(listing)}
+              className="flex h-8 flex-1 items-center justify-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            >
+              Open
+            </button>
+            <button
+              onClick={() => onPin(listing)}
+              disabled={listing.pinned}
+              className={`flex h-8 flex-shrink-0 items-center gap-1 rounded-md border px-2.5 text-xs transition-colors ${
+                listing.pinned
+                  ? "border-primary/30 bg-primary/10 text-primary"
+                  : "border-border text-muted-foreground hover:bg-secondary hover:text-foreground"
+              }`}
+            >
+              {listing.pinned ? <Check className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+              Widgets
+            </button>
+            {/*
+              Installing and uninstalling are the same decision, so they are the same
+              place. An installed app is somebody else's code running on your data;
+              this is the page that granted it that, and the page that takes it back.
+            */}
+            {canUninstall && (
+              <IconAction
                 onClick={() => onUninstall(listing)}
                 disabled={busy}
-                title="Remove it and revoke its access to your data"
-                className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-secondary hover:text-destructive disabled:opacity-40"
+                label="Uninstall and revoke its access"
               >
                 {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                Uninstall
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={() => onInstall(listing)}
-              className="flex-1 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-secondary"
-            >
-              Install
-            </button>
-          ))}
+              </IconAction>
+            )}
+            {canDelist && (
+              <IconAction
+                onClick={() => onUnpublish(listing)}
+                label="Remove from market"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </IconAction>
+            )}
+          </>
+        ) : (
+          <button
+            onClick={() => onInstall(listing)}
+            className="flex h-8 flex-1 items-center justify-center rounded-md border border-border px-3 text-xs font-medium text-foreground transition-colors hover:bg-secondary"
+          >
+            Install
+          </button>
+        )}
       </div>
     </div>
   );
@@ -327,7 +372,7 @@ export default function Marketplace() {
         },
         listing.app_url,
       );
-      setNotice(`${listing.title} added to your home page.`);
+      setNotice(`${listing.title} added to your widgets.`);
       await load(tab);
     } catch (err) {
       setError(err.message);
