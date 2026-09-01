@@ -729,8 +729,8 @@ export default function AppBuilderSidebar({
             initial={{ x: "100%" }}
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
-            transition={{ type: "spring", damping: 28, stiffness: 300 }}
-            className="fixed right-0 top-0 bottom-0 z-50 w-[380px] max-w-[95vw] bg-background border-l border-border flex flex-col shadow-2xl md:shadow-none"
+            transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+            className="fixed right-[var(--removed-body-scroll-bar-size,0px)] top-0 bottom-0 z-50 w-[380px] max-w-[95vw] bg-background border-l border-border flex flex-col shadow-2xl md:shadow-none"
           >
             {/* Header */}
             <div className="flex items-center gap-2 px-4 py-3 border-b border-border flex-shrink-0">
