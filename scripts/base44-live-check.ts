@@ -17,7 +17,7 @@
  * cookie the same way the smoke suite does).
  */
 
-import { encode } from "next-auth/jwt";
+import { sessionCookie } from "./session-cookie";
 
 const BASE_URL = process.env.SMOKE_BASE_URL ?? "http://localhost:3000";
 
@@ -47,11 +47,7 @@ function safe(value: unknown): string {
 }
 
 async function main() {
-  const jwt = await encode({
-    token: { email, role: "user", roleCheckedAt: Date.now() },
-    secret: process.env.NEXTAUTH_SECRET!,
-  });
-  const cookie = `next-auth.session-token=${jwt}`;
+  const cookie = await sessionCookie({ email, role: "user", roleCheckedAt: Date.now() });
 
   async function post(path: string, body: unknown) {
     const res = await fetch(`${BASE_URL}${path}`, {

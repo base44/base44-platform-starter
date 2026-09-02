@@ -18,11 +18,11 @@
 
 import type { Session } from "next-auth";
 import type { JWT } from "next-auth/jwt";
-import { encode } from "next-auth/jwt";
 
-import { authOptions } from "../src/lib/auth";
+import { authConfig } from "../src/lib/auth";
 import { prisma } from "../src/lib/prisma";
 import { scopedWhere, type RlsActor } from "../src/lib/rls";
+import { SESSION_COOKIE_NAME, sessionCookie as mintCookie } from "./session-cookie";
 
 const TAG = "auth-smoke";
 const ADMIN_EMAIL = `${TAG}-admin@example.com`;
@@ -54,7 +54,7 @@ function skip(name: string, why: string) {
  * types are wide unions over session strategies and adapters; a structural view
  * keeps the calls readable without reconstructing objects we never use.
  */
-const callbacks = authOptions.callbacks as unknown as {
+const callbacks = authConfig.callbacks as unknown as {
   signIn: (p: {
     user: { email?: string | null; name?: string | null; image?: string | null };
   }) => Promise<boolean>;
@@ -75,11 +75,7 @@ async function cleanup() {
 }
 
 /** A session cookie exactly as NextAuth would set it (JWT strategy, no adapter). */
-async function sessionCookie(token: JWT): Promise<string> {
-  const jwt = await encode({ token, secret: SECRET });
-  // Non-HTTPS dev host → the unprefixed cookie name.
-  return `next-auth.session-token=${jwt}`;
-}
+const sessionCookie = (token: JWT) => mintCookie(token as Record<string, unknown>, SECRET);
 
 async function main() {
   await cleanup();
@@ -246,7 +242,7 @@ async function main() {
       !JSON.stringify(body).includes("access_token"),
     );
 
-    const badCookie = `next-auth.session-token=not.a.valid.jwt`;
+    const badCookie = `${SESSION_COOKIE_NAME}=not.a.valid.jwt`;
     const rejected = await fetch(`${BASE_URL}/api/me`, { headers: { cookie: badCookie } });
     check("an unsignable cookie is rejected", rejected.status === 401, `got ${rejected.status}`);
   }

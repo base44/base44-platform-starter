@@ -29,11 +29,10 @@
  *   npm run base44:smoke
  */
 
-import { encode } from "next-auth/jwt";
-
 import { principalId } from "../src/lib/base44Link";
 import { submitRequestId } from "../src/lib/base44Platform";
 import { prisma } from "../src/lib/prisma";
+import { SESSION_COOKIE_NAME, sessionCookie } from "./session-cookie";
 
 const TAG = "b44-smoke";
 const USER = `${TAG}-user@example.com`;
@@ -58,11 +57,7 @@ type Res = { status: number; body: Record<string, unknown> };
 const cookies: Record<string, string> = {};
 
 async function mintCookie(email: string) {
-  const jwt = await encode({
-    token: { email, role: "user", roleCheckedAt: Date.now() },
-    secret: process.env.NEXTAUTH_SECRET!,
-  });
-  cookies[email] = `next-auth.session-token=${jwt}`;
+  cookies[email] = await sessionCookie({ email, role: "user", roleCheckedAt: Date.now() });
 }
 
 async function api(path: string, body: unknown, as?: string): Promise<Res> {
@@ -114,7 +109,7 @@ async function main() {
     (
       await fetch(`${BASE_URL}/api/base44/platform`, {
         method: "POST",
-        headers: { "content-type": "application/json", cookie: "next-auth.session-token=nope" },
+        headers: { "content-type": "application/json", cookie: `${SESSION_COOKIE_NAME}=nope` },
         body: JSON.stringify({ action: "listApps" }),
       })
     ).status === 401,

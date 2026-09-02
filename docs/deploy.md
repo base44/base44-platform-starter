@@ -9,8 +9,9 @@ Two things to understand before you start:
   carrying a viewer token signed with `NEXTAUTH_SECRET` (see
   [base44-built-apps.md](base44-built-apps.md)), so there is no shared secret to leak and no open
   mode to forget to close — but a weak or reused `NEXTAUTH_SECRET` now compromises that API too.
-- **Sign-in is pinned to one origin.** `NEXTAUTH_URL` and the Google OAuth client both name an exact
-  host, so preview deployments cannot sign in unless you give them their own client. See
+- **Google's OAuth client names one exact host.** Wildcards are not allowed, so a preview
+  deployment's URL — a new one per pull request — can never be registered. Previews sign in by
+  borrowing production's callback through a redirect proxy. See
   [Preview deployments](#preview-deployments) below.
 
 ---
@@ -42,6 +43,9 @@ A Web application client in the Google Cloud console, with:
 Use **two clients, one per environment** — localhost in your local `.env`, the deployed host in the
 deploy environment. A single client would need both origins, and rotating one would break the other.
 
+Preview deployments need **no entry of their own**: that is what the redirect proxy is for, and
+Google would not accept `https://*--<your-site>.netlify.app` anyway.
+
 While the OAuth consent screen is in **Testing**, only the listed test users can sign in, and they
 all see an "unverified app" warning. Publishing it is a separate decision.
 
@@ -71,8 +75,9 @@ one is.
 | `DATABASE_URL` | Neon **pooled** URL |
 | `DIRECT_URL` | Neon **unpooled** URL |
 | `NEXTAUTH_SECRET` | `openssl rand -base64 32` |
-| `NEXTAUTH_URL` | `https://<your-host>` — the production domain, exactly |
+| `NEXTAUTH_URL` | `https://<your-host>` — the production domain, exactly. **Scope it to production**: it overrides the origin read off the request, so a preview holding it would sign users into production |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | the production OAuth client |
+| `AUTH_REDIRECT_PROXY_URL` | `https://<your-host>/api/auth` — only needed if you turn previews on; set it on production *and* the preview contexts |
 | `BASE44_SVC_KEY` | the `b44k_` workspace key — without it the builder shows its "Connect" state |
 | `BASE44_PROVISION_KEY` | optional second key; defaults to `BASE44_SVC_KEY` |
 | `BASE44_ORG_ID`, `BASE44_PLATFORM_HOST`, `BASE44_APPS_FOLDER_ID` | from your workspace |
@@ -103,17 +108,69 @@ in and create a board.
 
 ## Preview deployments
 
-Previews are off by default, for two independent reasons:
+A preview gets a fresh URL per pull request (`deploy-preview-42--<site>.netlify.app`), which is
+exactly what neither Google nor Prisma is happy about. Both problems have a fix.
 
-1. **They cannot build.** Scope the Postgres vars to production and a preview has no
-   `DATABASE_URL`/`DIRECT_URL`, so `prisma generate` fails schema validation in `postinstall`.
-   Granting a preview those vars is worse, not better: the build command is
-   `prisma migrate deploy && next build`, so **every pull request would migrate production**.
-2. **They cannot sign in.** `NEXTAUTH_URL` and the OAuth client are pinned to the production domain,
-   so the callback never matches a preview URL.
+### Sign-in: the redirect proxy
 
-Making previews real means a separate database branch for the preview scope plus a second OAuth
-client for the preview domain.
+Google matches redirect URIs exactly and allows no wildcard, so a preview's callback URL cannot be
+registered. Instead **every deployment sends Google production's callback** and encodes its own
+origin in the OAuth `state`; production notices a state that belongs elsewhere and forwards the
+callback there. Auth.js calls this a redirect proxy, and `src/lib/auth.ts` turns it on whenever
+`AUTH_REDIRECT_PROXY_URL` is set.
+
+The flow, for a preview at `https://deploy-preview-42--<site>.netlify.app`:
+
+1. the preview sends the user to Google naming production's callback as the
+   `redirect_uri`, with `state` carrying its own callback URL,
+2. Google returns the code to **production**, which decodes the state and 302s the whole callback to
+   the preview,
+3. the preview verifies its own `state` cookie, exchanges the code (again naming production's
+   `redirect_uri`, which is what Google issued it for) and sets its own session.
+
+To set it up:
+
+| Netlify env var | Production | Deploy previews / branch deploys |
+| --- | --- | --- |
+| `AUTH_REDIRECT_PROXY_URL` | `https://<your-host>/api/auth` | same value |
+| `NEXTAUTH_SECRET` | your secret | **the same secret** |
+| `NEXTAUTH_URL` | `https://<your-host>` | **unset** |
+| `GOOGLE_CLIENT_ID` / `_SECRET` | production client | same client |
+
+Three things are load-bearing:
+
+- **The shared `NEXTAUTH_SECRET`.** The state is encrypted with it, so only a deployment holding the
+  secret can name a forwarding target, and a preview with a different secret cannot complete the
+  handshake at all. It also means a preview can mint viewer tokens for `/api/sunny` that production
+  accepts — treat preview deploys as production-equivalent trust.
+- **No `NEXTAUTH_URL` on previews.** It overrides the origin NextAuth reads from the request, so a
+  preview that inherits production's value believes it *is* production: it stops proxying and signs
+  the user into production instead. `trustHost: true` in `src/lib/auth.ts` is what lets previews
+  take their host from the request.
+- **`AUTH_REDIRECT_PROXY_URL` on production too.** The deployment whose own origin matches that
+  URL is the one that forwards; without it, production treats a preview's callback as its own.
+
+Local dev leaves `AUTH_REDIRECT_PROXY_URL` unset and uses the ordinary direct flow.
+
+### Builds: previews must not migrate
+
+Scope the Postgres vars to production only and a preview cannot build at all — `prisma generate`
+fails schema validation in `postinstall`. Giving a preview production's `DATABASE_URL` is worse:
+`build:deploy` is `prisma migrate deploy && next build`, so **every pull request would migrate
+production**.
+
+So `netlify.toml` overrides the command for the preview contexts to plain `npm run build`, which
+never touches the database, and you give the preview scope its own **Neon branch** for
+`DATABASE_URL`/`DIRECT_URL`. A pull request that adds a migration therefore deploys against an
+un-migrated preview database until you apply it to that branch yourself:
+
+```bash
+DATABASE_URL=<preview branch pooled> DIRECT_URL=<preview branch direct> npm run db:deploy
+```
+
+That is deliberate. The alternative — letting previews migrate — is a schema change from an
+unreviewed branch running automatically, against a database shared by every other open pull
+request.
 
 ## Known rough edges
 

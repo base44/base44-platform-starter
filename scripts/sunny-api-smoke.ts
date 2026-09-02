@@ -24,10 +24,9 @@
 
 import { createHmac } from "node:crypto";
 
-import { encode } from "next-auth/jwt";
-
 import { mintAppToken } from "../src/lib/appTokens";
 import { prisma } from "../src/lib/prisma";
+import { sessionCookie } from "./session-cookie";
 
 const TAG = "sunny-smoke";
 const OWNER_A = `${TAG}-a@example.com`;
@@ -457,10 +456,7 @@ async function main() {
   console.log("\n10. one record shape across both APIs");
 
   // Read it as its owner: /api/entities is owner-scoped for every role.
-  const ownerCookie = `next-auth.session-token=${await encode({
-    token: { email: OWNER_A, role: "user", roleCheckedAt: Date.now() },
-    secret: process.env.NEXTAUTH_SECRET!,
-  })}`;
+  const ownerCookie = await sessionCookie({ email: OWNER_A, role: "user", roleCheckedAt: Date.now() });
   const viaEntities = await fetch(`${BASE_URL}/api/entities/Board/${boardA.id}`, {
     headers: { cookie: ownerCookie },
   }).then((r) => r.json());
@@ -482,14 +478,12 @@ async function main() {
     title: `${TAG} from the app`,
   });
   const viaApiId = (viaApi.body.item as Rec).id as string;
-  const userCookie = `next-auth.session-token=${await encode({
-    token: { email: OWNER_A, role: "user", roleCheckedAt: Date.now() },
-    secret: process.env.NEXTAUTH_SECRET!,
-  })}`;
-  const otherCookie = `next-auth.session-token=${await encode({
-    token: { email: OWNER_B, role: "user", roleCheckedAt: Date.now() },
-    secret: process.env.NEXTAUTH_SECRET!,
-  })}`;
+  const userCookie = await sessionCookie({ email: OWNER_A, role: "user", roleCheckedAt: Date.now() });
+  const otherCookie = await sessionCookie({
+    email: OWNER_B,
+    role: "user",
+    roleCheckedAt: Date.now(),
+  });
   const entityItems = (cookie: string) =>
     fetch(`${BASE_URL}/api/entities/Item?limit=5000`, { headers: { cookie } }).then(
       (r) => r.json() as Promise<Rec[]>,
