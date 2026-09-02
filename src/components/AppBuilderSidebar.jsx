@@ -61,6 +61,7 @@ import { widgetFor } from "@/components/builder/toolWidgets";
 import AppReadyWidget from "@/components/builder/widgets/AppReadyWidget";
 import PublishDialog from "@/components/market/PublishDialog";
 import AppNameField from "@/components/AppNameField";
+import { useBuildSocket } from "@/components/builder/useBuildSocket";
 
 const BUILDING_POLL_MS = 2500;
 const IDLE_POLL_MS = 8000;
@@ -375,6 +376,37 @@ export default function AppBuilderSidebar({
     }, isBuilding ? BUILDING_POLL_MS : IDLE_POLL_MS);
     return () => clearInterval(id);
   }, [activeAppId, isBuilding, refresh]);
+
+  // POC — the same updates, pushed straight from Base44's socket. Additive: the
+  // poll above is untouched and stays the reconciliation path, because the
+  // socket replays nothing missed across a reconnect. Both commits check
+  // `shownAppIdRef` for the reason in the file header — a push, like a poll, can
+  // land after the user has moved on.
+  const onSocketMessage = useCallback((event) => {
+    if (shownAppIdRef.current !== event.appId) return;
+    // A whole message every tick, not a delta, so replace by id rather than
+    // appending. One the poll has not caught up with yet is added at the end.
+    setBuildMessages((prev) => {
+      const at = prev.findIndex((m) => m.id === event.messageId);
+      if (at === -1) {
+        return [...prev, { id: event.messageId, role: event.role, content: event.content }];
+      }
+      const next = [...prev];
+      next[at] = { ...next[at], content: event.content };
+      return next;
+    });
+  }, []);
+
+  const onSocketStatus = useCallback((event) => {
+    if (shownAppIdRef.current !== event.appId) return;
+    // Only the state: everything else about the app is the poll's to report, and
+    // `isBuilding` reads this field.
+    setActiveApp((prev) =>
+      prev ? { ...prev, status: { ...prev.status, state: event.state } } : prev,
+    );
+  }, []);
+
+  useBuildSocket(activeAppId, onSocketMessage, onSocketStatus);
 
   // The one way to get to an empty composer. Clearing `shownAppIdRef` is the part
   // that matters: it invalidates any refresh already in flight for the app we are
