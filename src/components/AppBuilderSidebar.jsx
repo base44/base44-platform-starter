@@ -12,9 +12,11 @@
  *   2. First submit → `platform.createApp()` with the prompt, a locally-derived
  *      name, and `buildCustomInstructions()` — the text Base44's builder applies on
  *      every turn. Later submits → `platform.sendMessage()` on the same app.
- *   3. **Base44 builds asynchronously**, so there is no completion callback: this
- *      polls `getApp` + `getConversation` (fast while `status.state === "processing"`,
- *      slowly when idle) and re-renders from whatever the platform reports.
+ *   3. **Base44 builds asynchronously**, so there is no completion callback. Two
+ *      paths report progress: `useBuildSocket` subscribes to the app's room and
+ *      receives the builder's pushes, and a `getApp` + `getConversation` read on
+ *      a timer covers whatever the socket is not — fast while it is not in the
+ *      room, a safety net while it is.
  *   4. A builder turn can *pause* on a tool call needing input — approval,
  *      clarifying questions, secrets. Those arrive as `tool_calls` with status
  *      `waiting_for_user_input`, get rendered as widgets
@@ -61,9 +63,14 @@ import { widgetFor } from "@/components/builder/toolWidgets";
 import AppReadyWidget from "@/components/builder/widgets/AppReadyWidget";
 import PublishDialog from "@/components/market/PublishDialog";
 import AppNameField from "@/components/AppNameField";
+import { useBuildSocket } from "@/components/builder/useBuildSocket";
 
 const BUILDING_POLL_MS = 2500;
 const IDLE_POLL_MS = 8000;
+// The safety net while the socket is carrying the build. Base44's own builder
+// polls not at all in this state; this stays non-zero only because a missed
+// push is never replayed.
+const SOCKET_POLL_MS = 30000;
 const TOOL_PENDING = ["running", "waiting_for_user_input"];
 const TOOL_FAILED = ["error", "stopped"];
 
@@ -362,8 +369,51 @@ export default function AppBuilderSidebar({
     setBuildMessages(visible);
   }, []);
 
+  // POC — the same updates, pushed straight from Base44's socket. Both commits
+  // check `shownAppIdRef` for the reason in the file header: a push, like a
+  // poll, can land after the user has moved on.
+  const onSocketMessage = useCallback(({ appId, message }) => {
+    if (shownAppIdRef.current !== appId || !message?.id) return;
+    setBuildMessages((prev) => {
+      const at = prev.findIndex((m) => m.id === message.id);
+      // Deleted, or hidden and so never renderable — same outcome either way.
+      if (message.is_deleted || message.hidden) {
+        return at === -1 ? prev : prev.filter((m) => m.id !== message.id);
+      }
+      // Replaced, not merged: this is the whole message as the platform now has
+      // it, so a `tool_calls` entry that has gone away really has gone away.
+      if (at === -1) return [...prev, message];
+      const next = [...prev];
+      next[at] = message;
+      return next;
+    });
+  }, []);
+
+  const onSocketStatus = useCallback((event) => {
+    if (shownAppIdRef.current !== event.appId) return;
+    // Only the state: everything else about the app is the poll's to report, and
+    // `isBuilding` reads this field.
+    setActiveApp((prev) =>
+      prev ? { ...prev, status: { ...prev.status, state: event.state } } : prev,
+    );
+  }, []);
+
+  const socketJoined = useBuildSocket(activeAppId, onSocketMessage, onSocketStatus);
+
+  // Read on a timer only as far as the socket is not covering it. Joined, the
+  // pushes are the live path and this drops to a safety net — it still runs,
+  // because a push carries only what `send_socket_update` diffed and the socket
+  // replays nothing missed across a gap, so the transcript is only guaranteed
+  // right after a read. Not joined (never linked, refused, dropped, or an older
+  // Base44 that does not acknowledge a join), this is the only path and keeps
+  // today's cadence.
   useEffect(() => {
     if (!activeAppId) return;
+    const period = socketJoined
+      ? SOCKET_POLL_MS
+      : isBuilding
+        ? BUILDING_POLL_MS
+        : IDLE_POLL_MS;
     const id = setInterval(() => {
       if (refreshInFlightRef.current) return;
       refreshInFlightRef.current = true;
@@ -372,9 +422,9 @@ export default function AppBuilderSidebar({
         .finally(() => {
           refreshInFlightRef.current = false;
         });
-    }, isBuilding ? BUILDING_POLL_MS : IDLE_POLL_MS);
+    }, period);
     return () => clearInterval(id);
-  }, [activeAppId, isBuilding, refresh]);
+  }, [activeAppId, isBuilding, socketJoined, refresh]);
 
   // The one way to get to an empty composer. Clearing `shownAppIdRef` is the part
   // that matters: it invalidates any refresh already in flight for the app we are
