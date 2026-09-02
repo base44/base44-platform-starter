@@ -22,9 +22,8 @@
  *   npm run entities:smoke
  */
 
-import { encode } from "next-auth/jwt";
-
 import { prisma } from "../src/lib/prisma";
+import { SESSION_COOKIE_NAME, sessionCookie } from "./session-cookie";
 
 const TAG = "entity-smoke";
 const OWNER = `${TAG}-owner@example.com`;
@@ -51,11 +50,7 @@ type Res = { status: number; body: unknown };
 const cookies: Record<string, string> = {};
 
 async function mintCookie(email: string, role: "user" | "admin") {
-  const jwt = await encode({
-    token: { email, role, roleCheckedAt: Date.now() },
-    secret: SECRET,
-  });
-  cookies[email] = `next-auth.session-token=${jwt}`;
+  cookies[email] = await sessionCookie({ email, role, roleCheckedAt: Date.now() }, SECRET);
 }
 
 async function api(
@@ -160,7 +155,7 @@ async function main() {
     "an unsignable cookie is 401",
     (
       await fetch(`${BASE_URL}/api/entities/Board`, {
-        headers: { cookie: "next-auth.session-token=nope" },
+        headers: { cookie: `${SESSION_COOKIE_NAME}=nope` },
       })
     ).status === 401,
   );

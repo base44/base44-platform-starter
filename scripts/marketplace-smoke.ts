@@ -9,9 +9,8 @@
  * Needs `npm run dev`. Writes throwaway rows and cleans up:  npm run market:smoke
  */
 
-import { encode } from "next-auth/jwt";
-
 import { prisma } from "../src/lib/prisma";
+import { sessionCookie } from "./session-cookie";
 
 const TAG = "market-smoke";
 const AUTHOR = `${TAG}-author@example.com`;
@@ -42,10 +41,7 @@ type Rec = Record<string, unknown>;
 const cookies: Record<string, string> = {};
 
 async function mintCookie(email: string) {
-  cookies[email] = `next-auth.session-token=${await encode({
-    token: { email, role: "user", roleCheckedAt: Date.now() },
-    secret: process.env.NEXTAUTH_SECRET!,
-  })}`;
+  cookies[email] = await sessionCookie({ email, role: "user", roleCheckedAt: Date.now() });
 }
 
 async function api(path: string, body: unknown, as?: string) {

@@ -17,3 +17,15 @@
   # cache is never served — only the deployed output is — so omit the path
   # rather than the keys, which would blind the scan everywhere else.
   SECRETS_SCAN_OMIT_PATHS = ".netlify/.next/cache/**"
+
+# Preview contexts build but never migrate.
+#
+# `build:deploy` is `prisma migrate deploy && next build`, so a preview holding
+# production's DATABASE_URL would move production's schema forward on every pull
+# request. `npm run build` is the database-free build; point the preview scope at a
+# Neon branch and apply schema changes to it yourself. See docs/deploy.md.
+[context.deploy-preview]
+  command = "npm run build"
+
+[context.branch-deploy]
+  command = "npm run build"
