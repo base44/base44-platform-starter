@@ -145,10 +145,24 @@ Three things are load-bearing:
   accepts — treat preview deploys as production-equivalent trust.
 - **No `NEXTAUTH_URL` on previews.** It overrides the origin NextAuth reads from the request, so a
   preview that inherits production's value believes it *is* production: it stops proxying and signs
-  the user into production instead. `trustHost: true` in `src/lib/auth.ts` is what lets previews
-  take their host from the request.
+  the user into production instead. `trustHost: true` in `src/lib/auth.ts` is what lets a
+  deployment resolve its own origin at all; on a preview that origin is then pinned, below.
 - **`AUTH_REDIRECT_PROXY_URL` on production too.** The deployment whose own origin matches that
   URL is the one that forwards; without it, production treats a preview's callback as its own.
+
+- **The preview's origin comes from `DEPLOY_PRIME_URL`, not from the request.** Netlify answers the
+  deploy *alias* (`deploy-preview-42--<site>.netlify.app`) but hands the server handler the deploy
+  *permalink* (`<deploy-id>--<site>.netlify.app`) in `host` / `x-forwarded-host`. Taken from the
+  request, a preview would name the permalink as its forwarding target while the browser — and so
+  the `state` cookie, which is host-only — sits on the alias. Sign-in then fails with
+  `InvalidCheck: state value could not be parsed`, which is also the message for a cookie that is
+  simply *absent*: `parseCookie` in `@auth/core` rewrites every cause into that one string. So
+  `src/lib/auth.ts` pins `AUTH_URL` to Netlify's own `DEPLOY_PRIME_URL`, which *is* the alias,
+  baked into the build by the `env` block in `next.config.ts` because the function's runtime
+  environment does not carry Netlify's build variables.
+
+  A consequence worth knowing: a preview signs in on its alias URL only. Open the permalink
+  directly and the browser is back on a host the deployment does not claim.
 
 Local dev leaves `AUTH_REDIRECT_PROXY_URL` unset and uses the ordinary direct flow.
 

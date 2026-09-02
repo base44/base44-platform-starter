@@ -36,16 +36,43 @@ function requiredEnv(name: string): string {
   return value;
 }
 
+/**
+ * Pin the origin a Netlify preview deployment reports for itself.
+ *
+ * Netlify answers the deploy *alias* (`deploy-preview-N--<site>.netlify.app`) but
+ * hands the server handler the deploy *permalink* in `host` / `x-forwarded-host`, so
+ * the origin Auth.js derives from the request is not the origin the browser is on.
+ * The redirect proxy below returns the callback to that derived origin, where the
+ * browser holds no `state` cookie — cookies are host-only — and sign-in dies as
+ * `InvalidCheck`.
+ *
+ * `AUTH_URL` overrides the derivation, and Netlify's own `DEPLOY_PRIME_URL` *is* the
+ * alias, so together they give a preview the origin its users actually visit. Only a
+ * deployment with no explicit origin needs it: production sets `NEXTAUTH_URL`, local
+ * dev sets neither and reads the request. Assigning it here, before `NextAuth()`
+ * below, is the supported channel — v5 exposes no `url` config option. A bare origin
+ * (no path) leaves `basePath` at `/api/auth`.
+ *
+ * The build-time copy comes first because the runtime environment does not reliably
+ * carry Netlify's build variables; see the `env` block in next.config.ts.
+ */
+const netlifyAliasOrigin =
+  process.env.NETLIFY_ALIAS_ORIGIN || process.env.DEPLOY_PRIME_URL;
+
+if (!process.env.AUTH_URL && !process.env.NEXTAUTH_URL && netlifyAliasOrigin) {
+  process.env.AUTH_URL = netlifyAliasOrigin;
+}
+
 export const authConfig: NextAuthConfig = {
   secret: requiredEnv("NEXTAUTH_SECRET"),
 
   /**
-   * Take the deployment's origin from the request's host rather than from env.
+   * Trust the forwarded host. Netlify is not one of the platforms Auth.js trusts by
+   * default, and without this a deployment cannot derive its own origin at all.
    *
-   * Netlify is not one of the platforms Auth.js trusts by default, and a preview
-   * deploy has no origin of its own to put in env — there is a new URL per pull
-   * request. That host is what the redirect proxy below hands back to, so it has to
-   * be the live one, not a build-time constant.
+   * On a preview the derived host is the deploy permalink, which is why the block
+   * above pins `AUTH_URL` to the alias instead; this stays on because production and
+   * branch deploys still resolve their origin through the request.
    */
   trustHost: true,
 

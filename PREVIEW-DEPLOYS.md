@@ -29,6 +29,7 @@ A Netlify deploy preview gets a fresh URL per pull request
 | `scripts/session-cookie.ts` *(new)* | The one place the smoke suites forge a session cookie. v5 renamed the cookie to `authjs.session-token` and `encode()` now requires `salt` (the cookie name) |
 | `scripts/auth-smoke.ts`, `base44-live-check.ts`, `base44-smoke.ts`, `entity-api-smoke.ts`, `marketplace-smoke.ts`, `sunny-api-smoke.ts` | Mint through that helper instead of calling `encode()` with the v4 cookie name |
 | `netlify.toml` | `[context.deploy-preview]` and `[context.branch-deploy]` build with `npm run build` — the database-free build — so no pull request can run a migration |
+| `next.config.ts`, `src/lib/auth.ts` | Pin a preview's origin to Netlify's `DEPLOY_PRIME_URL` (the deploy *alias*) instead of deriving it from the request host, which Netlify fills with the deploy *permalink*. `next.config.ts` bakes the value in because the function's runtime env does not carry Netlify's build variables |
 | `.env.example`, `docs/deploy.md` | `AUTH_REDIRECT_PROXY_URL`, the shared-secret requirement, why `NEXTAUTH_URL` must be production-only, and the Neon-branch story |
 
 Nothing about the app's own behaviour changed: same session shape, same `/api/auth/callback/google`
@@ -72,8 +73,25 @@ same secret, `AUTH_REDIRECT_PROXY_URL=http://localhost:3411/api/auth` on both:
   `sunny:smoke`, `market:smoke`, `rls:smoke`.
 - **No real Google round trip.** The handshake was proved with a fake `code`; nothing in the local
   test talked to `accounts.google.com`.
-- **No real Netlify deploy.** Host detection relies on the request's host reaching the app, which is
-  the normal Netlify behaviour but is unproven here.
+- ~~**No real Netlify deploy.**~~ **Settled, and it failed.** Netlify serves the alias
+  `deploy-preview-N--<site>.netlify.app` with a `200` but hands the server handler the deploy
+  permalink `<deploy-id>--<site>.netlify.app` in `host` / `x-forwarded-host`. Measured on two live
+  previews: `/api/auth/providers` on PR #24's alias reported the permalink as its own callback URL.
+  A preview therefore named the permalink as its forwarding target while the browser held the
+  host-only `state` cookie on the alias, and sign-in died as
+  `InvalidCheck: state value could not be parsed` — which is also what a *missing* cookie reports,
+  since `parseCookie` in `@auth/core` rewrites every cause into that string.
+
+  Fixed by pinning `AUTH_URL` to `DEPLOY_PRIME_URL`; see the `next.config.ts` row in §2. Verified
+  locally by building with `DEPLOY_PRIME_URL=http://pinned-alias.example`, serving it, and sending
+  a request with `Host: 6a97fdd1--permalink.netlify.app`: the decoded OAuth `state` carried
+  `origin: http://pinned-alias.example/api/auth/callback/google`, the pinned value, not the host.
+
+  Still unproven on a real deploy: that `DEPLOY_PRIME_URL` is present in Netlify's *build*
+  environment for preview contexts. It is documented to be, and the build-time bake is why it does
+  not also need to be in the runtime environment — but the first preview deploy after this change
+  is what confirms it. If a preview's `/api/auth/providers` still reports the permalink, the bake
+  came out empty.
 
 ---
 
