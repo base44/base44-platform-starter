@@ -6,10 +6,11 @@ An app one person builds, another installs and runs against **their own** boards
 
 The hard part was already done. `/api/sunny` takes a viewer token
 (`src/lib/appTokens.ts`), minted by the page embedding the app and handed to the frame
-over `postMessage` (`src/lib/appFrameAuth.ts`). Its subject drives `scopedWhere()`, so
-a market app — one deployment, one author, many installers — reads whoever is looking
-at it. That is the whole reason a market is safe here, and none of it is in this
-feature.
+over `postMessage` (`src/lib/appFrameAuth.ts`). Its subject is the actor behind the
+route's RLS predicates, so a market app — one deployment, one author, many installers
+— reads whoever is looking at it: their own boards, plus any board marked `shared`,
+and writes to nothing but their own rows. That is the whole reason a market is safe
+here, and none of it is in this feature.
 
 What was missing was only the catalogue: a way to find an app you did not build.
 

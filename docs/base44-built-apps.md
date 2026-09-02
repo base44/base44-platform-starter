@@ -93,8 +93,9 @@ leak, and answering with nothing is a bug.
 
 What works is a **viewer token**. The page embedding the app does have a session, so it mints a
 short-lived token for whoever is signed in and hands it to the frame over `postMessage`; the app
-sends it as `Authorization: Bearer`. Its subject drives the same owner predicate the rest of the
-product uses, so an app installed by B answers with B's rows. The install itself is the grant —
+sends it as `Authorization: Bearer`. Its subject drives the same predicates the rest of the product
+uses — the read one for reads, the owner one for writes — so an app installed by B answers with B's
+view: B's rows, plus anything shared with the workspace, and writes to nothing but B's own. The install itself is the grant —
 here, the row that pins an app to a dashboard — so uninstalling revokes.
 
 Three consequences for the endpoint:

@@ -15,8 +15,14 @@
  *
  * That identity is a **viewer token** (src/lib/appTokens.ts): the Sunny page embedding
  * the app mints one for whoever is signed in and posts it to the frame, and the app
- * sends it as `Authorization: Bearer`. Its subject drives `scopedWhere()`, so an app
- * installed by B answers with B's rows — never its author's.
+ * sends it as `Authorization: Bearer`. Its subject is the actor, so an app installed
+ * by B answers with B's view — never its author's.
+ *
+ * "B's view" is the same view B gets in Sunny itself: reads go through `readWhere()`,
+ * so a board someone marked `shared` reaches a built app exactly as it reaches the
+ * boards list. Sharing stays a property of the row, so an app cannot see anything its
+ * viewer could not already open in the shell. Writes stay on `scopedWhere()` —
+ * `created_by` only — so a shared board remains readable and not writable here either.
  *
  * It is the **only** way in: there is no unscoped mode and no shared secret. Every
  * request here is attributable to one person, which is what makes this endpoint no
@@ -34,7 +40,7 @@ import type { NextRequest } from "next/server";
 import { bearerToken, verifyAppToken } from "@/lib/appTokens";
 import { parsePicked, toWire, ValidationError } from "@/lib/entities";
 import { prisma } from "@/lib/prisma";
-import { scopedWhere } from "@/lib/rls";
+import { readWhere, scopedWhere } from "@/lib/rls";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -70,9 +76,10 @@ const MAX_LIMIT = 500;
  *     the live `sunny_api` has `created_by_id` and `is_sample` and no `created_by`,
  *     and SKILL.md's documented Board/Item schemas do not list it either. No built app
  *     can be depending on it.
- *   * **It would leak.** This endpoint is unscoped and third-party built apps call it,
- *     so shipping `created_by` would hand every caller the email address of every user
- *     with a board.
+ *   * **It would leak.** Third-party built apps call this, and a read here can return
+ *     rows the viewer does not own — anything on a shared board — so shipping
+ *     `created_by` would hand every caller the email address of every user who shared
+ *     one.
  */
 function publicWire(model: "Board" | "Item", row: Record<string, unknown>) {
   const record = toWire(model, row);
@@ -114,7 +121,13 @@ export async function POST(req: NextRequest) {
   if (!viewer) {
     return json({ error: "Missing or invalid viewer token. Ask the embedding page." }, 401);
   }
-  const scope = scopedWhere({ email: viewer.sub, role: "user" });
+  const actor = { email: viewer.sub, role: "user" as const };
+  // Two predicates, the same split as /api/entities: `scope` for writes (own rows,
+  // always), `readable()` for reads (own rows, plus anything shared).
+  const scope = scopedWhere(actor);
+  // The cast is the same trade as in src/lib/entityCrud.ts: `ReadWhere` is a hand-
+  // authored union, not a Prisma input type, and nothing caller-supplied reaches it.
+  const readable = <W>(model: "Board" | "Item") => readWhere(actor, model) as W;
 
   let payload: Payload;
   try {
@@ -131,7 +144,7 @@ export async function POST(req: NextRequest) {
     switch (action) {
       case "listBoards": {
         const rows = await prisma.board.findMany({
-          where: scope,
+          where: readable<Prisma.BoardWhereInput>("Board"),
           orderBy: { updatedAt: "desc" },
           take: clampLimit(p.limit),
         });
@@ -146,7 +159,9 @@ export async function POST(req: NextRequest) {
         const boardId = str(p.board_id);
         if (!boardId) return json({ error: "getBoard needs board_id." }, 400);
 
-        const row = await prisma.board.findFirst({ where: { id: boardId, ...scope } });
+        const row = await prisma.board.findFirst({
+          where: { id: boardId, ...readable<Prisma.BoardWhereInput>("Board") },
+        });
         // A missing item answers 404, not the 500 a bare throw would produce.
         // Same {error} shape, honest status.
         if (!row) return json({ error: `No board with id "${boardId}".` }, 404);
@@ -176,8 +191,10 @@ export async function POST(req: NextRequest) {
           }
         }
 
+        // `readable("Item")` follows the board, not the item's own `created_by`: on a
+        // shared board every item is returned, exactly as the board page shows them.
         const rows = await prisma.item.findMany({
-          where: { ...(boardId ? { boardId } : {}), ...scope },
+          where: { ...(boardId ? { boardId } : {}), ...readable<Prisma.ItemWhereInput>("Item") },
           orderBy: boardId ? { orderIndex: "asc" } : { updatedAt: "desc" },
           take: clampLimit(p.limit),
         });

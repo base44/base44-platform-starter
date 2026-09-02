@@ -49,9 +49,10 @@ Next.js App Router · TypeScript · Tailwind 4 · Postgres + Prisma · NextAuth 
 - **`/api/sunny` serves externally-hosted Base44 apps**: CORS `*`, no user session, so it cannot
   go through `entityCrud.ts` and it withholds `created_by`. Identity comes from a **viewer token**
   (`src/lib/appTokens.ts`) that the embedding page mints for the current user and posts into the
-  frame (`src/lib/appFrameAuth.ts`); its subject drives `scopedWhere()`, so an installed app answers
-  for its installer, never its author — and `scopedWhere()`, not `readWhere()`: shared boards are a
-  shell affordance, not something a deployed app you don't control gets handed. No token means unscoped, which is the legacy behaviour.
+  frame (`src/lib/appFrameAuth.ts`); its subject is the actor, so an installed app answers for its
+  installer, never its author. Reads use `readWhere()` and writes `scopedWhere()`, the same split as
+  `entityCrud.ts`, so a built app sees exactly what its viewer can already open in the shell —
+  including boards other people marked `shared` — and can still write only rows they own.
   Treat its contract as frozen once apps are built against it — they are deployed code you do not
   control.
 - **Two lint regimes.** Platform infrastructure (`src/lib`, `src/app`) is strict `.tsx`/`.ts`. The

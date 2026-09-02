@@ -21,9 +21,10 @@
  *   - Base44Link — secret-bearing, admin-only under Base44 RLS. Server-only
  *     access keyed by email, never through generic CRUD.
  *   - /api/sunny — its own boundary (CORS + a viewer token, no session cookie). It
- *     calls scopedWhere() with the token's subject and deliberately stays there:
- *     `readWhere()` would hand an externally-hosted app every shared board in the
- *     workspace, and that contract is frozen once apps are built against it.
+ *     queries Prisma directly, but with the predicates from this file and the same
+ *     split: readWhere() for its reads, scopedWhere() for its writes, both keyed to
+ *     the token's subject. So a built app sees the boards its viewer sees — their own
+ *     plus anything shared — and can write only their own.
  */
 
 /** The subset of a NextAuth session this module needs — see src/lib/auth.ts. */

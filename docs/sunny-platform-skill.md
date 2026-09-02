@@ -167,6 +167,9 @@ col_span` (1 = half width, 2 = full)`}`.
   means the handshake failed, not that they have no tasks.
 - The token is per-viewer, not per-app: the same app shows B their rows and A theirs.
   Don't cache one token across users, and don't store it anywhere shared.
+- Boards other people marked shared show up too, the same as in Sunny itself: the
+  viewer reads the board and all its items, but `updateItem`/`deleteItem` on a row
+  they do not own answers `404`. Don't assume everything you can list you can edit.
 - Items you create belong to that person and appear in Sunny's own UI like any other.
 - Prefer real boards over seeding fake ones. Use Sunny's vocabulary in the UI.
 

@@ -280,6 +280,9 @@ It has no actor of its own, so it must not reuse your session-based CRUD module,
 owner emails from responses. It gets an actor from a **viewer token**: the page embedding the app
 mints one for whoever is signed in and posts it to the frame, and the app sends it as a bearer
 token. That's what makes an installed app answer with the installer's rows rather than its author's.
+Feed that subject the same predicates the rest of the product uses — the read one for reads, the
+owner one for writes — and an app sees exactly what its viewer could already open in your UI, shared
+rows included, while still writing only their own.
 Treat the contract as frozen once apps are built against it: they're deployed code you don't
 control.
 

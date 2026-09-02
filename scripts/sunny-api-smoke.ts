@@ -595,7 +595,64 @@ async function main() {
     (await prisma.item.findUnique({ where: { id: otherItem.id as string } })) !== null,
   );
 
-  console.log("\n13. minting: the install is the grant");
+  console.log("\n13. sharing: a shared board reaches a built app, still read-only");
+
+  // Everything above used private boards. Sharing is a property of the row, so the
+  // same widening the boards list gets applies here — a built app sees what its
+  // viewer sees, and no more.
+  await prisma.board.updateMany({ where: { id: boardB.id }, data: { visibility: "shared" } });
+
+  const sharedSeenByA = list(
+    await call({ action: "listBoards" }, { bearer: aToken }),
+    "boards",
+  ).filter((b) => String(b.title).startsWith(TAG));
+  check(
+    "listBoards now includes the board B shared",
+    sharedSeenByA.some((b) => b.id === boardB.id),
+  );
+  check("...and still withholds created_by", sharedSeenByA.every((b) => !("created_by" in b)));
+  check(
+    "getBoard on a shared board is 200",
+    (await call({ action: "getBoard", board_id: boardB.id }, { bearer: aToken })).status === 200,
+  );
+  const sharedItems = list(
+    await call({ action: "listItems", board_id: boardB.id }, { bearer: aToken }),
+    "items",
+  );
+  check(
+    "listItems on a shared board returns items the viewer does not own",
+    sharedItems.some((i) => i.title === `${TAG} item B`),
+  );
+
+  // The point of the split: readable is not writable, sharing or no sharing.
+  check(
+    "updateItem on a shared board's item is still 404",
+    (
+      await call(
+        { action: "updateItem", item_id: otherItem.id as string, title: "hijacked" },
+        { bearer: aToken },
+      )
+    ).status === 404,
+  );
+  check(
+    "...and the row is unchanged",
+    (await prisma.item.findUnique({ where: { id: otherItem.id as string } }))?.title ===
+      `${TAG} item B`,
+  );
+  check(
+    "deleteItem on a shared board's item is still 404",
+    (await call({ action: "deleteItem", item_id: otherItem.id as string }, { bearer: aToken }))
+      .status === 404,
+  );
+  check(
+    "...and the row survives",
+    (await prisma.item.findUnique({ where: { id: otherItem.id as string } })) !== null,
+  );
+
+  // Back to private: the minting checks below are about the grant, not about sharing.
+  await prisma.board.updateMany({ where: { id: boardB.id }, data: { visibility: "private" } });
+
+  console.log("\n14. minting: the install is the grant");
 
   const mint = (cookie: string, body: unknown) =>
     fetch(`${BASE_URL}/api/sunny/token`, {
