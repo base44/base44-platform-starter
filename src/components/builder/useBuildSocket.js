@@ -8,20 +8,23 @@
  * vended token is contained to its granted workspace and to apps its principal
  * owns, so a user cannot watch someone else's build.
  *
- * Two things here are consequences of the socket, not choices:
- *
  * **The projection is done here, and awkwardly, because the wire format is
  * internal.** `update_model` is Base44's own `UserApp` field diff, arriving as
  * `{ room, data }` with `data` a JSON *string*, and an absent key meaning
  * "unchanged" rather than "empty". We read the two fields the build UI needs and
  * ignore the rest. A partner-facing event contract is what removes this.
  *
- * **The poll stays.** The socket replays nothing missed while disconnected, so
- * every reconnect is a hole that only a re-read closes. Push for liveness, poll
- * for truth. Resume by sequence number is what would let the poll go.
+ * Returns whether the socket is **in the room** — not merely connected. The
+ * caller polls on that: Base44's own builder runs no poll at all during a build,
+ * because one conversation load plus these pushes is the whole picture, so a
+ * subscriber that is genuinely in the room can drop to a safety net. It has to
+ * be the room and not the connection, because a refused join leaves the socket
+ * connected and permanently silent, which is indistinguishable from an idle
+ * build. Hence `joined`, and hence false until it arrives — an older Base44
+ * that does not send it simply keeps the caller polling.
  */
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { io } from "socket.io-client";
 
 /** Base44 broadcasts an app's pushes to its instance room. */
@@ -45,8 +48,11 @@ const fetchCredential = () =>
  * @param appId      the app to watch, or null/undefined to watch nothing
  * @param onMessage  ({ appId, messageId, role, content }) — a whole message, not a delta
  * @param onStatus   ({ appId, state, details })
+ * @returns          true while this socket is joined to the app's room
  */
 export function useBuildSocket(appId, onMessage, onStatus) {
+  const [joinedAppId, setJoinedAppId] = useState(null);
+
   useEffect(() => {
     if (!appId) return;
 
@@ -75,9 +81,17 @@ export function useBuildSocket(appId, onMessage, onStatus) {
             .catch(() => cb({ token })),
       });
 
-      // The join is what authorizes: Base44 answers `error` and leaves us out of
-      // the room if this principal cannot reach the app.
+      // The join is what authorizes: Base44 answers `joined` once we are in the
+      // room, or `error` and leaves us out if this principal cannot reach the app.
       socket.on("connect", () => socket.emit("join", roomFor(appId)));
+      socket.on("joined", () => setJoinedAppId(appId));
+
+      // Any of these means pushes are no longer arriving, so the caller must go
+      // back to reading. A reconnect re-joins and sets it again.
+      const stopTrusting = () => setJoinedAppId(null);
+      socket.on("error", stopTrusting);
+      socket.on("disconnect", stopTrusting);
+      socket.on("connect_error", stopTrusting);
 
       socket.on("update_model", (payload) => {
         const data = parsePush(payload);
@@ -105,7 +119,13 @@ export function useBuildSocket(appId, onMessage, onStatus) {
 
     return () => {
       closed = true;
+      setJoinedAppId(null);
       socket?.close();
     };
   }, [appId, onMessage, onStatus]);
+
+  // Compared, not coerced: the state survives into the next app's first render,
+  // and reporting a stale `true` there would stand the poll down for an app
+  // this socket has not joined.
+  return joinedAppId !== null && joinedAppId === appId;
 }
