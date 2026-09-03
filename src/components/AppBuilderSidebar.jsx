@@ -254,6 +254,14 @@ export default function AppBuilderSidebar({
   // fires. The symptom is intermittent `getConversation` timeouts on a build that
   // is otherwise progressing fine.
   const refreshInFlightRef = useRef(false);
+  const composerReqRef = useRef(0);
+
+  const resetComposer = useCallback(() => {
+    composerReqRef.current++;
+    setBuildInput("");
+    setPendingSend(null);
+    setIsSending(false);
+  }, []);
 
   const activeAppId = activeApp?.id || null;
   const isBuilding = activeApp?.status?.state === "processing";
@@ -277,6 +285,7 @@ export default function AppBuilderSidebar({
       setBuildView("chat");
       setActiveApp(null);
       setBuildMessages([]);
+      resetComposer();
       setError(null);
       setDismissedReadyFor(null);
       setSavedAs(null);
@@ -295,7 +304,7 @@ export default function AppBuilderSidebar({
         .catch((err) => setError(err.message));
     }
     // Keyed on the request, so re-opening the same app reloads it.
-  }, [open, requestId, initialAppId, linked]);
+  }, [open, requestId, initialAppId, linked, resetComposer]);
 
   // Load boards to generate contextual suggestions
   useEffect(() => {
@@ -383,11 +392,12 @@ export default function AppBuilderSidebar({
     shownAppIdRef.current = null;
     setActiveApp(null);
     setBuildMessages([]);
+    resetComposer();
     setError(null);
     setDismissedReadyFor(null);
     setSavedAs(null);
     setBuildView("chat");
-  }, []);
+  }, [resetComposer]);
 
   // Keyed on `requestId`, not the request's contents: asking twice for the same
   // thing must act twice, which "build a new app" while a chat is open needs.
@@ -485,6 +495,7 @@ export default function AppBuilderSidebar({
     // Answer the pending user-input widget before sending a free-form message,
     // or it races into the paused turn.
     if (!content || isSending || pendingSend || awaitingInput) return;
+    const req = composerReqRef.current;
     // Carrying on, so the card steps aside.
     if (appReady) setDismissedReadyFor(lastAssistantId);
     setSavedAs(null);
@@ -501,20 +512,23 @@ export default function AppBuilderSidebar({
           name,
           customInstructions: buildCustomInstructions(),
         });
-        shownAppIdRef.current = app.id;
         setApps((prev) => [app, ...prev]);
+        if (composerReqRef.current !== req) return;
+        shownAppIdRef.current = app.id;
         setActiveApp(app);
         await refresh(app.id);
       } else {
         await platform.sendMessage(activeApp.id, content);
+        if (composerReqRef.current !== req) return;
         await refresh(activeApp.id);
       }
     } catch (err) {
+      if (composerReqRef.current !== req) return;
       if (platform.isNotLinkedError(err)) setLinked(false);
       setError(err.message);
       setPendingSend(null);
     } finally {
-      setIsSending(false);
+      if (composerReqRef.current === req) setIsSending(false);
     }
   };
 
@@ -522,6 +536,7 @@ export default function AppBuilderSidebar({
     shownAppIdRef.current = app.id;
     setActiveApp(app);
     setBuildMessages([]);
+    resetComposer();
     setError(null);
     setDismissedReadyFor(null);
     setSavedAs(null);
@@ -540,6 +555,7 @@ export default function AppBuilderSidebar({
     shownAppIdRef.current = null;
     setActiveApp(null);
     setBuildMessages([]);
+    resetComposer();
     setBuildView("list");
     setError(null);
     setDismissedReadyFor(null);
