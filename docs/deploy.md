@@ -194,3 +194,4 @@ request.
   keeps that from exhausting connections.
 - **`/api/sunny` has no rate limiting.** It is token-gated but otherwise open by URL, and it
   writes. Worth adding before it matters.
+
