@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getApp, getConversation, type App, type Message } from '../lib/base44-client';
+import { getApp, getConversation } from '../lib/builder-api';
+import type { App, Message } from '../lib/types';
 import { refreshConversation } from '../lib/conversation';
 
 export function useBuildPolling(appId: string | null) {

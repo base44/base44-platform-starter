@@ -1,22 +1,23 @@
 "use client";
+import type { App } from "../lib/types";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
 import { Grid2X2, Loader2, LogOut, MessageSquare, Pencil, Plus, X, Sparkles } from "lucide-react";
 import SunnyLogo from "@/components/SunnyLogo";
-import * as api from "../lib/base44-client";
+import * as api from "../lib/builder-api";
 import Builder from "./Builder";
 
 export default function Workspace({ name }: { name: string }) {
   const assistantButton = useRef<HTMLButtonElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
-  const [apps, setApps] = useState<api.App[]>([]);
+  const [apps, setApps] = useState<App[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [needsConnection, setNeedsConnection] = useState(false);
   const [nextSkip, setNextSkip] = useState(0);
   const [hasMore, setHasMore] = useState(false);
-  const [editor, setEditor] = useState<{ app: api.App | null; version: number }>({ app: null, version: 0 });
+  const [editor, setEditor] = useState<{ app: App | null; version: number }>({ app: null, version: 0 });
   function closeAssistant() {
     setMobileEditorOpen(false);
     assistantButton.current?.focus();
@@ -26,12 +27,12 @@ export default function Workspace({ name }: { name: string }) {
   useEffect(() => {
     if (mobileEditorOpen && window.matchMedia("(max-width: 760px)").matches) closeButton.current?.focus();
   }, [mobileEditorOpen]);
-  const updateApp = useCallback((app: api.App) => {
+  const updateApp = useCallback((app: App) => {
     setActiveName(app.name || "");
     setApps(current => current.map(item => item.id === app.id ? app : item));
     setEditor(current => current.app?.id === app.id ? { ...current, app } : current);
   }, [setActiveName, setApps, setEditor]);
-  function openEditor(app: api.App | null = null) {
+  function openEditor(app: App | null = null) {
     setActiveName(app?.name || "");
     setEditor(current => ({ app, version: current.version + 1 }));
     setMobileEditorOpen(true);

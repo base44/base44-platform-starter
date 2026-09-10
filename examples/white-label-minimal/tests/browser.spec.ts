@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import type { ToolCall } from '../lib/base44-client';
+import type { ToolCall } from '../lib/types';
 
 async function fixture(page: Page, tool?: ToolCall, failFirst = false) {
   const submissions: Record<string, unknown>[] = [];
@@ -157,6 +157,7 @@ test('rejected access preserves prompt and allows retry without uncertain creati
   await page.getByRole('button', { name: 'Create app', exact: true }).click();
   await expect(page.locator('aside[role=alert]')).toContainText('Sign in to continue.');
   await expect(page.getByRole('button', { name: 'Create app', exact: true })).toBeEnabled();
+  await expect(page.getByLabel('What would you like to build?')).toHaveValue('Hello world');
   await expect(page.getByText('Creation may have succeeded.', { exact: false })).toHaveCount(0);
 });
 
@@ -214,4 +215,62 @@ test('My apps shows owned cards and opens the editor without marketplace feature
   await page.locator('.tool-activity summary').click();
   await expect(page.locator('.tool-activity pre')).toContainText('"file_path": "src/index.css"');
   await page.screenshot({ path: 'test-results/chat-desktop.png', fullPage: true });
+});
+
+test('assistant-ui preserves inline tools across polling and hides internal messages', async ({ page }) => {
+  await page.clock.install();
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const sent: string[] = [];
+  let complete = false;
+  await page.route('**/api/base44', route => {
+    const p = route.request().postDataJSON();
+    if (p.action === 'listApps') return route.fulfill({ json: { apps: [], hasMore: false } });
+    if (p.action === 'sendMessage') { sent.push(p.content); return route.fulfill({ json: {} }); }
+    if (p.action === 'getConversation') return route.fulfill({ json: { messages: [
+      { id: 'hidden', hidden: true, role: 'assistant', content: 'Internal instructions' },
+      { id: 'm1', role: 'assistant', content: '**Working on your app**', tool_calls: [
+        { id: 't1', name: 'write_file', status: complete ? 'success' : 'running', arguments_string: '{"path":"app.tsx"}', results: complete ? 'File saved' : null },
+        { name: 'unknown_question', status: 'waiting_for_user_input', waiting_on: { kind: 'choice' }, arguments_string: '{' },
+      ] },
+    ] } });
+    return route.fulfill({ json: { id: 'app_1', status: { state: 'ready' } } });
+  });
+  await page.goto('/');
+  await page.getByLabel('What would you like to build?').fill('Build a notes app');
+  await page.getByLabel('What would you like to build?').press('Enter');
+  await expect(page.getByText('Working on your app')).toBeVisible();
+  await expect(page.getByText('Internal instructions')).toHaveCount(0);
+  await expect(page.getByLabel('What should change?')).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Send prompt', exact: true })).toBeDisabled();
+  await expect(page.getByText('Unsupported question / tool details')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Reject', exact: true })).toBeDisabled();
+  await page.locator('.tool-activity summary').click();
+  await expect(page.locator('.tool-activity')).toContainText('Working');
+  complete = true;
+  await page.clock.fastForward(11_000);
+  await expect(page.locator('.tool-activity')).toContainText('File saved');
+  await expect(page.locator('.tool-activity')).toHaveAttribute('open', '');
+  expect(sent).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test('assistant-ui composer sends a follow-up once and Shift+Enter inserts a newline', async ({ page }) => {
+  const f = await fixture(page);
+  const sent: string[] = [];
+  await page.route('**/api/base44', route => {
+    const p = route.request().postDataJSON();
+    if (p.action !== 'sendMessage') return route.fallback();
+    sent.push(p.content);
+    return route.fulfill({ json: {} });
+  });
+  const input = page.getByLabel('What should change?');
+  await input.fill('Add dark mode');
+  await input.press('Shift+Enter');
+  await expect(input).toHaveValue('Add dark mode\n');
+  expect(sent).toEqual([]);
+  await input.press('Enter');
+  await expect.poll(() => sent).toEqual(['Add dark mode\n']);
+  await expect(input).toHaveValue('');
+  expect(f.counts().creates).toBe(1);
 });

@@ -1,4 +1,4 @@
-import type { Message } from './base44-client';
+import type { Message } from './types';
 
 export const isPending = (m: Message) => m.tool_calls?.some(t =>
   t.status === 'running' || t.status === 'waiting_for_user_input');

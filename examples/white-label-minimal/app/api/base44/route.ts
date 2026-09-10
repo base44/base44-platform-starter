@@ -1,6 +1,6 @@
 import { createHandler } from '../../../lib/api-handler';
-import { getWorkspaceClient } from '../../../lib/workspace';
+import { getAppClient } from '../../../lib/app-service';
 
 export const runtime = 'nodejs';
 export const maxDuration = 180;
-export const POST = createHandler(getWorkspaceClient);
+export const POST = createHandler(getAppClient);

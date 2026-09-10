@@ -1,12 +1,12 @@
-import * as base44 from "./base44-server";
-import type { WorkspaceClient } from "./workspace";
+import { Base44Error } from "./base44-error";
+import type { AppClient } from "./types";
 
 const headers = { "Cache-Control": "no-store, private", "Referrer-Policy": "no-referrer" };
 const bad = (message: string, status = 400): never => {
-  throw new base44.Base44Error(message, status);
+  throw new Base44Error(message, status);
 };
 
-export function createHandler(resolveClient: () => Promise<WorkspaceClient>) {
+export function createHandler(resolveClient: () => Promise<AppClient>) {
   return async function POST(request: Request) {
     let dispatched = false;
     try {
@@ -139,9 +139,9 @@ export function createHandler(resolveClient: () => Promise<WorkspaceClient>) {
       return Response.json(result, { headers });
     } catch (error) {
       const safe =
-        error instanceof base44.Base44Error
+        error instanceof Base44Error
           ? error
-          : new base44.Base44Error(
+          : new Base44Error(
               "The local request failed. Check configuration and refresh app state.",
             );
       return Response.json(

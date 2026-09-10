@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { refreshConversation } from '../lib/conversation';
-import type { Message } from '../lib/base44-client';
+import type { Message } from '../lib/types';
 const messages = (count: number): Message[] => Array.from({ length: count }, (_, i) => ({ id: `m${i}`, content: `Message ${i}` }));
 const page = (all: Message[], skip: number) => ({ messages: all.slice(Math.max(0, all.length - skip - 20), all.length - skip) });
 test('initial history is chronological, hidden messages still count toward offsets', async () => {

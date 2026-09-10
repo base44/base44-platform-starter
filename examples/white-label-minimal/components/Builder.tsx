@@ -1,10 +1,9 @@
 "use client";
+import type { App, ToolInput } from "../lib/types";
 import { useEffect, useRef, useState } from "react";
-import * as api from "../lib/base44-client";
-import Question from "./Question";
-import ReactMarkdown from "react-markdown";
-import { Bot, User, Hammer, Send, Loader2, Eye, Upload, ExternalLink } from "lucide-react";
-import ToolActivity from "./ToolActivity";
+import * as api from "../lib/builder-api";
+import { Loader2, Eye, Upload, ExternalLink } from "lucide-react";
+import BuilderChat from "./BuilderChat";
 import { useBuildPolling } from "./useBuildPolling";
 
 export default function Builder({
@@ -13,11 +12,10 @@ export default function Builder({
   onUpdated,
 }: {
   initialAppId?: string;
-  onCreated?: (app: api.App) => void;
-  onUpdated?: (app: api.App) => void;
+  onCreated?: (app: App) => void;
+  onUpdated?: (app: App) => void;
 }) {
   const [appId, setAppId] = useState<string | null>(initialAppId || null);
-  const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [creationUncertain, setCreationUncertain] = useState(false);
@@ -27,13 +25,7 @@ export default function Builder({
   const lock = useRef(false);
   const previewVersion = useRef(0);
   const { app, messages, error: pollingError, refresh, resume } = useBuildPolling(appId);
-  const conversationRef = useRef<HTMLElement>(null);
-  const followConversation = useRef(true);
   useEffect(() => { if (app) onUpdated?.(app); }, [app, onUpdated]);
-  useEffect(() => {
-    const element = conversationRef.current;
-    if (element && followConversation.current) element.scrollTop = element.scrollHeight;
-  }, [messages]);
   const waiting = messages.some((m) =>
     m.tool_calls?.some((t) => t.status === "waiting_for_user_input"),
   );
@@ -46,8 +38,8 @@ export default function Builder({
     return () => clearTimeout(timer);
   }, [preview]);
 
-  async function send() {
-    if (lock.current || !prompt.trim() || waiting || creationUncertain) return;
+  async function send(prompt: string) {
+    if (lock.current || !prompt.trim() || waiting || processing || pollingError || creationUncertain) return false;
     lock.current = true;
     setBusy(appId ? "Sending prompt…" : "Creating app…");
     setError("");
@@ -60,17 +52,18 @@ export default function Builder({
         setAppId(created.id);
         onCreated?.(created);
       }
-      setPrompt("");
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Request failed.");
       if (!appId) setCreationUncertain(!(err instanceof api.ApiError && err.notStarted));
       else await refresh();
+      return false;
     } finally {
       lock.current = false;
       setBusy("");
     }
   }
-  async function answer(input: api.ToolInput) {
+  async function answer(input: ToolInput) {
     if (lock.current) throw new Error("Another action is still running.");
     lock.current = true;
     setBusy("Answering question…");
@@ -171,7 +164,6 @@ export default function Builder({
                 setAppId(resumeId);
                 setCreationUncertain(false);
                 setError("");
-                setPrompt("");
               }}
             >
               Resume this app
@@ -190,38 +182,18 @@ export default function Builder({
           </div>
         </details>
       )}
-      <section aria-label="Conversation" className="conversation" ref={conversationRef} onScroll={e => {
-        const node = e.currentTarget;
-        followConversation.current = node.scrollHeight - node.scrollTop - node.clientHeight < 80;
-      }}>
-        {!messages.length && (appId ? <p className="empty">Your build conversation will appear here.</p> : <div className="chat-welcome">
-          <Hammer size={32} strokeWidth={1.5} />
-          <h2>Build an app</h2>
-          <p>Describe what you want and I’ll create it.</p>
-          <div className="chat-suggestions">
-            {["A reading list with ratings", "A habit tracker for my daily routine", "A place to save my favorite recipes"].map(idea => <button className="secondary" key={idea} onClick={() => setPrompt(idea)}>{idea}</button>)}
-          </div>
-        </div>)}
-        {messages
-          .filter((m) => !m.hidden)
-          .map((m) => (
-            <article key={m.id} className={`chat-message ${m.role === "user" ? "from-user" : "from-assistant"}`}>
-              <span className="message-avatar" aria-label={m.role === "user" ? "You" : "Assistant"}>{m.role === "user" ? <User size={14} /> : <Bot size={14} />}</span>
-              <div className="message-body">
-              {m.content && <div className="message-bubble">{m.role === "user" ? <p>{m.content}</p> : <ReactMarkdown>{m.content}</ReactMarkdown>}</div>}
-              {m.tool_calls?.map((tool, index) => (
-                tool.status === "waiting_for_user_input" || tool.waiting_on?.kind ? <Question
-                  key={`${tool.id || index}:${tool.status}`}
-                  tool={tool}
-                  messageId={m.id}
-                  appId={appId!}
-                  disabled={!!busy || !!pollingError}
-                  onSubmit={answer}
-                /> : <ToolActivity key={tool.id || index} tool={tool} />
-              ))}
-              </div>
-            </article>
-          ))}
+      <BuilderChat
+        key={appId || 'new'}
+        appId={appId}
+        messages={messages}
+        busy={!!busy}
+        processing={processing}
+        waiting={waiting}
+        disabled={!!busy || waiting || processing || !!pollingError || creationUncertain}
+        questionsDisabled={!!busy || !!pollingError}
+        onSend={send}
+        onAnswer={answer}
+      >
       {appId && (
         <section className="delivery" aria-label="Preview and publish">
           <div className="ready-heading"><strong>{app?.name || "Your app"}</strong><p>{app?.status?.state === "ready" ? "Ready for a look?" : "Preview your progress"}</p></div>
@@ -276,44 +248,7 @@ export default function Builder({
           {(busy || processing) && <Loader2 size={12} className="spin" />}
           {busy || (pollingError ? "Connection paused" : waiting ? "Waiting for your answer" : "Building…")}
         </div>}
-      </section>
-      <form className="composer"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void send();
-        }}
-      >
-        <label className="sr-only" htmlFor="prompt">
-          {appId ? "What should change?" : "What would you like to build?"}
-        </label>
-        <textarea
-          id="prompt"
-          rows={1}
-          maxLength={16000}
-          value={prompt}
-          placeholder={waiting ? "Answer the question above…" : appId ? "Describe a change…" : "Describe the app you want…"}
-          disabled={!!busy || waiting || processing || !!pollingError || creationUncertain}
-          onChange={(e) => {
-            setPrompt(e.target.value);
-            e.target.style.height = "auto";
-            e.target.style.height = `${Math.min(e.target.scrollHeight, 112)}px`;
-          }}
-          onKeyDown={e => {
-            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && !busy && !processing && !pollingError) {
-              e.preventDefault();
-              void send();
-            }
-          }}
-        />
-        <button className="send-button" aria-label={appId ? "Send prompt" : "Create app"}
-          disabled={
-            !!busy || waiting || processing || !!pollingError || creationUncertain || !prompt.trim()
-          }
-        >
-          {busy ? <Loader2 size={16} className="spin" /> : <Send size={16} />}
-        </button>
-        {waiting && <small>Answer or reject the waiting question to continue.</small>}
-      </form>
+      </BuilderChat>
 
     </div>
   );

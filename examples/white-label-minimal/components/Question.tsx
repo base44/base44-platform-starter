@@ -1,6 +1,6 @@
 'use client';
 import { useRef, useState } from 'react';
-import type { ToolCall, ToolInput } from '../lib/base44-client';
+import type { ToolCall, ToolInput } from '../lib/types';
 
 type Choice = { question: string; options: string[]; multi: boolean };
 type Field = { name: string; description: string };

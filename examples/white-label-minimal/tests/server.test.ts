@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { createHandler } from '../lib/api-handler';
-import { createBase44Client, Base44Error } from '../lib/base44-server';
+import { createBase44Client } from '../lib/base44-server';
+import { Base44Error } from '../lib/base44-error';
 let signedIn = true;
 const POST = createHandler(async () => {
   if (!signedIn) throw new Base44Error('Sign in to continue.', 401);

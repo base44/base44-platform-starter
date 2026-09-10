@@ -1,5 +1,5 @@
 import { CircleAlert, Loader2, ChevronDown } from "lucide-react";
-import type { ToolCall } from "../lib/base44-client";
+import type { ToolCall } from "../lib/types";
 
 export default function ToolActivity({ tool }: { tool: ToolCall }) {
   const pending = ["running", "pending"].includes(tool.status || "");

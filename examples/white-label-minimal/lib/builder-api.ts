@@ -1,32 +1,5 @@
-export type App = {
-  id: string;
-  name?: string;
-  preview_screenshot_url?: string;
-  user_description?: string;
-  status?: { state?: string; error_source?: string };
-};
-export type ToolCall = {
-  id?: string | null;
-  name?: string | null;
-  status?: string | null;
-  waiting_on?: { kind?: string } | null;
-  arguments_string?: string | null;
-  results?: string | null;
-};
-export type Message = {
-  id: string;
-  role?: string | null;
-  content?: string | null;
-  hidden?: boolean | null;
-  tool_calls?: ToolCall[] | null;
-};
-export type ToolInput = {
-  appId: string;
-  toolCallId: string;
-  messageId: string;
-  approve: boolean;
-  extraUserInput: Record<string, unknown>;
-};
+// Browser transport to Tiny Sunny's API; Base44 credentials stay on the server.
+import type { App, AppPage, Message, ToolInput } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -83,4 +56,4 @@ export const deployApp = (appId: string) => call("deployApp", { appId });
 export const getPublishedUrl = (appId: string) =>
   call<{ url: string | null }>("getPublishedUrl", { appId });
 
-export const listApps = (skip = 0) => call<{ apps: App[]; hasMore: boolean; nextSkip: number }>("listApps", { skip });
+export const listApps = (skip = 0) => call<AppPage>("listApps", { skip });

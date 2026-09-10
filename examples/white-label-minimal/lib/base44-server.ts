@@ -1,40 +1,14 @@
 import { suggestAppName } from "../../../src/lib/appName";
 import "server-only";
 import { customInstructions } from "./custom-instructions";
-import type { App, Message, ToolInput } from "./base44-client";
+import type { App, Message, ToolInput } from "./types";
 
-export class Base44Error extends Error {
-  constructor(
-    message: string,
-    public status = 502,
-  ) {
-    super(message);
-  }
-}
-
-function config() {
-  let host: URL;
-  try {
-    host = new URL(process.env.BASE44_PLATFORM_HOST || "");
-  } catch {
-    throw new Base44Error("The workspace connection is not configured.", 503);
-  }
-  if (
-    host.protocol !== "https:" ||
-    host.username ||
-    host.password ||
-    host.pathname !== "/" ||
-    host.search ||
-    host.hash
-  ) {
-    throw new Base44Error("The workspace connection requires an HTTPS platform origin.", 503);
-  }
-  return { host: host.origin };
-}
+import { Base44Error } from "./base44-error";
+import { getBase44Config } from "./base44-config";
 
 export function createBase44Client(accessToken: string) {
   async function request(path: string, body?: object, timeout = 30_000, headers = {}) {
-    const { host } = config();
+    const { host } = getBase44Config();
     let response: Response;
     try {
       response = await fetch(`${host}${path}`, {
