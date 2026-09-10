@@ -1,13 +1,15 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
-import { Grid2X2, Loader2, LogOut, MessageSquare, Pencil, Plus } from "lucide-react";
+import { Grid2X2, Loader2, LogOut, MessageSquare, Pencil, Plus, X } from "lucide-react";
 import SunnyLogo from "@/components/SunnyLogo";
 import * as api from "../lib/base44-client";
 import Builder from "./Builder";
 
 export default function Workspace({ name }: { name: string }) {
+  const assistantButton = useRef<HTMLButtonElement>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
   const [apps, setApps] = useState<api.App[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -15,6 +17,25 @@ export default function Workspace({ name }: { name: string }) {
   const [nextSkip, setNextSkip] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [editor, setEditor] = useState<{ app: api.App | null; version: number }>({ app: null, version: 0 });
+  function closeAssistant() {
+    setMobileEditorOpen(false);
+    assistantButton.current?.focus();
+  }
+  const [activeName, setActiveName] = useState("");
+  const [mobileEditorOpen, setMobileEditorOpen] = useState(false);
+  useEffect(() => {
+    if (mobileEditorOpen && window.matchMedia("(max-width: 760px)").matches) closeButton.current?.focus();
+  }, [mobileEditorOpen]);
+  const updateApp = useCallback((app: api.App) => {
+    setActiveName(app.name || "");
+    setApps(current => current.map(item => item.id === app.id ? app : item));
+    setEditor(current => current.app?.id === app.id ? { ...current, app } : current);
+  }, [setActiveName, setApps, setEditor]);
+  function openEditor(app: api.App | null = null) {
+    setActiveName(app?.name || "");
+    setEditor(current => ({ app, version: current.version + 1 }));
+    setMobileEditorOpen(true);
+  }
   const load = useCallback((skip = 0) => api.listApps(skip)
     .then(result => {
       setError("");
@@ -74,7 +95,7 @@ export default function Workspace({ name }: { name: string }) {
               <h1>My apps</h1>
               <p>Apps you built. Open one to keep creating.</p>
             </div>
-            <button onClick={() => setEditor(current => ({ app: null, version: current.version + 1 }))} disabled={needsConnection}>
+            <button onClick={() => openEditor()} disabled={needsConnection}>
               <Plus size={16} /> New app
             </button>
           </div>
@@ -106,7 +127,7 @@ export default function Workspace({ name }: { name: string }) {
                 <Grid2X2 size={28} />
                 <h2>Make room for your first idea</h2>
                 <p>Tell the assistant what you want to build.</p>
-                <button onClick={() => setEditor(current => ({ app: null, version: current.version + 1 }))}>
+                <button onClick={() => openEditor()}>
                   <Plus size={16} /> Create an app
                 </button>
               </div>
@@ -117,7 +138,7 @@ export default function Workspace({ name }: { name: string }) {
                     <button
                       className="app-thumbnail"
                       aria-label={`Open ${app.name || "Untitled"}`}
-                      onClick={() => setEditor({ app, version: 0 })}
+                      onClick={() => openEditor(app)}
                     >
                       {app.preview_screenshot_url ? (
                         <img src={app.preview_screenshot_url} alt="" />
@@ -133,7 +154,7 @@ export default function Workspace({ name }: { name: string }) {
                       <button
                         className="icon-button"
                         aria-label={`Edit ${app.name || "Untitled"}`}
-                        onClick={() => setEditor({ app, version: 0 })}
+                        onClick={() => openEditor(app)}
                       >
                         <Pencil size={15} />
                       </button>
@@ -153,16 +174,19 @@ export default function Workspace({ name }: { name: string }) {
             )}
           </div>
         </main>
-        <section className="editor-panel" aria-label="App editor">
+        <button ref={assistantButton} className="mobile-assistant" onClick={() => setMobileEditorOpen(true)} aria-expanded={mobileEditorOpen} aria-controls="app-editor"><MessageSquare size={18} /> Assistant</button>
+        <section id="app-editor" className={`editor-panel ${mobileEditorOpen ? "is-open" : ""}`} aria-label="App editor" onKeyDown={e => { if (e.key === "Escape") closeAssistant(); }}>
           <header className="editor-heading">
             <div>
               <MessageSquare size={18} />
-              <strong>{editor.app?.name || "Build an app"}</strong>
+              <strong>{activeName || "Build an app"}</strong>
             </div>
+            <button ref={closeButton} className="icon-button mobile-close" aria-label="Close assistant" onClick={closeAssistant}><X size={20} /></button>
           </header>
           <Builder
             key={`${editor.app?.id || "new"}:${editor.version}`}
             initialAppId={editor.app?.id}
+            onUpdated={updateApp}
             onCreated={(app) => {
               setApps((current) => [app, ...current]);
             }}

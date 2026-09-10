@@ -1,3 +1,4 @@
+import { suggestAppName } from "../../../src/lib/appName";
 import "server-only";
 import { customInstructions } from "./custom-instructions";
 import type { App, Message, ToolInput } from "./base44-client";
@@ -85,7 +86,7 @@ export function createBase44Client(accessToken: string) {
       throw new Base44Error("Base44 returned an app without an ID.");
     return {
       id: value.id,
-      name: value.name,
+      name: value.name && !/^untitled(?: app)?$/i.test(value.name) ? value.name : suggestAppName(value.user_description || ""),
       preview_screenshot_url: value.preview_screenshot_url,
       user_description: value.user_description,
       status: value.status
@@ -99,6 +100,7 @@ export function createBase44Client(accessToken: string) {
     const app = await request(
       "/api/apps",
       {
+        name: suggestAppName(prompt),
         user_description: prompt,
         organization_id: workspace,
         initial_message: { content: prompt },
@@ -110,7 +112,7 @@ export function createBase44Client(accessToken: string) {
     if (app?.custom_instructions !== customInstructions) {
       console.warn("Base44 did not return the expected custom_instructions after creation.");
     }
-    return appSummary(app);
+    return appSummary({ ...app, user_description: app.user_description || prompt });
   }
   const getApp = async (id: string) => appSummary(await request(`/api/apps/${id}`));
   async function getConversation(id: string, skip: number) {
@@ -137,6 +139,7 @@ export function createBase44Client(accessToken: string) {
           status: t.status,
           waiting_on: t.waiting_on,
           arguments_string: t.arguments_string,
+          results: typeof t.results === "string" ? t.results : undefined,
         })),
       };
     });

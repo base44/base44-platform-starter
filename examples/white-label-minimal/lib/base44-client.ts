@@ -11,6 +11,7 @@ export type ToolCall = {
   status?: string | null;
   waiting_on?: { kind?: string } | null;
   arguments_string?: string | null;
+  results?: string | null;
 };
 export type Message = {
   id: string;

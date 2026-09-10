@@ -168,7 +168,7 @@ test('My apps shows owned cards and opens the editor without marketplace feature
       { id: 'habits', name: 'Daily habits', user_description: 'Small steps, every day' },
       { id: 'recipes', name: 'Recipe book', user_description: 'Keep your favorites close' },
     ], hasMore: false } });
-    return route.fulfill({ json: action === 'getConversation' ? { messages: [] } : { id: appId, status: { state: 'ready' } } });
+    return route.fulfill({ json: action === 'getConversation' ? { messages: [] } : { id: appId, name: 'Reading list', status: { state: 'ready' } } });
   });
   await page.setViewportSize({ width: 1440, height: 950 });
   await page.goto('/');
@@ -187,6 +187,31 @@ test('My apps shows owned cards and opens the editor without marketplace feature
   await page.getByRole('button', { name: 'New app', exact: true }).click();
   await expect(page.getByLabel('What would you like to build?')).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole('button', { name: 'Close assistant' })).toBeVisible();
+  const panel = await page.getByRole('region', { name: 'App editor' }).boundingBox();
+  expect(panel!.y).toBe(64);
+  expect(panel!.x + panel!.width).toBe(390);
+  await page.screenshot({ path: 'test-results/assistant-mobile.png', fullPage: true });
+  await page.getByRole('button', { name: 'Close assistant' }).click();
+  await expect(page.getByRole('region', { name: 'App editor' })).not.toBeVisible();
   await page.screenshot({ path: 'test-results/my-apps-mobile.png', fullPage: true });
+  await page.getByRole('button', { name: 'Assistant', exact: true }).click();
+  await expect(page.getByLabel('What would you like to build?')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
+});
+
+ test('ordinary tool activity is collapsed and assistant messages render Markdown', async ({ page }) => {
+  await page.route('**/api/base44', route => {
+    const { action } = route.request().postDataJSON();
+    return route.fulfill({ json: action === 'listApps' ? { apps: [], hasMore: false, nextSkip: 0 } : action === 'getConversation' ? { messages: [{ id: 'm1', role: 'assistant', content: '## Your app is ready\n- **Hello world**', tool_calls: [{ id: 't1', name: 'find_replace', status: 'success', arguments_string: JSON.stringify({ file_path: 'src/index.css', find: 'old', replace: 'new' }) }] }] } : { id: 'app_1', name: 'Hello World', status: { state: 'ready' } } });
+  });
+  await page.goto('/');
+  await page.getByLabel('What would you like to build?').fill('Hello world app');
+  await page.getByRole('button', { name: 'Create app', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Your app is ready' })).toBeVisible();
+  await expect(page.getByText('Unsupported question / tool details')).toHaveCount(0);
+  await expect(page.locator('.tool-activity pre')).not.toBeVisible();
+  await page.locator('.tool-activity summary').click();
+  await expect(page.locator('.tool-activity pre')).toContainText('"file_path": "src/index.css"');
+  await page.screenshot({ path: 'test-results/chat-desktop.png', fullPage: true });
 });

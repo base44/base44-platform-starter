@@ -1,0 +1,18 @@
+import { Check, CircleAlert, Loader2 } from "lucide-react";
+import type { ToolCall } from "../lib/base44-client";
+
+export default function ToolActivity({ tool }: { tool: ToolCall }) {
+  const pending = ["running", "pending"].includes(tool.status || "");
+  const failed = ["error", "stopped"].includes(tool.status || "");
+  let argumentsText = tool.arguments_string || "";
+  try { argumentsText = JSON.stringify(JSON.parse(argumentsText), null, 2); } catch {}
+  return <details className="tool-activity">
+    <summary>
+      {pending ? <Loader2 size={14} className="spin" /> : failed ? <CircleAlert size={14} /> : <Check size={14} />}
+      <span>{tool.name || "Agent action"}</span>
+      <small>{pending ? "Working" : failed ? "Failed" : "Done"}</small>
+    </summary>
+    {argumentsText && <div><strong>Arguments</strong><pre>{argumentsText}</pre></div>}
+    {tool.results && <div><strong>Result</strong><pre>{typeof tool.results === "string" ? tool.results : JSON.stringify(tool.results, null, 2)}</pre></div>}
+  </details>;
+}

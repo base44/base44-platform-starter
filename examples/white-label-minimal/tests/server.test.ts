@@ -52,12 +52,13 @@ test('rejects foreign origins, nonlocal hosts, non-JSON and oversized bodies', a
 test('creation carries workspace, user token and initial instructions only upstream', async () => {
   const calls = setup({ id: 'app_1', custom_instructions: customInstructions, api_key: 'should-not-return' });
   const response = await request({ action: 'createApp', prompt: 'Build a reading list' });
-  assert.deepEqual(await response.json(), { id: 'app_1' });
+  assert.deepEqual(await response.json(), { id: 'app_1', name: 'Reading List', user_description: 'Build a reading list' });
   const init = calls[0].init!;
   assert.equal(new Headers(init.headers).get('authorization'), 'Bearer user-token-canary');
   assert.equal(new Headers(init.headers).get('X-Active-Workspace-Id'), 'workspace_1');
   const body = JSON.parse(String(init.body));
   assert.equal(body.organization_id, 'workspace_1');
+  assert.equal(body.name, 'Reading List');
   assert.equal(body.initial_message.content, 'Build a reading list');
   assert.equal(body.custom_instructions, customInstructions);
   assert.equal(init.cache, 'no-store');

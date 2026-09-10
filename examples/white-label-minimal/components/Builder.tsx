@@ -2,14 +2,19 @@
 import { useEffect, useRef, useState } from "react";
 import * as api from "../lib/base44-client";
 import Question from "./Question";
+import ReactMarkdown from "react-markdown";
+import { Bot, User } from "lucide-react";
+import ToolActivity from "./ToolActivity";
 import { useBuildPolling } from "./useBuildPolling";
 
 export default function Builder({
   initialAppId,
   onCreated,
+  onUpdated,
 }: {
   initialAppId?: string;
   onCreated?: (app: api.App) => void;
+  onUpdated?: (app: api.App) => void;
 }) {
   const [appId, setAppId] = useState<string | null>(initialAppId || null);
   const [prompt, setPrompt] = useState("");
@@ -22,6 +27,13 @@ export default function Builder({
   const lock = useRef(false);
   const previewVersion = useRef(0);
   const { app, messages, error: pollingError, refresh, resume } = useBuildPolling(appId);
+  const conversationRef = useRef<HTMLElement>(null);
+  const followConversation = useRef(true);
+  useEffect(() => { if (app) onUpdated?.(app); }, [app, onUpdated]);
+  useEffect(() => {
+    const element = conversationRef.current;
+    if (element && followConversation.current) element.scrollTop = element.scrollHeight;
+  }, [messages]);
   const waiting = messages.some((m) =>
     m.tool_calls?.some((t) => t.status === "waiting_for_user_input"),
   );
@@ -125,13 +137,6 @@ export default function Builder({
               ? "Waiting for your answer"
               : app?.status?.state || "Ready to begin")}
       </div>
-      {appId && (
-        <p>
-          <small>
-            App ID: <code>{appId}</code>
-          </small>
-        </p>
-      )}
       {app?.status?.state === "error" && (
         <p role="alert">
           The build failed{app.status.error_source ? ` (${app.status.error_source})` : ""}. Review
@@ -155,7 +160,7 @@ export default function Builder({
           )}
         </aside>
       )}
-      {!appId && (
+      {!appId && creationUncertain && (
         <details open={creationUncertain}>
           <summary>Resume an existing app</summary>
           {creationUncertain && (
@@ -193,28 +198,33 @@ export default function Builder({
           </div>
         </details>
       )}
-      <section aria-label="Conversation" className="conversation">
+      <section aria-label="Conversation" className="conversation" ref={conversationRef} onScroll={e => {
+        const node = e.currentTarget;
+        followConversation.current = node.scrollHeight - node.scrollTop - node.clientHeight < 80;
+      }}>
         {!messages.length && <p className="empty">Your build conversation will appear here.</p>}
         {messages
           .filter((m) => !m.hidden)
           .map((m) => (
-            <article key={m.id}>
-              <small className="role">{m.role || "Agent"}</small>
-              {m.content && <p className="message">{m.content}</p>}
+            <article key={m.id} className={`chat-message ${m.role === "user" ? "from-user" : "from-assistant"}`}>
+              <span className="message-avatar" aria-label={m.role === "user" ? "You" : "Assistant"}>{m.role === "user" ? <User size={14} /> : <Bot size={14} />}</span>
+              <div className="message-body">
+              {m.content && <div className="message-bubble">{m.role === "user" ? <p>{m.content}</p> : <ReactMarkdown>{m.content}</ReactMarkdown>}</div>}
               {m.tool_calls?.map((tool, index) => (
-                <Question
+                tool.status === "waiting_for_user_input" || tool.waiting_on?.kind ? <Question
                   key={`${tool.id || index}:${tool.status}`}
                   tool={tool}
                   messageId={m.id}
                   appId={appId!}
                   disabled={!!busy || !!pollingError}
                   onSubmit={answer}
-                />
+                /> : <ToolActivity key={tool.id || index} tool={tool} />
               ))}
+              </div>
             </article>
           ))}
       </section>
-      <form
+      <form className="composer"
         onSubmit={(e) => {
           e.preventDefault();
           void send();
