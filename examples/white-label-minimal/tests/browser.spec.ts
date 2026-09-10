@@ -147,7 +147,7 @@ test('rejected access preserves prompt and allows retry without uncertain creati
   await page.goto('/');
   await page.getByLabel('What would you like to build?').fill('Hello world');
   await page.getByRole('button', { name: 'Create app', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('Enter the builder access password.');
+  await expect(page.locator('aside[role=alert]')).toContainText('Enter the builder access password.');
   await expect(page.getByRole('button', { name: 'Create app', exact: true })).toBeEnabled();
   await expect(page.getByText('Creation may have succeeded.', { exact: false })).toHaveCount(0);
 });
