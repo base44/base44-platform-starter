@@ -49,15 +49,16 @@ test('rejects foreign origins, nonlocal hosts, non-JSON and oversized bodies', a
   assert.equal((await request({ action: 'createApp', prompt: 'x'.repeat(65000) })).status, 413);
   assert.equal(calls.length, 0);
 });
-test('creation carries workspace, user token and initial instructions only upstream', async () => {
+test('creation uses the user token without organization routing', async () => {
   const calls = setup({ id: 'app_1', custom_instructions: customInstructions, api_key: 'should-not-return' });
+  delete process.env.BASE44_ORG_ID;
   const response = await request({ action: 'createApp', prompt: 'Build a reading list' });
   assert.deepEqual(await response.json(), { id: 'app_1', name: 'Reading List', user_description: 'Build a reading list' });
   const init = calls[0].init!;
   assert.equal(new Headers(init.headers).get('authorization'), 'Bearer user-token-canary');
-  assert.equal(new Headers(init.headers).get('X-Active-Workspace-Id'), 'workspace_1');
+  assert.equal(new Headers(init.headers).get('X-Active-Workspace-Id'), null);
   const body = JSON.parse(String(init.body));
-  assert.equal(body.organization_id, 'workspace_1');
+  assert.equal(Object.hasOwn(body, 'organization_id'), false);
   assert.equal(body.name, 'Reading List');
   assert.equal(body.initial_message.content, 'Build a reading list');
   assert.equal(body.custom_instructions, customInstructions);
@@ -100,7 +101,7 @@ test('published endpoint maps 404 to no link; rejects unsafe URLs', async () => 
   assert.equal((await request({ action: 'getPublishedUrl', appId: 'app_1' })).status, 502);
 });
 test('missing configuration makes no network call; conversation uses newest-relative paging', async () => {
-  const calls = setup(); delete process.env.BASE44_ORG_ID;
+  const calls = setup(); delete process.env.BASE44_PLATFORM_HOST;
   assert.equal((await request({ action: 'getApp', appId: 'app_1' })).status, 503);
   assert.equal(calls.length, 0);
   const reads = setup({ messages: [{ id: 'm1', content: 'Hello', hidden: true }] });

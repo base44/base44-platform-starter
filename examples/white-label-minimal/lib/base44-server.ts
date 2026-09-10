@@ -13,7 +13,6 @@ export class Base44Error extends Error {
 }
 
 function config() {
-  const workspace = process.env.BASE44_ORG_ID;
   let host: URL;
   try {
     host = new URL(process.env.BASE44_PLATFORM_HOST || "");
@@ -21,7 +20,6 @@ function config() {
     throw new Base44Error("The workspace connection is not configured.", 503);
   }
   if (
-    !workspace ||
     host.protocol !== "https:" ||
     host.username ||
     host.password ||
@@ -31,19 +29,18 @@ function config() {
   ) {
     throw new Base44Error("The workspace connection requires an HTTPS platform origin.", 503);
   }
-  return { workspace, host: host.origin };
+  return { host: host.origin };
 }
 
 export function createBase44Client(accessToken: string) {
   async function request(path: string, body?: object, timeout = 30_000, headers = {}) {
-    const { workspace, host } = config();
+    const { host } = config();
     let response: Response;
     try {
       response = await fetch(`${host}${path}`, {
         method: body ? "POST" : "GET",
         headers: {
           Authorization: `Bearer ${accessToken}`,
-          "X-Active-Workspace-Id": workspace,
           "Content-Type": "application/json",
           ...headers,
         },
@@ -96,13 +93,11 @@ export function createBase44Client(accessToken: string) {
   }
 
   async function createApp(prompt: string) {
-    const { workspace } = config();
     const app = await request(
       "/api/apps",
       {
         name: suggestAppName(prompt),
         user_description: prompt,
-        organization_id: workspace,
         initial_message: { content: prompt },
         custom_instructions: customInstructions,
         prevent_iframe_embedding: false,
