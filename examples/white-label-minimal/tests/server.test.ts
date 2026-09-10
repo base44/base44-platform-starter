@@ -99,3 +99,33 @@ test('missing configuration makes no network call; conversation uses newest-rela
   const result = await request({ action: 'getConversation', appId: 'app_1', skip: 20 });
   assert.equal(result.status, 200); assert.match(reads[0].url, /limit=20&skip=20$/);
 });
+
+test('hosted requests require exact origin and password before any upstream operation', async () => {
+  const calls = setup();
+  process.env.BUILDER_ORIGIN = 'https://tiny.sunny44.com';
+  process.env.BUILDER_PASSWORD = 'a-test-password-with-32-characters';
+  const h = { host: 'tiny.sunny44.com', origin: 'https://tiny.sunny44.com' };
+  const denied = await request({ action: 'createApp', prompt: 'Hello' }, h);
+  assert.equal(denied.status, 401);
+  assert.equal((await denied.json()).outcome, 'not_started');
+  assert.equal((await request({}, { ...h, authorization: 'Bearer wrong' })).status, 401);
+  assert.equal((await request({}, { ...h, origin: 'https://evil.example' })).status, 403);
+  assert.equal(calls.length, 0);
+  const response = await request({ action: 'getApp', appId: 'app_1' }, {
+    ...h, authorization: `Bearer ${process.env.BUILDER_PASSWORD}`,
+  });
+  assert.equal(response.status, 200);
+  assert.equal(calls.length, 1);
+  assert.equal(new Headers(calls[0].init?.headers).get('authorization'), null);
+});
+
+test('hosted deployment fails closed without access configuration, even with spoofed localhost headers', async () => {
+  const calls = setup();
+  process.env.NETLIFY = 'true';
+  delete process.env.BUILDER_ORIGIN;
+  assert.equal((await request({ action: 'createApp', prompt: 'Hello' })).status, 403);
+  process.env.BUILDER_ORIGIN = 'https://tiny.sunny44.com';
+  delete process.env.BUILDER_PASSWORD;
+  assert.equal((await request({}, { host: 'tiny.sunny44.com', origin: process.env.BUILDER_ORIGIN })).status, 503);
+  assert.equal(calls.length, 0);
+});

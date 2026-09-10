@@ -35,7 +35,7 @@ export default function Builder() {
       setPrompt('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Request failed.');
-      if (!appId) setCreationUncertain(true);
+      if (!appId) setCreationUncertain(!(err instanceof api.ApiError && err.notStarted));
       else await refresh();
     } finally { lock.current = false; setBusy(''); }
   }
@@ -74,8 +74,10 @@ export default function Builder() {
   return <main>
     <header><p className="eyebrow">BASE44 · INTEGRATION EXAMPLE</p><h1>Minimal Builder</h1>
       <p>Describe an app, answer the agent, then preview and publish.</p>
-      <p className="notice">Local learning example. All apps belong to one shared account.</p>
+      <p className="notice">All apps belong to one shared account. Access is for trusted collaborators.</p>
     </header>
+    <label>Builder access password<input type="password" autoComplete="off"
+      onChange={e => api.setAccessPassword(e.target.value)} placeholder="Required for hosted access" /></label>
     <div className="status" role="status">{busy || (pollingError ? 'Polling paused' : waiting ? 'Waiting for your answer' : app?.status?.state || 'Ready to begin')}</div>
     {appId && <p><small>App ID: <code>{appId}</code></small></p>}
     {app?.status?.state === 'error' && <p role="alert">The build failed{app.status.error_source ? ` (${app.status.error_source})` : ''}. Review the conversation and send a follow-up prompt.</p>}

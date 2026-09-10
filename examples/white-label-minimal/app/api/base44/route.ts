@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
 import * as base44 from '../../../lib/base44-server';
 
 export const runtime = 'nodejs';
@@ -6,12 +7,25 @@ const headers = { 'Cache-Control': 'no-store, private', 'Referrer-Policy': 'no-r
 const bad = (message: string, status = 400): never => { throw new base44.Base44Error(message, status); };
 
 export async function POST(request: Request) {
+  let dispatched = false;
   try {
-    // A local-only learning boundary, not authentication or per-user ownership.
     const host = request.headers.get('host');
     const origin = request.headers.get('origin');
-    if (!host || !/^(127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/.test(host) ||
-        origin !== `http://${host}`) bad('Only same-origin local requests are accepted.', 403);
+    const hostedOrigin = process.env.BUILDER_ORIGIN;
+    if (hostedOrigin) {
+      const allowed = new URL(hostedOrigin);
+      if (allowed.protocol !== 'https:' || allowed.origin !== hostedOrigin ||
+          host !== allowed.host || origin !== hostedOrigin) bad('This request origin is not allowed.', 403);
+      const password = process.env.BUILDER_PASSWORD;
+      if (!password || password.length < 24) bad('Configure a builder access password of at least 24 characters.', 503);
+      const digest = (value: string) => createHash('sha256').update(value).digest();
+      if (!timingSafeEqual(digest(request.headers.get('authorization') || ''), digest(`Bearer ${password}`))) {
+        bad('Enter the builder access password.', 401);
+      }
+    } else if (process.env.NETLIFY ||
+        !host || !/^(127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/.test(host) || origin !== `http://${host}`) {
+      bad('Configure BUILDER_ORIGIN and BUILDER_PASSWORD for hosted access.', 403);
+    }
     if (request.headers.get('content-type')?.split(';')[0].trim() !== 'application/json') bad('Send application/json.', 415);
     // Read a bounded stream instead of trusting Content-Length.
     const reader = request.body?.getReader();
@@ -43,6 +57,7 @@ export async function POST(request: Request) {
       return v;
     };
     let result;
+    dispatched = true;
     switch (p.action) {
       case 'createApp': fields('prompt'); result = await base44.createApp(string('prompt')); break;
       case 'getApp': fields('appId'); result = await base44.getApp(id('appId')); break;
@@ -67,6 +82,6 @@ export async function POST(request: Request) {
     return Response.json(result, { headers });
   } catch (error) {
     const safe = error instanceof base44.Base44Error ? error : new base44.Base44Error('The local request failed. Check configuration and refresh app state.');
-    return Response.json({ error: safe.message }, { status: safe.status, headers });
+    return Response.json({ error: safe.message, outcome: dispatched ? 'unknown' : 'not_started' }, { status: safe.status, headers });
   }
 }

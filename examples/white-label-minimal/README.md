@@ -130,3 +130,17 @@ synchronous function limit is shorter than this example's long-running Base44
 calls. A hosted deployment must provide access protection and an appropriate
 long-running execution path before enabling real credentials. Do not remove the
 local origin check alone and expose the shared account.
+
+### Hosted private demo
+
+Set `BUILDER_ORIGIN=https://tiny.sunny44.com` and a randomly generated
+`BUILDER_PASSWORD` of at least 24 characters in the hosting environment, alongside
+the three Base44 variables in `.env.example`. Enter that password in the builder.
+It stays in page memory and is sent only to this application's API; refreshing
+requires entering it again. Never use your Base44 API key as the access password.
+All password holders can access the shared workspace's apps; this is a trusted
+collaborator demo, not per-user isolation. Rotate the environment password to revoke
+access. Hosted requests fail closed when access configuration is missing.
+
+Netlify function limits still apply: long Base44 operations may outlive a request.
+An uncertain creation must be checked in the workspace before retrying.

@@ -140,3 +140,14 @@ test('slow conversation reads do not overlap later polling intervals', async ({ 
   release();
   await expect(page.getByText('Your app is taking shape.')).toBeVisible();
 });
+
+test('rejected access preserves prompt and allows retry without uncertain creation warning', async ({ page }) => {
+  await page.route('**/api/base44', route => route.fulfill({ status: 401, contentType: 'application/json',
+    body: JSON.stringify({ error: 'Enter the builder access password.', outcome: 'not_started' }) }));
+  await page.goto('/');
+  await page.getByLabel('What would you like to build?').fill('Hello world');
+  await page.getByRole('button', { name: 'Create app', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Enter the builder access password.');
+  await expect(page.getByRole('button', { name: 'Create app', exact: true })).toBeEnabled();
+  await expect(page.getByText('Creation may have succeeded.', { exact: false })).toHaveCount(0);
+});

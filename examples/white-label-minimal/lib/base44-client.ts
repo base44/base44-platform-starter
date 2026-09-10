@@ -13,14 +13,17 @@ export type ToolInput = {
 };
 
 export class ApiError extends Error {
-  constructor(message: string, public status = 0) { super(message); }
+  constructor(message: string, public status = 0, public notStarted = false) { super(message); }
 }
+
+let accessPassword = '';
+export function setAccessPassword(value: string) { accessPassword = value; }
 
 async function call<T>(action: string, params: object, signal?: AbortSignal): Promise<T> {
   let response: Response;
   try {
     response = await fetch('/api/base44', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json', ...(accessPassword ? { Authorization: `Bearer ${accessPassword}` } : {}) },
       body: JSON.stringify({ action, ...params }), cache: 'no-store', signal,
     });
   } catch (error) {
@@ -30,7 +33,7 @@ async function call<T>(action: string, params: object, signal?: AbortSignal): Pr
   let data;
   try { data = await response.json(); }
   catch { throw new ApiError('The server returned an unreadable response. The outcome is uncertain.', 502); }
-  if (!response.ok) throw new ApiError(data.error || 'The request failed.', response.status);
+  if (!response.ok) throw new ApiError(data.error || 'The request failed.', response.status, data.outcome === 'not_started');
   return data as T;
 }
 
