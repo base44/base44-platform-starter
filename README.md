@@ -8,6 +8,11 @@ This README is a walkthrough. It has four steps, each one a boundary you have to
 the working code in this repo next to it. Everything here is generic; **Sunny**, the
 work-management app you'll see in the code, is just the example product being extended.
 
+This repository contains two references:
+
+- [`examples/white-label-minimal/`](examples/white-label-minimal/): the focused, local shared-account guide companion. Start here to learn the build loop without Sunny's database or sign-in.
+- [`src/`](src/): the full Sunny product and production-oriented service-user integration described below.
+
 Live example: <https://sunny44.com>
 
 ---

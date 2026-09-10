@@ -19,7 +19,11 @@
     "sunny:smoke": "tsx --env-file=.env scripts/sunny-api-smoke.ts",
     "market:smoke": "tsx --env-file=.env scripts/marketplace-smoke.ts",
     "base44:smoke": "tsx --env-file=.env scripts/base44-smoke.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "minimal:dev": "npm run dev --workspace @base44/white-label-minimal",
+    "minimal:build": "npm run build --workspace @base44/white-label-minimal",
+    "minimal:typecheck": "npm run typecheck --workspace @base44/white-label-minimal",
+    "minimal:test": "npm run test --workspace @base44/white-label-minimal"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^18.0.1",
@@ -58,5 +62,8 @@
     "eslint-config-next": "16.3.0",
     "tailwindcss": "^4",
     "typescript": "^5"
-  }
+  },
+  "workspaces": [
+    "examples/white-label-minimal"
+  ]
 }

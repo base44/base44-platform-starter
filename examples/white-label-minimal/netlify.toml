@@ -1,0 +1,9 @@
+# Separate Netlify project: leave Base directory at repository root and set
+# Package directory to examples/white-label-minimal in Netlify's build settings.
+# This overrides Sunny's root build command, which runs database migrations.
+[build]
+  command = "npm run minimal:build"
+  publish = "examples/white-label-minimal/.next"
+
+[build.environment]
+  NODE_VERSION = "24"
