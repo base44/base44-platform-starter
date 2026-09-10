@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import * as api from "../lib/base44-client";
 import Question from "./Question";
 import ReactMarkdown from "react-markdown";
-import { Bot, User } from "lucide-react";
+import { Bot, User, Hammer, Send, Loader2, Eye, Upload, ExternalLink } from "lucide-react";
 import ToolActivity from "./ToolActivity";
 import { useBuildPolling } from "./useBuildPolling";
 
@@ -129,14 +129,6 @@ export default function Builder({
   }
   return (
     <div className="builder">
-      <div className="status" role="status">
-        {busy ||
-          (pollingError
-            ? "Polling paused"
-            : waiting
-              ? "Waiting for your answer"
-              : app?.status?.state || "Ready to begin")}
-      </div>
       {app?.status?.state === "error" && (
         <p role="alert">
           The build failed{app.status.error_source ? ` (${app.status.error_source})` : ""}. Review
@@ -202,7 +194,14 @@ export default function Builder({
         const node = e.currentTarget;
         followConversation.current = node.scrollHeight - node.scrollTop - node.clientHeight < 80;
       }}>
-        {!messages.length && <p className="empty">Your build conversation will appear here.</p>}
+        {!messages.length && (appId ? <p className="empty">Your build conversation will appear here.</p> : <div className="chat-welcome">
+          <Hammer size={32} strokeWidth={1.5} />
+          <h2>Build an app</h2>
+          <p>Describe what you want and I’ll create it.</p>
+          <div className="chat-suggestions">
+            {["A reading list with ratings", "A habit tracker for my daily routine", "A place to save my favorite recipes"].map(idea => <button className="secondary" key={idea} onClick={() => setPrompt(idea)}>{idea}</button>)}
+          </div>
+        </div>)}
         {messages
           .filter((m) => !m.hidden)
           .map((m) => (
@@ -223,45 +222,18 @@ export default function Builder({
               </div>
             </article>
           ))}
-      </section>
-      <form className="composer"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void send();
-        }}
-      >
-        <label htmlFor="prompt">
-          {appId ? "What should change?" : "What would you like to build?"}
-        </label>
-        <textarea
-          id="prompt"
-          rows={3}
-          maxLength={16000}
-          value={prompt}
-          placeholder="A reading list with ratings and a search field"
-          disabled={!!busy || waiting || processing || !!pollingError || creationUncertain}
-          onChange={(e) => setPrompt(e.target.value)}
-        />
-        <button
-          disabled={
-            !!busy || waiting || processing || !!pollingError || creationUncertain || !prompt.trim()
-          }
-        >
-          {appId ? "Send prompt" : "Create app"}
-        </button>
-        {waiting && <small>Answer or reject the waiting question to continue.</small>}
-      </form>
       {appId && (
         <section className="delivery" aria-label="Preview and publish">
+          <div className="ready-heading"><strong>{app?.name || "Your app"}</strong><p>{app?.status?.state === "ready" ? "Ready for a look?" : "Preview your progress"}</p></div>
           <div className="actions">
-            <button className="secondary" disabled={!!busy} onClick={() => void openPreview()}>
-              {preview ? "Refresh preview" : "Open preview"}
+            <button className="secondary" aria-label={preview ? "Refresh preview" : "Open preview"} disabled={!!busy} onClick={() => void openPreview()}>
+              <Eye size={14} /> {preview ? "Refresh preview" : "Preview"}
             </button>
             <button
               disabled={!!busy || waiting || !!pollingError || app?.status?.state !== "ready"}
-              onClick={() => void deploy()}
+              aria-label="Deploy app" onClick={() => void deploy()}
             >
-              Deploy app
+              <Upload size={14} /> Publish
             </button>
             <button
               className="secondary"
@@ -270,7 +242,7 @@ export default function Builder({
                 void publishedLink().catch(() => setError("Could not read the published URL."))
               }
             >
-              Check published URL
+              <ExternalLink size={13} /> Check published URL
             </button>
             {published && (
               <a href={published} target="_blank" rel="noreferrer">
@@ -278,7 +250,7 @@ export default function Builder({
               </a>
             )}
           </div>
-          <small>Deploy publishes the current version immediately.</small>
+
           {preview && (
             <>
               <button
@@ -300,6 +272,49 @@ export default function Builder({
           )}
         </section>
       )}
+        {(busy || waiting || processing || pollingError) && <div className="build-progress" role="status">
+          {(busy || processing) && <Loader2 size={12} className="spin" />}
+          {busy || (pollingError ? "Connection paused" : waiting ? "Waiting for your answer" : "Building…")}
+        </div>}
+      </section>
+      <form className="composer"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void send();
+        }}
+      >
+        <label className="sr-only" htmlFor="prompt">
+          {appId ? "What should change?" : "What would you like to build?"}
+        </label>
+        <textarea
+          id="prompt"
+          rows={1}
+          maxLength={16000}
+          value={prompt}
+          placeholder={waiting ? "Answer the question above…" : appId ? "Describe a change…" : "Describe the app you want…"}
+          disabled={!!busy || waiting || processing || !!pollingError || creationUncertain}
+          onChange={(e) => {
+            setPrompt(e.target.value);
+            e.target.style.height = "auto";
+            e.target.style.height = `${Math.min(e.target.scrollHeight, 112)}px`;
+          }}
+          onKeyDown={e => {
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && !busy && !processing && !pollingError) {
+              e.preventDefault();
+              void send();
+            }
+          }}
+        />
+        <button className="send-button" aria-label={appId ? "Send prompt" : "Create app"}
+          disabled={
+            !!busy || waiting || processing || !!pollingError || creationUncertain || !prompt.trim()
+          }
+        >
+          {busy ? <Loader2 size={16} className="spin" /> : <Send size={16} />}
+        </button>
+        {waiting && <small>Answer or reject the waiting question to continue.</small>}
+      </form>
+
     </div>
   );
 }

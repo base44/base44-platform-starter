@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
-import { Grid2X2, Loader2, LogOut, MessageSquare, Pencil, Plus, X } from "lucide-react";
+import { Grid2X2, Loader2, LogOut, MessageSquare, Pencil, Plus, X, Sparkles } from "lucide-react";
 import SunnyLogo from "@/components/SunnyLogo";
 import * as api from "../lib/base44-client";
 import Builder from "./Builder";
@@ -178,7 +178,7 @@ export default function Workspace({ name }: { name: string }) {
         <section id="app-editor" className={`editor-panel ${mobileEditorOpen ? "is-open" : ""}`} aria-label="App editor" onKeyDown={e => { if (e.key === "Escape") closeAssistant(); }}>
           <header className="editor-heading">
             <div>
-              <MessageSquare size={18} />
+              <Sparkles size={14} />
               <strong>{activeName || "Build an app"}</strong>
             </div>
             <button ref={closeButton} className="icon-button mobile-close" aria-label="Close assistant" onClick={closeAssistant}><X size={20} /></button>
