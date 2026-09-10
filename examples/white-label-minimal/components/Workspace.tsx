@@ -12,6 +12,7 @@ export default function Workspace({ name }: { name: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [needsConnection, setNeedsConnection] = useState(false);
+  const [nextSkip, setNextSkip] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [editor, setEditor] = useState<{ app: api.App | null; version: number }>({ app: null, version: 0 });
   const load = useCallback((skip = 0) => api.listApps(skip)
@@ -19,6 +20,7 @@ export default function Workspace({ name }: { name: string }) {
       setError("");
       setApps(current => skip ? [...current, ...result.apps] : result.apps);
       setHasMore(result.hasMore);
+      setNextSkip(result.nextSkip);
       setNeedsConnection(false);
     })
     .catch(err => {
@@ -39,6 +41,7 @@ export default function Workspace({ name }: { name: string }) {
         body: JSON.stringify({ action: "connect" }),
       });
       if (!response.ok) throw new Error("Could not connect your workspace. Please try again.");
+      setNeedsConnection(false);
       await load();
     } catch (err) {
       setError((err as Error).message);
@@ -143,7 +146,7 @@ export default function Workspace({ name }: { name: string }) {
               <button
                 className="secondary load-more"
                 disabled={loading}
-                onClick={() => load(apps.length)}
+                onClick={() => load(nextSkip)}
               >
                 {loading ? "Loading…" : "Load more"}
               </button>

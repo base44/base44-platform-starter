@@ -3,12 +3,12 @@ import { getSessionUser } from "@/lib/auth";
 import { getLink, remint } from "@/lib/base44Link";
 import { prisma } from "@/lib/prisma";
 import { scopedWhere } from "@/lib/rls";
-import type { App } from "./base44-client";
+import { resolveAppPage } from "./app-list";
 import { Base44Error, createBase44Client } from "./base44-server";
 
 export type WorkspaceClient = ReturnType<typeof createBase44Client> & {
   authorize(appId: string): Promise<void>;
-  listApps(skip: number): Promise<{ apps: App[]; hasMore: boolean }>;
+  listApps(skip: number): Promise<Awaited<ReturnType<typeof resolveAppPage>>>;
 };
 
 export async function getWorkspaceClient(): Promise<WorkspaceClient> {
@@ -46,8 +46,7 @@ export async function getWorkspaceClient(): Promise<WorkspaceClient> {
         skip,
         take: 13,
       });
-      const apps = await Promise.all(rows.slice(0, 12).map((row) => client.getApp(row.appId)));
-      return { apps, hasMore: rows.length > 12 };
+      return resolveAppPage(rows, skip, client.getApp);
     },
   };
 }

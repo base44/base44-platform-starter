@@ -7,7 +7,7 @@ const POST = createHandler(async () => {
   if (!signedIn) throw new Base44Error('Sign in to continue.', 401);
   return { ...createBase44Client('user-token-canary'), authorize: async (id: string) => {
     if (id === 'other_app') throw new Base44Error('App not found.', 404);
-  }, listApps: async () => ({ apps: [], hasMore: false }) };
+  }, listApps: async () => ({ apps: [], hasMore: false, nextSkip: 0 }) };
 });
 import { customInstructions } from '../lib/custom-instructions';
 
@@ -129,4 +129,18 @@ test('another owner’s apps cannot be read, edited, previewed or deployed', asy
     assert.equal((await response.json()).outcome, 'not_started');
   }
   assert.equal(calls.length, 0);
+});
+
+
+test('unavailable apps do not hide valid apps or corrupt pagination', async () => {
+  const { resolveAppPage } = await import('../lib/app-list');
+  const rows = Array.from({ length: 13 }, (_, i) => ({ appId: `app_${i}` }));
+  const page = await resolveAppPage(rows, 24, async id => {
+    if (id === 'app_0') throw new Base44Error('App not found.', 404);
+    return { id };
+  });
+  assert.equal(page.apps.length, 11);
+  assert.equal(page.nextSkip, 36);
+  assert.equal(page.hasMore, true);
+  await assert.rejects(resolveAppPage(rows, 0, async () => { throw new Base44Error('Unavailable', 503); }));
 });

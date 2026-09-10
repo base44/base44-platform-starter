@@ -82,4 +82,4 @@ export const deployApp = (appId: string) => call("deployApp", { appId });
 export const getPublishedUrl = (appId: string) =>
   call<{ url: string | null }>("getPublishedUrl", { appId });
 
-export const listApps = (skip = 0) => call<{ apps: App[]; hasMore: boolean }>("listApps", { skip });
+export const listApps = (skip = 0) => call<{ apps: App[]; hasMore: boolean; nextSkip: number }>("listApps", { skip });
