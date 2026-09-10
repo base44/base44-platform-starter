@@ -1,13 +1,20 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
-import { POST } from '../app/api/base44/route';
+import { createHandler } from '../lib/api-handler';
+import { createBase44Client, Base44Error } from '../lib/base44-server';
+let signedIn = true;
+const POST = createHandler(async () => {
+  if (!signedIn) throw new Base44Error('Sign in to continue.', 401);
+  return { ...createBase44Client('user-token-canary'), authorize: async (id: string) => {
+    if (id === 'other_app') throw new Base44Error('App not found.', 404);
+  }, listApps: async () => ({ apps: [], hasMore: false }) };
+});
 import { customInstructions } from '../lib/custom-instructions';
 
 const originalFetch = globalThis.fetch;
 const originalEnv = { ...process.env };
-afterEach(() => { globalThis.fetch = originalFetch; process.env = { ...originalEnv }; });
+afterEach(() => { signedIn = true; globalThis.fetch = originalFetch; process.env = { ...originalEnv }; });
 function setup(reply: unknown = { id: 'app_1' }, status = 200) {
-  process.env.BASE44_API_KEY = 'personal-key-canary';
   process.env.BASE44_ORG_ID = 'workspace_1';
   process.env.BASE44_PLATFORM_HOST = 'https://platform.example';
   const calls: { url: string; init?: RequestInit }[] = [];
@@ -42,12 +49,12 @@ test('rejects foreign origins, nonlocal hosts, non-JSON and oversized bodies', a
   assert.equal((await request({ action: 'createApp', prompt: 'x'.repeat(65000) })).status, 413);
   assert.equal(calls.length, 0);
 });
-test('creation carries workspace, personal key and initial instructions only upstream', async () => {
+test('creation carries workspace, user token and initial instructions only upstream', async () => {
   const calls = setup({ id: 'app_1', custom_instructions: customInstructions, api_key: 'should-not-return' });
   const response = await request({ action: 'createApp', prompt: 'Build a reading list' });
   assert.deepEqual(await response.json(), { id: 'app_1' });
   const init = calls[0].init!;
-  assert.equal(new Headers(init.headers).get('api_key'), 'personal-key-canary');
+  assert.equal(new Headers(init.headers).get('authorization'), 'Bearer user-token-canary');
   assert.equal(new Headers(init.headers).get('X-Active-Workspace-Id'), 'workspace_1');
   const body = JSON.parse(String(init.body));
   assert.equal(body.organization_id, 'workspace_1');
@@ -92,7 +99,7 @@ test('published endpoint maps 404 to no link; rejects unsafe URLs', async () => 
   assert.equal((await request({ action: 'getPublishedUrl', appId: 'app_1' })).status, 502);
 });
 test('missing configuration makes no network call; conversation uses newest-relative paging', async () => {
-  const calls = setup(); delete process.env.BASE44_API_KEY;
+  const calls = setup(); delete process.env.BASE44_ORG_ID;
   assert.equal((await request({ action: 'getApp', appId: 'app_1' })).status, 503);
   assert.equal(calls.length, 0);
   const reads = setup({ messages: [{ id: 'm1', content: 'Hello', hidden: true }] });
@@ -100,32 +107,26 @@ test('missing configuration makes no network call; conversation uses newest-rela
   assert.equal(result.status, 200); assert.match(reads[0].url, /limit=20&skip=20$/);
 });
 
-test('hosted requests require exact origin and password before any upstream operation', async () => {
+test('requires a session and exact origin before calling Base44', async () => {
   const calls = setup();
   process.env.BUILDER_ORIGIN = 'https://tiny.sunny44.com';
-  process.env.BUILDER_PASSWORD = 'a-test-password-with-32-characters';
   const h = { host: 'tiny.sunny44.com', origin: 'https://tiny.sunny44.com' };
+  signedIn = false;
   const denied = await request({ action: 'createApp', prompt: 'Hello' }, h);
   assert.equal(denied.status, 401);
   assert.equal((await denied.json()).outcome, 'not_started');
-  assert.equal((await request({}, { ...h, authorization: 'Bearer wrong' })).status, 401);
+  signedIn = true;
   assert.equal((await request({}, { ...h, origin: 'https://evil.example' })).status, 403);
   assert.equal(calls.length, 0);
-  const response = await request({ action: 'getApp', appId: 'app_1' }, {
-    ...h, authorization: `Bearer ${process.env.BUILDER_PASSWORD}`,
-  });
-  assert.equal(response.status, 200);
-  assert.equal(calls.length, 1);
-  assert.equal(new Headers(calls[0].init?.headers).get('authorization'), null);
+  assert.equal((await request({ action: 'getApp', appId: 'app_1' }, h)).status, 200);
 });
 
-test('hosted deployment fails closed without access configuration, even with spoofed localhost headers', async () => {
+test('another owner’s apps cannot be read, edited, previewed or deployed', async () => {
   const calls = setup();
-  process.env.NETLIFY = 'true';
-  delete process.env.BUILDER_ORIGIN;
-  assert.equal((await request({ action: 'createApp', prompt: 'Hello' })).status, 403);
-  process.env.BUILDER_ORIGIN = 'https://tiny.sunny44.com';
-  delete process.env.BUILDER_PASSWORD;
-  assert.equal((await request({}, { host: 'tiny.sunny44.com', origin: process.env.BUILDER_ORIGIN })).status, 503);
+  for (const action of ['getApp', 'getConversation', 'sendMessage', 'getPreviewUrl', 'deployApp', 'getPublishedUrl']) {
+    const response = await request({ action, appId: 'other_app', content: 'Update' });
+    assert.equal(response.status, 404);
+    assert.equal((await response.json()).outcome, 'not_started');
+  }
   assert.equal(calls.length, 0);
 });

@@ -9,6 +9,7 @@ async function fixture(page: Page, tool?: ToolCall, failFirst = false) {
   await page.route('**/api/base44', async route => {
     const p = route.request().postDataJSON();
     let json: unknown = {};
+    if (p.action === 'listApps') return route.fulfill({ json: { apps: [], hasMore: false } });
     switch (p.action) {
       case 'createApp': creates++; json = { id: 'app_1' }; break;
       case 'getApp': json = { id: 'app_1', status: { state: 'ready' } }; break;
@@ -25,6 +26,7 @@ async function fixture(page: Page, tool?: ToolCall, failFirst = false) {
     await route.fulfill({ json });
   });
   await page.goto('/');
+  await page.getByRole('button', { name: 'New app', exact: true }).click();
   await page.getByLabel('What would you like to build?').fill('A reading list');
   await page.getByRole('button', { name: 'Create app', exact: true }).click();
   await expect(page.getByText('Your app is taking shape.')).toBeVisible();
@@ -75,8 +77,12 @@ test('approval rejection is an answer and removes the waiting state', async ({ p
 });
 test('uncertain create never retries automatically and offers existing-app recovery', async ({ page }) => {
   let creates = 0;
-  await page.route('**/api/base44', route => { creates++; return route.abort('failed'); });
+  await page.route('**/api/base44', route => {
+    if (route.request().postDataJSON().action === 'listApps') return route.fulfill({ json: { apps: [], hasMore: false } });
+    creates++; return route.abort('failed');
+  });
   await page.goto('/');
+  await page.getByRole('button', { name: 'New app', exact: true }).click();
   await page.getByLabel('What would you like to build?').fill('Reading list');
   await page.getByRole('button', { name: 'Create app', exact: true }).click();
   await expect(page.getByLabel('Existing app ID')).toBeVisible();
@@ -108,13 +114,14 @@ test('preview credential is removed before its expiry', async ({ page }) => {
   await expect(page.locator('iframe')).toHaveCount(0);
 });
 
-test('real Next route accepts local browser origins and rejects foreign origins', async ({ page, request }) => {
+test('real Next route requires authentication for local browser origins and rejects foreign origins', async ({ page, request }) => {
   await page.goto('/');
+  await page.getByRole('button', { name: 'New app', exact: true }).click();
   const status = await page.evaluate(async () => (await fetch('/api/base44', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'unknown' }),
   })).status);
-  expect(status).toBe(400); // Validation reached; Next may normalize request.url internally.
+  expect(status).toBe(401); // Validation reached; Next may normalize request.url internally.
   const foreign = await request.post('/api/base44', {
     headers: { Origin: 'https://foreign.example' }, data: { action: 'unknown' },
   });
@@ -143,11 +150,43 @@ test('slow conversation reads do not overlap later polling intervals', async ({ 
 
 test('rejected access preserves prompt and allows retry without uncertain creation warning', async ({ page }) => {
   await page.route('**/api/base44', route => route.fulfill({ status: 401, contentType: 'application/json',
-    body: JSON.stringify({ error: 'Enter the builder access password.', outcome: 'not_started' }) }));
+    body: JSON.stringify({ error: 'Sign in to continue.', outcome: 'not_started' }) }));
   await page.goto('/');
+  await page.getByRole('button', { name: 'New app', exact: true }).click();
   await page.getByLabel('What would you like to build?').fill('Hello world');
   await page.getByRole('button', { name: 'Create app', exact: true }).click();
-  await expect(page.locator('aside[role=alert]')).toContainText('Enter the builder access password.');
+  await expect(page.locator('aside[role=alert]')).toContainText('Sign in to continue.');
   await expect(page.getByRole('button', { name: 'Create app', exact: true })).toBeEnabled();
   await expect(page.getByText('Creation may have succeeded.', { exact: false })).toHaveCount(0);
+});
+
+test('My apps shows owned cards and opens the editor without marketplace features', async ({ page }) => {
+  await page.route('**/api/base44', route => {
+    const { action, appId } = route.request().postDataJSON();
+    if (action === 'listApps') return route.fulfill({ json: { apps: [
+      { id: 'reading', name: 'Reading list', user_description: 'A home for your next great read' },
+      { id: 'habits', name: 'Daily habits', user_description: 'Small steps, every day' },
+      { id: 'recipes', name: 'Recipe book', user_description: 'Keep your favorites close' },
+    ], hasMore: false } });
+    return route.fulfill({ json: action === 'getConversation' ? { messages: [] } : { id: appId, status: { state: 'ready' } } });
+  });
+  await page.setViewportSize({ width: 1440, height: 950 });
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'My apps', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'App editor' })).toBeVisible();
+  await expect(page.getByRole('navigation')).toHaveCount(0);
+  const grid = await page.locator('.apps-page').boundingBox();
+  const assistant = await page.getByRole('region', { name: 'App editor' }).boundingBox();
+  expect(assistant!.x).toBeGreaterThanOrEqual(grid!.x + grid!.width);
+  await expect(page.getByRole('button', { name: 'Edit Reading list', exact: true })).toBeVisible();
+  await expect(page.getByText(/market|install/i)).toHaveCount(0);
+  await page.screenshot({ path: 'test-results/my-apps-desktop.png', fullPage: true });
+  await page.getByRole('button', { name: 'Edit Reading list', exact: true }).click();
+  await expect(page.getByLabel('What should change?')).toBeVisible();
+  await page.screenshot({ path: 'test-results/editor-desktop.png', fullPage: true });
+  await page.getByRole('button', { name: 'New app', exact: true }).click();
+  await expect(page.getByLabel('What would you like to build?')).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: 'test-results/my-apps-mobile.png', fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
 });

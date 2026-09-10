@@ -4,6 +4,7 @@
  * return the `RlsActor` shape that src/lib/rls.ts requires.
  */
 import type { Role } from "@prisma/client";
+import "next-auth/jwt";
 import type { DefaultSession } from "next-auth";
 
 declare module "next-auth" {

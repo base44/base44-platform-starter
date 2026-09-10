@@ -1,4 +1,4 @@
-export const customInstructions = `You are building a standalone app for the Minimal Builder learning example.
+export const customInstructions = `You are building a standalone app for Tiny Sunny.
 Follow the builder's prompt and the workspace design system. Ask clarifying questions when needed.
 The host platform supplies no data API, user directory, or application secrets.
 Do not invent Sunny endpoints or assume the generated app can access the host's credentials.

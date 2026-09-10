@@ -8,14 +8,16 @@
     "start": "next start --hostname 127.0.0.1 --port 3001",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "tsx --conditions=react-server --test tests/server.test.ts && tsx --test tests/conversation.test.ts tests/questions.test.tsx",
-    "smoke": "node scripts/smoke.mjs",
     "test:browser": "playwright test"
   },
   "dependencies": {
     "next": "16.3.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "server-only": "0.0.1"
+    "server-only": "0.0.1",
+    "next-auth": "^5.0.0-beta.32",
+    "@prisma/client": "^6.19.3",
+    "lucide-react": "^0.475.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
