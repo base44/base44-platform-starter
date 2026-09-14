@@ -102,7 +102,6 @@ summary:focus-visible {
 }
 .page-heading {
   padding: 38px 32px;
-  border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: space-between;

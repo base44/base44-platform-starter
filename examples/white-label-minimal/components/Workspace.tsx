@@ -12,6 +12,7 @@ import AppPreview from "./AppPreview";
 export default function Workspace({ name }: { name: string }) {
   const activeAppId = useRef<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
+  const editorPanel = useRef<HTMLElement>(null);
   const assistantButton = useRef<HTMLButtonElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const [apps, setApps] = useState<App[]>([]);
@@ -35,6 +36,10 @@ export default function Workspace({ name }: { name: string }) {
     if (mobileEditorOpen && window.matchMedia("(max-width: 760px)").matches)
       closeButton.current?.focus();
   }, [mobileEditorOpen]);
+  useEffect(() => {
+    if (editor.version > 0 && !editor.app)
+      editorPanel.current?.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus();
+  }, [editor.version, editor.app]);
   const updateApp = useCallback((app: App) => {
     activeAppId.current = app.id;
     setActiveName(app.name || "");
@@ -123,11 +128,7 @@ export default function Workspace({ name }: { name: string }) {
       <div className="workspace-body">
         <main className="apps-page">
           <div className="page-heading">
-            <div>
-              <p className="eyebrow">Workspace</p>
-              <h1>My apps</h1>
-              <p>Apps you built. Open one to use it.</p>
-            </div>
+            <h1>My apps</h1>
           </div>
           <div className="apps-content">
             {error && (
@@ -223,6 +224,7 @@ export default function Workspace({ name }: { name: string }) {
           <MessageSquare size={18} /> Assistant
         </button>
         <section
+          ref={editorPanel}
           id="app-editor"
           className={`editor-panel ${mobileEditorOpen ? "is-open" : ""}`}
           aria-label="App editor"

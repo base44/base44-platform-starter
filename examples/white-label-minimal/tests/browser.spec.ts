@@ -27,6 +27,7 @@ async function fixture(page: Page, tool?: ToolCall, failFirst = false) {
   });
   await page.goto('/');
   await page.getByRole('button', { name: 'Create an app', exact: true }).click();
+  await expect(page.getByLabel('What would you like to build?')).toBeFocused();
   await page.getByLabel('What would you like to build?').fill('A reading list');
   await page.getByRole('button', { name: 'Create app', exact: true }).click();
   await expect(page.getByText('Your app is taking shape.')).toBeVisible();
@@ -396,6 +397,10 @@ test('empty state has one creation CTA and app cards render fresh previews', asy
   await page.goto('/');
   await expect(page.getByRole('button', { name: 'Create an app', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'New app', exact: true })).toHaveCount(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: 'Create an app', exact: true }).click();
+  await expect(page.getByLabel('What would you like to build?')).toBeFocused();
+  await page.setViewportSize({ width: 1280, height: 900 });
   populated = true;
   await page.reload();
   const open = page.getByRole('button', { name: 'Open Reading list', exact: true });
