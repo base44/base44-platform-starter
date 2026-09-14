@@ -5,8 +5,9 @@ How your platform acts on Base44 *as each of your own users*. This is step 2 of 
 
 SDK: [public contract](https://github.com/base44/javascript-sdk/blob/28beeea/platform-docs/api.md).
 
-Starter adapter: `src/lib/base44Link.ts` (the only module that reads or writes tokens) and
-`src/app/api/base44/link/route.ts` (the three-action route in front of it).
+Starter adapters: `src/lib/base44Link.ts` handles connection lifecycle,
+`src/lib/base44TokenStore.ts` implements persistent SDK token storage, and
+`src/app/api/base44/link/route.ts` exposes the three connection actions.
 
 ---
 
@@ -181,8 +182,9 @@ to `BASE44_SVC_KEY` before deploying this migration. The separate provisioning v
 is no longer read. Your server must prohibit offboarded users from explicitly connecting
 again; SDK token acquisition never auto-provisions.
 
-The SDK owns acquisition, renewal and revocation. `src/lib/base44Link.ts` supplies a
-persistent adapter over the existing rows, preserving principal IDs and webhook lookup.
+The SDK owns acquisition, renewal and revocation. `src/lib/base44TokenStore.ts`
+adapts existing rows for persistence. `src/lib/base44Link.ts` keeps the connection
+flow, principal IDs, and webhook lookup.
 See [the complete SDK storage contract](https://github.com/base44/javascript-sdk/blob/28beeea/platform-docs/tokens.md).
 
 ---
@@ -234,11 +236,12 @@ as a configuration error, not get caught and mislabelled as an upstream blip.
 
 The rules this repo holds itself to, all asserted by `npm run base44:smoke`:
 
-1. **One module touches tokens.** `src/lib/base44Link.ts`. The generic entity CRUD refuses the
-   `Base44Link` model outright, so no API can read it by accident.
-2. **No function returns a token.** `linkStatus()` returns `{linked, base44_user_email,
-   organization_id}` — booleans and display fields. A token leaves the module only as the
-   `Authorization` header of a server-side fetch.
+1. **Token persistence stays in the server adapters.** Only `src/lib/base44Link.ts` and
+   `src/lib/base44TokenStore.ts` access connection rows. The generic entity CRUD refuses
+   the `Base44Link` model outright, so no API can read it by accident.
+2. **No browser response contains a service token.** `linkStatus()` returns `{linked,
+   base44_user_email, organization_id}`. The SDK and legacy chat use stored credentials
+   only on the server.
 3. **Everything is keyed by the session email**, taken from the session and never from the request
    body. A user cannot connect, inspect or disconnect anyone else's link.
 4. **The principal id sent upstream is opaque and never an email.**

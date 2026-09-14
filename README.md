@@ -170,8 +170,7 @@ server must prevent offboarded users from invoking the explicit Connect/onboardi
 ### 2c. Store it, refresh it, and never return it
 
 ```ts
-// src/lib/base44Link.ts is the ONLY module that reads or writes tokens,
-// and no function in it returns one to a caller:
+// Browser responses expose connection status, never stored credentials.
 export function linkStatus(link) {
   return { linked: …, base44_user_email: …, organization_id: … };  // booleans and display fields
 }
@@ -207,6 +206,12 @@ replace that alias with the stable SDK version; the imports stay the same. The
 SDK's own tests and reference documentation live in the JavaScript SDK repository.
 Run `npm run platform-sdk:test` here to verify Sunny's storage and app adapters
 against the installed package without calling live services.
+
+Read the integration in this order:
+
+1. `getPlatformClient()` and `connect()` in `src/lib/base44Link.ts`: configure the SDK, provision a user, and record their connection.
+2. `src/lib/base44AppOperations.ts`: call the SDK as that user and map results to Sunny’s browser contract.
+3. `src/lib/base44TokenStore.ts`: persist credentials using Sunny’s database when the default in-memory store is insufficient.
 
 The caller still names an allowlisted action, never a URL. Why an allow-list and not a passthrough: Base44 enforces
 OAuth scopes in its MCP tool layer, *not* on this REST surface, so `apps:read apps:write` does not

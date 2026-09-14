@@ -1,37 +1,88 @@
-/** Adapter from the starter's browser actions to the SDK's public contract. */
+/** Map Sunny's validated browser actions to the platform SDK. */
 import type { PlatformApp, PlatformUserClient } from "@base44/sdk/platform/server";
 import { appsFolderId, resolveAppSecrets } from "@/lib/base44Config";
 
-export const SDK_APP_ACTIONS = new Set(["listApps", "createApp", "getApp", "renameApp", "fileAppsInFolder", "getPreviewUrl", "deployApp"]);
-function appResponse(app: PlatformApp) {
-  return {
-    id: app.id, name: app.name, slug: app.slug, status: { state: app.state },
-    updated_date: app.updatedAt, preview_screenshot_url: app.previewScreenshotUrl, logo_url: app.logoUrl,
-    last_deployed_at: app.lastDeployedAt, last_git_commit_hash: app.currentRevision,
-    last_deployed_git_commit_hash: app.deployedRevision, has_custom_instructions: app.hasCustomInstructions,
-  };
-}
-export async function runAppOperation(user: PlatformUserClient, action: string, p: Record<string, unknown>) {
-  const appId = String(p.appId ?? "");
+export const SDK_APP_ACTIONS = new Set([
+  "listApps",
+  "createApp",
+  "getApp",
+  "renameApp",
+  "fileAppsInFolder",
+  "getPreviewUrl",
+  "deployApp",
+]);
+
+export async function runAppOperation(
+  user: PlatformUserClient,
+  action: string,
+  params: Record<string, unknown>,
+) {
+  const appId = String(params.appId ?? "");
+
   switch (action) {
-    case "listApps": return (await user.apps.list({ folderId: appsFolderId(), limit: Number(p.limit) > 0 ? Number(p.limit) : 20, skip: Number(p.skip) || 0 })).map(appResponse);
-    case "createApp": return appResponse(await user.apps.create({
-      prompt: String(p.prompt), name: p.name ? String(p.name) : undefined,
-      customInstructions: p.customInstructions ? String(p.customInstructions) : undefined,
-      secrets: resolveAppSecrets(p.secrets as string[] | undefined ?? []),
-      publicSettings: "public_without_login", preventIframeEmbedding: false,
-    }));
-    case "getApp": return appResponse(await user.apps.get(appId));
-    case "renameApp": return appResponse(await user.apps.rename(appId, String(p.name)));
-    case "fileAppsInFolder": await user.apps.addToFolder(appsFolderId(), p.appIds as string[]); return { ok: true };
+    case "listApps": {
+      const apps = await user.apps.list({
+        folderId: appsFolderId(),
+        limit: Number(params.limit) > 0 ? Number(params.limit) : 20,
+        skip: Number(params.skip) || 0,
+      });
+      return apps.map(toBrowserApp);
+    }
+    case "createApp": {
+      const secretNames = (params.secrets as string[] | undefined) ?? [];
+      const app = await user.apps.create({
+        prompt: String(params.prompt),
+        name: params.name ? String(params.name) : undefined,
+        customInstructions: params.customInstructions ? String(params.customInstructions) : undefined,
+        secrets: resolveAppSecrets(secretNames),
+        publicSettings: "public_without_login",
+        preventIframeEmbedding: false,
+      });
+      return toBrowserApp(app);
+    }
+    case "getApp": {
+      const app = await user.apps.get(appId);
+      return toBrowserApp(app);
+    }
+    case "renameApp": {
+      const app = await user.apps.rename(appId, String(params.name));
+      return toBrowserApp(app);
+    }
+    case "fileAppsInFolder": {
+      await user.apps.addToFolder(appsFolderId(), params.appIds as string[]);
+      return { ok: true };
+    }
     case "getPreviewUrl": {
       const preview = await user.apps.getPreviewUrl(appId);
       return { preview_url: preview.url, preview_token: preview.token };
     }
     case "deployApp": {
-      const result = await user.apps.deploy(appId);
-      return { app_id: result.appId, checkpoint_id: result.checkpointId, git_commit_hash: result.revision, deployed_at: result.deployedAt };
+      const deployment = await user.apps.deploy(appId);
+      return {
+        app_id: deployment.appId,
+        checkpoint_id: deployment.checkpointId,
+        git_commit_hash: deployment.revision,
+        deployed_at: deployment.deployedAt,
+      };
     }
-    default: throw new Error("Unsupported SDK app action");
+    default:
+      throw new Error("Unsupported SDK app action");
   }
+}
+
+/** Preserve Sunny's browser contract while the SDK uses camelCase names. */
+function toBrowserApp(app: PlatformApp) {
+  return {
+    id: app.id,
+    name: app.name,
+    slug: app.slug,
+    status: { state: app.state },
+    updated_date: app.updatedAt,
+    preview_screenshot_url: app.previewScreenshotUrl,
+    logo_url: app.logoUrl,
+    last_deployed_at: app.lastDeployedAt,
+    last_git_commit_hash: app.currentRevision,
+    last_deployed_git_commit_hash: app.deployedRevision,
+    has_custom_instructions: app.hasCustomInstructions,
+  };
 }

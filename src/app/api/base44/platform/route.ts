@@ -11,7 +11,7 @@
  * via `X-Active-Workspace-Id` (and `createApp`'s `organization_id`), and apps are
  * filed into the `sunny_widgets` folder.
  *
- * `OPS` below is an **allow-list, and it is the only limit** on what a compromised
+ * `SDK_APP_ACTIONS` and `CHAT_OPERATIONS` form the **allow-list** for what a compromised
  * frontend could reach: Base44 enforces OAuth scopes in its MCP tool layer, not on
  * this REST surface, so `apps:read apps:write` does not constrain these calls.
  * Keep it tight — never add a passthrough action, and never let the caller supply
@@ -29,7 +29,14 @@ import {
   orgId,
   platformHost,
 } from "@/lib/base44Config";
-import { type Base44Link, getLink, remint, getPlatformClient, principalId, clearLinkCredentials } from "@/lib/base44Link";
+import {
+  type Base44Link,
+  getLink,
+  remint,
+  getPlatformClient,
+  principalId,
+  clearLinkCredentials,
+} from "@/lib/base44Link";
 
 import { Base44PlatformError } from "@base44/sdk/platform/server";
 import { SDK_APP_ACTIONS, runAppOperation } from "@/lib/base44AppOperations";
@@ -73,7 +80,7 @@ const CONVERSATION_TIMEOUT_MS = 60_000;
 const str = (v: unknown) => (v === undefined || v === null ? "" : String(v));
 const num = (v: unknown, fallback: number) => String(Number(v) > 0 ? Number(v) : fallback);
 
-const OPS: Record<string, Op> = {
+const CHAT_OPERATIONS: Record<string, Op> = {
   getConversation: {
     method: "GET",
     timeoutMs: CONVERSATION_TIMEOUT_MS,
@@ -211,12 +218,12 @@ export async function POST(req: NextRequest) {
     const action = str(rawAction);
     console.log(`[base44/platform] START action=${action} appId=${str(params.appId) || "-"}`);
 
-    const op = OPS[action];
+    const op = CHAT_OPERATIONS[action];
     if (!op && !SDK_APP_ACTIONS.has(action)) {
       return jsonError(
         400,
         "invalid_request",
-        `Unknown action "${action}". Allowed: ${[...Object.keys(OPS), ...SDK_APP_ACTIONS].join(", ")}`,
+        `Unknown action "${action}". Allowed: ${[...Object.keys(CHAT_OPERATIONS), ...SDK_APP_ACTIONS].join(", ")}`,
       );
     }
 
@@ -248,7 +255,8 @@ export async function POST(req: NextRequest) {
       }
       const user = getPlatformClient().asUser(link.serviceExternalId ?? principalId(actor.email));
       try {
-        return NextResponse.json(await runAppOperation(user, action, params));
+        const result = await runAppOperation(user, action, params);
+        return NextResponse.json(result);
       } catch (error) {
         if (error instanceof Base44PlatformError && error.status === 401) {
           await clearLinkCredentials(actor.email);
