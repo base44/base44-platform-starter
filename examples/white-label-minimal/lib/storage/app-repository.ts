@@ -20,6 +20,10 @@ export function createAppRepository(actor: { email: string }) {
         update: { appName: app.name },
       });
     },
+    async remove(appId: string) {
+      await prisma.appOwnership.deleteMany({ where: { ...owner, appId } });
+      return {};
+    },
     list(skip: number) {
       return prisma.appOwnership.findMany({
         where: owner,

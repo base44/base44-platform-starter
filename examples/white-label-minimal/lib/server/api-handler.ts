@@ -100,6 +100,10 @@ export function createHandler(resolveClient: () => Promise<AppClient>) {
           fields("prompt");
           result = await execute(client.createApp, string("prompt"));
           break;
+        case "removeApp":
+          fields("appId");
+          result = await execute(client.removeApp, id("appId"));
+          break;
         case "getApp":
           fields("appId");
           result = await execute(client.getApp, id("appId"));

@@ -472,3 +472,5 @@ iframe {
 .app-preview > header { display: flex; align-items: center; justify-content: space-between; }
 .app-preview h2 { margin: 0; font-size: 16px; }
 .app-preview iframe { flex: 1; min-height: 0; width: 100%; margin: 0; }
+.app-caption > div { flex: 1; }
+.editor-heading button { flex-shrink: 0; white-space: nowrap; }

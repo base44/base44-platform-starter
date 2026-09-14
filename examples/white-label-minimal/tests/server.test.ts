@@ -8,7 +8,7 @@ const POST = createHandler(async () => {
   if (!signedIn) throw new Base44Error('Sign in to continue.', 401);
   return { ...createBase44Client('user-token-canary'), authorize: async (id: string) => {
     if (id === 'other_app') throw new Base44Error('App not found.', 404);
-  }, listApps: async () => ({ apps: [], hasMore: false, nextSkip: 0 }) };
+  }, removeApp: async () => ({}), listApps: async () => ({ apps: [], hasMore: false, nextSkip: 0 }) };
 });
 import { customInstructions } from '../lib/base44/custom-instructions';
 
@@ -148,4 +148,13 @@ test('unavailable apps do not hide valid apps or corrupt pagination', async () =
   assert.equal(page.nextSkip, 36);
   assert.equal(page.hasMore, true);
   await assert.rejects(resolveAppPage(rows, 0, async () => { throw new Base44Error('Unavailable', 503); }));
+});
+
+
+test('remove requires ownership and never calls the upstream app deletion API', async () => {
+  const calls = setup();
+  assert.equal((await request({ action: 'removeApp', appId: 'other_app' })).status, 404);
+  assert.equal((await request({ action: 'removeApp', appId: 'app_1' })).status, 200);
+  assert.equal((await request({ action: 'removeApp' })).status, 400);
+  assert.equal(calls.length, 0);
 });

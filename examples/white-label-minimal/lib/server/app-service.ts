@@ -14,6 +14,7 @@ export async function getAppClient(): Promise<AppClient> {
   return {
     ...client,
     authorize: apps.authorize,
+    removeApp: apps.remove,
     async createApp(prompt) {
       const app = await client.createApp(prompt);
       await apps.save(app);

@@ -3,13 +3,15 @@ import type { App } from "../lib/types";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
-import { Grid2X2, Loader2, LogOut, MessageSquare, Pencil, Plus, X, Sparkles } from "lucide-react";
+import { Grid2X2, Loader2, LogOut, MessageSquare, Pencil, Plus, X, Sparkles, Trash2 } from "lucide-react";
 import SunnyLogo from "@/components/SunnyLogo";
 import * as api from "../lib/chat/builder-api";
 import Builder from "./Builder";
 import AppPreview from "./AppPreview";
 
 export default function Workspace({ name }: { name: string }) {
+  const activeAppId = useRef<string | null>(null);
+  const [removing, setRemoving] = useState<string | null>(null);
   const assistantButton = useRef<HTMLButtonElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const [apps, setApps] = useState<App[]>([]);
@@ -34,11 +36,13 @@ export default function Workspace({ name }: { name: string }) {
       closeButton.current?.focus();
   }, [mobileEditorOpen]);
   const updateApp = useCallback((app: App) => {
+    activeAppId.current = app.id;
     setActiveName(app.name || "");
     setApps((current) => current.map((item) => (item.id === app.id ? app : item)));
     setEditor((current) => (current.app?.id === app.id ? { ...current, app } : current));
   }, []);
   function openEditor(app: App | null = null) {
+    activeAppId.current = app?.id || null;
     setActiveName(app?.name || "");
     setEditor((current) => ({ app, version: current.version + 1 }));
     setMobileEditorOpen(true);
@@ -63,6 +67,23 @@ export default function Workspace({ name }: { name: string }) {
   useEffect(() => {
     void load();
   }, [load]);
+  async function removeApp(app: App) {
+    if (removing) return;
+    setRemoving(app.id);
+    setError("");
+    try {
+      await api.removeApp(app.id);
+      setApps((current) => current.filter((item) => item.id !== app.id));
+      setNextSkip((current) => Math.max(0, current - 1));
+      if (activeAppId.current === app.id) openEditor();
+      if (previewApp?.id === app.id) setPreviewApp(null);
+      if (apps.length === 1 && hasMore) await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not remove the app.");
+    } finally {
+      setRemoving(null);
+    }
+  }
   async function connect() {
     setLoading(true);
     setError("");
@@ -107,9 +128,6 @@ export default function Workspace({ name }: { name: string }) {
               <h1>My apps</h1>
               <p>Apps you built. Open one to use it.</p>
             </div>
-            {apps.length > 0 && <button onClick={() => openEditor()} disabled={needsConnection}>
-              <Plus size={16} /> New app
-            </button>}
           </div>
           <div className="apps-content">
             {error && (
@@ -170,6 +188,15 @@ export default function Workspace({ name }: { name: string }) {
                       >
                         <Pencil size={15} />
                       </button>
+                      <button
+                        className="icon-button"
+                        aria-label={`Remove ${app.name || "Untitled"} from My apps`}
+                        title="Remove from My apps"
+                        disabled={!!removing || loading}
+                        onClick={() => void removeApp(app)}
+                      >
+                        {removing === app.id ? <Loader2 size={15} className="spin" /> : <Trash2 size={15} />}
+                      </button>
                     </div>
                   </article>
                 ))}
@@ -208,6 +235,10 @@ export default function Workspace({ name }: { name: string }) {
               <Sparkles size={14} />
               <strong>{activeName || "Build an app"}</strong>
             </div>
+            <div>
+              {apps.length > 0 && <button className="secondary" onClick={() => openEditor()} disabled={needsConnection}>
+                <Plus size={16} /> New app
+              </button>}
             <button
               ref={closeButton}
               className="icon-button mobile-close"
@@ -216,6 +247,7 @@ export default function Workspace({ name }: { name: string }) {
             >
               <X size={20} />
             </button>
+            </div>
           </header>
           <Builder
             key={`${editor.app?.id || "new"}:${editor.version}`}
@@ -223,6 +255,7 @@ export default function Workspace({ name }: { name: string }) {
             onUpdated={updateApp}
             onPreview={setPreviewApp}
             onCreated={(app) => {
+              activeAppId.current = app.id;
               setApps((current) => [app, ...current]);
             }}
           />

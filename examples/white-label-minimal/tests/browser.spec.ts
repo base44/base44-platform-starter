@@ -441,3 +441,34 @@ test('list thumbnails and ready widget open the same app preview', async ({ page
   await expect(page.frameLocator('dialog iframe').getByRole('heading', { name: 'Reading app' })).toBeVisible();
   await expect(page.locator('.delivery iframe')).toHaveCount(0);
 });
+
+test('remove persists, handles failures, and New app lives in the chat header', async ({ page }) => {
+  let apps = [{ id: 'reading', name: 'Reading list', status: { state: 'ready' } }];
+  let fail = true;
+  await page.route('**/api/base44', route => {
+    const { action } = route.request().postDataJSON();
+    if (action === 'removeApp') {
+      if (fail) return route.fulfill({ status: 500, json: { error: 'Removal failed' } });
+      apps = [];
+      return route.fulfill({ json: {} });
+    }
+    return route.fulfill({ json: action === 'listApps' ? { apps, hasMore: false, nextSkip: apps.length }
+      : action === 'getConversation' ? { messages: [] } : apps[0] });
+  });
+  await page.goto('/');
+  await expect(page.locator('.editor-heading').getByRole('button', { name: 'New app', exact: true })).toBeVisible();
+  await expect(page.locator('.page-heading button')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Edit Reading list', exact: true }).click();
+  await expect(page.getByLabel('What should change?')).toBeVisible();
+  const remove = page.getByRole('button', { name: 'Remove Reading list from My apps', exact: true });
+  await remove.click();
+  await expect(page.locator('.apps-content [role=alert]')).toContainText('Removal failed');
+  await expect(remove).toBeVisible();
+  fail = false;
+  await remove.click();
+  await expect(page.locator('.app-card')).toHaveCount(0);
+  await expect(page.getByLabel('What would you like to build?')).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Create an app', exact: true })).toBeVisible();
+  await expect(page.locator('.app-card')).toHaveCount(0);
+});

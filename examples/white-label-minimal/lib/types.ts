@@ -40,6 +40,7 @@ export interface AppClient {
   getPreviewUrl(appId: string): Promise<{ url: string }>;
   deployApp(appId: string): Promise<object>;
   getPublishedUrl(appId: string): Promise<{ url: string | null }>;
+  removeApp(appId: string): Promise<object>;
   authorize(appId: string): Promise<void>;
   listApps(skip: number): Promise<AppPage>;
 }
