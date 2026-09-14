@@ -3,11 +3,12 @@ import type { App } from "../lib/types";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
-import { Grid2X2, Loader2, LogOut, MessageSquare, Pencil, Plus, X, Sparkles, Trash2 } from "lucide-react";
+import { Grid2X2, Loader2, LogOut, MessageSquare, Plus, X, Sparkles } from "lucide-react";
 import SunnyLogo from "@/components/SunnyLogo";
 import * as api from "../lib/chat/builder-api";
 import Builder from "./Builder";
 import AppPreview from "./AppPreview";
+import AppWidget from "./AppWidget";
 
 export default function Workspace({ name }: { name: string }) {
   const activeAppId = useRef<string | null>(null);
@@ -20,8 +21,6 @@ export default function Workspace({ name }: { name: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [needsConnection, setNeedsConnection] = useState(false);
-  const [nextSkip, setNextSkip] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
   const [editor, setEditor] = useState<{ app: App | null; version: number }>({
     app: null,
     version: 0,
@@ -52,15 +51,21 @@ export default function Workspace({ name }: { name: string }) {
     setEditor((current) => ({ app, version: current.version + 1 }));
     setMobileEditorOpen(true);
   }
-  const load = useCallback((skip = 0) => {
-    setLoading(true);
-    return api
-      .listApps(skip)
+  const load = useCallback(() => {
+    return (async () => {
+      const allApps: App[] = [];
+      let skip = 0;
+      while (true) {
+        const page = await api.listApps(skip);
+        allApps.push(...page.apps);
+        if (!page.hasMore) return allApps;
+        if (page.nextSkip <= skip) throw new Error("Could not load the next page of apps.");
+        skip = page.nextSkip;
+      }
+    })()
       .then((result) => {
         setError("");
-        setApps((current) => (skip ? [...current, ...result.apps] : result.apps));
-        setHasMore(result.hasMore);
-        setNextSkip(result.nextSkip);
+        setApps(result);
         setNeedsConnection(false);
       })
       .catch((err) => {
@@ -79,10 +84,8 @@ export default function Workspace({ name }: { name: string }) {
     try {
       await api.removeApp(app.id);
       setApps((current) => current.filter((item) => item.id !== app.id));
-      setNextSkip((current) => Math.max(0, current - 1));
       if (activeAppId.current === app.id) openEditor();
       if (previewApp?.id === app.id) setPreviewApp(null);
-      if (apps.length === 1 && hasMore) await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not remove the app.");
     } finally {
@@ -165,53 +168,13 @@ export default function Workspace({ name }: { name: string }) {
             ) : (
               <div className="apps-grid">
                 {apps.map((app) => (
-                  <article className="app-card" key={app.id}>
-                    <button
-                      className="app-thumbnail"
-                      aria-label={`Open ${app.name || "Untitled"}`}
-                      onClick={() => setPreviewApp(app)}
-                    >
-                      {(app.preview_screenshot_url || app.logo_url) ? (
-                        <img src={app.preview_screenshot_url || app.logo_url} alt="" />
-                      ) : (
-                        <span>{(app.name || "?")[0].toUpperCase()}</span>
-                      )}
-                    </button>
-                    <div className="app-caption">
-                      <div>
-                        <h2>{app.name || "Untitled"}</h2>
-                        <p>{app.user_description || "Built by you"}</p>
-                      </div>
-                      <button
-                        className="icon-button"
-                        aria-label={`Edit ${app.name || "Untitled"}`}
-                        onClick={() => openEditor(app)}
-                      >
-                        <Pencil size={15} />
-                      </button>
-                      <button
-                        className="icon-button"
-                        aria-label={`Remove ${app.name || "Untitled"} from My apps`}
-                        title="Remove from My apps"
-                        disabled={!!removing || loading}
-                        onClick={() => void removeApp(app)}
-                      >
-                        {removing === app.id ? <Loader2 size={15} className="spin" /> : <Trash2 size={15} />}
-                      </button>
-                    </div>
-                  </article>
+                  <AppWidget key={app.id} app={app} removing={!!removing || loading}
+                    onEdit={() => openEditor(app)} onRemove={() => void removeApp(app)}
+                    onExpand={() => setPreviewApp(app)} />
                 ))}
               </div>
             )}
-            {hasMore && (
-              <button
-                className="secondary load-more"
-                disabled={loading}
-                onClick={() => load(nextSkip)}
-              >
-                {loading ? "Loading…" : "Load more"}
-              </button>
-            )}
+
           </div>
         </main>
         <button

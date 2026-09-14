@@ -59,12 +59,12 @@ test('input sends declared secrets; preview refreshes and clears, deploy require
   expect(f.counts().deployments).toBe(0);
   await page.getByRole('button', { name: 'Open preview', exact: true }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
-  await expect(page.locator('iframe')).toHaveAttribute('src', /fixture-/);
-  const initialPreview = await page.locator('iframe').getAttribute('src');
+  await expect(page.locator('dialog iframe')).toHaveAttribute('src', /fixture-/);
+  const initialPreview = await page.locator('dialog iframe').getAttribute('src');
   await page.getByRole('button', { name: 'Refresh preview' }).click();
-  await expect(page.locator('iframe')).not.toHaveAttribute('src', initialPreview!);
+  await expect(page.locator('dialog iframe')).not.toHaveAttribute('src', initialPreview!);
   await page.getByRole('button', { name: 'Close app preview' }).click();
-  await expect(page.locator('iframe')).toHaveCount(0);
+  await expect(page.locator('dialog iframe')).toHaveCount(0);
   expect(await page.evaluate(() => ({ local: Object.keys(localStorage), session: Object.keys(sessionStorage) }))).toEqual({ local: [], session: [] });
   await page.getByRole('button', { name: 'Deploy app', exact: true }).click();
   await expect(page.getByRole('link', { name: 'Open published app' })).toHaveAttribute('href', 'https://published.example/');
@@ -114,9 +114,9 @@ test('preview credential is removed before its expiry', async ({ page }) => {
   await page.clock.install();
   await fixture(page);
   await page.getByRole('button', { name: 'Open preview', exact: true }).click();
-  await expect(page.locator('iframe')).toHaveCount(1);
+  await expect(page.locator('dialog iframe')).toHaveCount(1);
   await page.clock.fastForward(241_000);
-  await expect(page.locator('iframe')).toHaveCount(0);
+  await expect(page.locator('dialog iframe')).toHaveCount(0);
 });
 
 test('real Next route requires authentication for local browser origins and rejects foreign origins', async ({ page, request }) => {
@@ -433,7 +433,7 @@ test('list thumbnails and ready widget open the same app preview', async ({ page
       : action === 'getPreviewUrl' ? { url: 'https://preview.example/app' } : app });
   });
   await page.goto('/');
-  await expect(page.locator('.app-card img')).toHaveAttribute('src', screenshot);
+  await expect(page.frameLocator('.app-widget iframe').getByRole('heading', { name: 'Reading app' })).toBeVisible();
   await page.getByRole('button', { name: 'Open Reading list', exact: true }).click();
   await expect(page.frameLocator('dialog iframe').getByRole('heading', { name: 'Reading app' })).toBeVisible();
   await page.getByRole('button', { name: 'Close app preview' }).click();
@@ -471,9 +471,33 @@ test('remove persists, handles failures, and New app lives in the chat header', 
   await expect(remove).toBeVisible();
   fail = false;
   await remove.click();
-  await expect(page.locator('.app-card')).toHaveCount(0);
+  await expect(page.locator('.app-widget')).toHaveCount(0);
   await expect(page.getByLabel('What would you like to build?')).toBeVisible();
   await page.reload();
   await expect(page.getByRole('button', { name: 'Create an app', exact: true })).toBeVisible();
-  await expect(page.locator('.app-card')).toHaveCount(0);
+  await expect(page.locator('.app-widget')).toHaveCount(0);
+});
+
+ test('all owned apps render as interactive widgets across pages and on mobile', async ({ page }) => {
+  const skips: number[] = [];
+  await page.route('https://widgets.example/**', route => route.fulfill({ contentType: 'text/html', body: `<button onclick="this.textContent='Clicked'">Try widget</button>` }));
+  await page.route('**/api/base44', route => {
+    const { action, skip, appId } = route.request().postDataJSON();
+    if (action === 'listApps') {
+      skips.push(skip);
+      return route.fulfill({ json: { apps: [{ id: skip ? 'second' : 'first', name: skip ? 'Second app' : 'First app' }], hasMore: !skip, nextSkip: skip + 12 } });
+    }
+    return route.fulfill({ json: { url: `https://widgets.example/${appId}` } });
+  });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto('/');
+  await expect(page.locator('.app-widget iframe')).toHaveCount(2);
+  expect([...new Set(skips)]).toEqual([0, 12]);
+  await expect(page.getByRole('button', { name: 'Load more' })).toHaveCount(0);
+  await page.frameLocator('iframe[title="First app widget preview"]').getByRole('button', { name: 'Try widget' }).click();
+  await expect(page.frameLocator('iframe[title="First app widget preview"]').getByRole('button', { name: 'Clicked' })).toBeVisible();
+  await page.screenshot({ path: 'test-results/widgets-desktop.png' });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: 'test-results/widgets-mobile.png' });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
 });
