@@ -1,7 +1,7 @@
 /** Server-only Base44 identity mapping and the sole owner of Base44Link persistence. */
 import { createHash } from "node:crypto";
 import type { Base44Link } from "@prisma/client";
-import { Base44PlatformClient, Base44PlatformError, type TokenKey, type TokenStore } from "../../platform-sdk/src";
+import { Base44PlatformClient, Base44PlatformError, type TokenKey, type TokenStore } from "@base44/sdk/platform/server";
 import { orgId, platformHost, svcKey } from "@/lib/base44Config";
 import { prisma } from "@/lib/prisma";
 

@@ -1,5 +1,5 @@
 /** Adapter from the starter's browser actions to the SDK's public contract. */
-import type { PlatformApp, PlatformUserClient } from "../../platform-sdk/src";
+import type { PlatformApp, PlatformUserClient } from "@base44/sdk/platform/server";
 import { appsFolderId, resolveAppSecrets } from "@/lib/base44Config";
 
 export const SDK_APP_ACTIONS = new Set(["listApps", "createApp", "getApp", "renameApp", "fileAppsInFolder", "getPreviewUrl", "deployApp"]);

@@ -3,7 +3,7 @@
 How your platform acts on Base44 *as each of your own users*. This is step 2 of the
 [README](../README.md) walkthrough, in full.
 
-SDK: [public contract](../platform-sdk/docs/api.md).
+SDK: [public contract](https://github.com/base44/javascript-sdk/blob/28beeea/platform-docs/api.md).
 
 Starter adapter: `src/lib/base44Link.ts` (the only module that reads or writes tokens) and
 `src/app/api/base44/link/route.ts` (the three-action route in front of it).
@@ -183,7 +183,7 @@ again; SDK token acquisition never auto-provisions.
 
 The SDK owns acquisition, renewal and revocation. `src/lib/base44Link.ts` supplies a
 persistent adapter over the existing rows, preserving principal IDs and webhook lookup.
-See [the complete SDK storage contract](../platform-sdk/docs/tokens.md).
+See [the complete SDK storage contract](https://github.com/base44/javascript-sdk/blob/28beeea/platform-docs/tokens.md).
 
 ---
 

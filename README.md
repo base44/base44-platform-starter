@@ -197,9 +197,16 @@ browser → POST /api/base44/platform {action, …params} → your server → Ba
 ```
 
 `src/app/api/base44/platform/route.ts` is that proxy. It dispatches provisioning and non-chat
-app operations through the [Platform SDK](platform-sdk/README.md), imported relatively from
-`platform-sdk/src`. Its [reference](platform-sdk/docs/api.md) documents every input, response,
+app operations through the [Platform SDK](https://github.com/base44/javascript-sdk/blob/28beeea/platform-docs/README.md), imported from
+`@base44/sdk/platform/server`. Its [reference](https://github.com/base44/javascript-sdk/blob/28beeea/platform-docs/api.md) documents every input, response,
 error and token-storage shape. Chat remains on its existing HTTP implementation.
+
+The dependency is currently pinned to `@base44-preview/sdk@0.8.48-pr.283.2de4c8a`
+using an npm alias named `@base44/sdk`. After the platform entry point is released,
+replace that alias with the stable SDK version; the imports stay the same. The
+SDK's own tests and reference documentation live in the JavaScript SDK repository.
+Run `npm run platform-sdk:test` here to verify Sunny's storage and app adapters
+against the installed package without calling live services.
 
 The caller still names an allowlisted action, never a URL. Why an allow-list and not a passthrough: Base44 enforces
 OAuth scopes in its MCP tool layer, *not* on this REST surface, so `apps:read apps:write` does not

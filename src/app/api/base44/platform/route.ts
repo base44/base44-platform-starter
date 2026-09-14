@@ -31,7 +31,7 @@ import {
 } from "@/lib/base44Config";
 import { type Base44Link, getLink, remint, getPlatformClient, principalId, clearLinkCredentials } from "@/lib/base44Link";
 
-import { Base44PlatformError } from "../../../../../platform-sdk/src";
+import { Base44PlatformError } from "@base44/sdk/platform/server";
 import { SDK_APP_ACTIONS, runAppOperation } from "@/lib/base44AppOperations";
 
 type Params = Record<string, unknown>;
