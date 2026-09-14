@@ -29,7 +29,8 @@ import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { LogOut, Menu as MenuIcon, Sparkles, X } from "lucide-react";
 
-import AppBuilderSidebar from "@/components/AppBuilderSidebar";
+import dynamic from "next/dynamic";
+
 import SunnyLogo from "@/components/SunnyLogo";
 import {
   DropdownMenu,
@@ -39,6 +40,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { createPageUrl } from "@/utils";
+
+const AppBuilderSidebar = dynamic(() => import("@/components/AppBuilderSidebar"));
 
 const AVATAR_GRADIENT = "linear-gradient(135deg,#0E2E56 0%,#5B87DA 100%)";
 
@@ -124,6 +127,8 @@ export default function AppShell({ children }) {
   // Always false on the server and on the first client render: reading storage
   // during render would make the two disagree and hydration would tear.
   const [builderOpen, setBuilderOpen] = useState(false);
+  // Keep it mounted after first opening so closing preserves an active build.
+  const [builderLoaded, setBuilderLoaded] = useState(false);
   const [builderInitialMode, setBuilderInitialMode] = useState(null);
 
   // `builderInitialMode` sticks around after the open that set it, so clear it
@@ -143,10 +148,14 @@ export default function AppShell({ children }) {
   const [builderRequest, setBuilderRequest] = useState(0);
 
   useEffect(() => {
-    if (readBuilderOpen()) setBuilderOpen(true);
+    if (readBuilderOpen()) {
+      setBuilderLoaded(true);
+      setBuilderOpen(true);
+    }
   }, []);
 
   const setBuilderOpenPersisted = (next) => {
+    if (next) setBuilderLoaded(true);
     setBuilderOpen(next);
     try {
       window.localStorage.setItem(BUILDER_OPEN_KEY, next ? "1" : "0");
@@ -265,14 +274,16 @@ export default function AppShell({ children }) {
 
       <main className="flex-1 overflow-y-auto overflow-x-hidden">{children}</main>
 
-      <AppBuilderSidebar
-        open={builderOpen}
-        onClose={() => setBuilderOpenPersisted(false)}
-        initialMode={builderInitialMode}
-        initialAppId={builderInitialAppId}
-        origin={builderOrigin}
-        requestId={builderRequest}
-      />
+      {builderLoaded && (
+        <AppBuilderSidebar
+          open={builderOpen}
+          onClose={() => setBuilderOpenPersisted(false)}
+          initialMode={builderInitialMode}
+          initialAppId={builderInitialAppId}
+          origin={builderOrigin}
+          requestId={builderRequest}
+        />
+      )}
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { Skeleton } from "@/components/ui/skeleton";
 /**
  * Renders pinned Base44 apps as resizable dashboard widgets.
  *
@@ -360,6 +361,7 @@ function WidgetFrame({
 }
 
 export default function DashboardWidgets({
+  isLoading = false,
   widgets,
   onRemove,
   onAddClick,
@@ -426,7 +428,13 @@ export default function DashboardWidgets({
           + Add widget
         </button>
       </div>
-      {widgets.length === 0 ? (
+      {isLoading ? (
+        <div role="status" aria-label="Loading widgets" className="grid sm:grid-cols-2 gap-4">
+          <span className="sr-only">Loading widgets…</span>
+          <Skeleton aria-hidden="true" className="h-48 rounded-lg" />
+          <Skeleton aria-hidden="true" className="h-48 rounded-lg" />
+        </div>
+      ) : widgets.length === 0 ? (
         <button
           onClick={onAddClick}
           className="w-full border border-dashed border-border rounded-lg py-8 text-center text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"

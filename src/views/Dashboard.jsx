@@ -29,6 +29,7 @@ export default function Dashboard() {
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [widgets, setWidgets] = useState([]);
+  const [widgetsLoading, setWidgetsLoading] = useState(true);
   const [showAddWidget, setShowAddWidget] = useState(false);
   const [showCreateBoard, setShowCreateBoard] = useState(false);
   const [filter, setFilter] = useState(null);
@@ -42,6 +43,11 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadDashboardData();
+    // Profile and widgets do not gate the core work overview.
+    me().then(setUser).catch((error) => console.error("Error loading profile:", error));
+    refetchWidgets()
+      .catch((error) => console.error("Error loading widgets:", error))
+      .finally(() => setWidgetsLoading(false));
     const handler = () => refetchWidgets();
     window.addEventListener("widgets-updated", handler);
     return () => window.removeEventListener("widgets-updated", handler);
@@ -50,16 +56,12 @@ export default function Dashboard() {
   const loadDashboardData = async () => {
     setIsLoading(true);
     try {
-      const [boardsData, itemsData, userData, widgetsData] = await Promise.all([
+      const [boardsData, itemsData] = await Promise.all([
         Board.list("-updated_date", COUNT_LIMIT),
         Item.list("-updated_date", COUNT_LIMIT),
-        me(),
-        Widget.list("order_index", 20),
       ]);
       setBoards(boardsData);
       setItems(itemsData);
-      setUser(userData);
-      setWidgets(widgetsData);
     } catch (error) {
       console.error("Error loading dashboard data:", error);
     }
@@ -218,6 +220,7 @@ export default function Dashboard() {
         </div>
 
         <DashboardWidgets
+          isLoading={widgetsLoading}
           widgets={widgets}
           onRemove={handleWidgetRemove}
           onAddClick={() => setShowAddWidget(true)}

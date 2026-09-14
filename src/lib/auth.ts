@@ -12,6 +12,8 @@
  * per-user Base44 identity is minted separately, in src/lib/base44Link.ts.
  */
 
+import { cache } from "react";
+
 import NextAuth, { type NextAuthConfig } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 
@@ -176,7 +178,8 @@ export type SessionUser = RlsActor & {
  * The one way server code learns who the caller is. Returns null when
  * unauthenticated; pass the result straight to `scopedWhere()`/`ownerFields()`.
  */
-export async function getSessionUser(): Promise<SessionUser | null> {
+// Deduplicate layout/page authentication within one server render only.
+export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   const session = await auth();
   const email = session?.user?.email?.toLowerCase();
   if (!email) return null;
@@ -188,7 +191,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     name: session!.user!.name ?? null,
     image: session!.user!.image ?? null,
   };
-}
+});
 
 /** `getSessionUser()` for paths that cannot proceed anonymously. */
 export async function requireSessionUser(): Promise<SessionUser> {
