@@ -27,11 +27,33 @@
  *      active key. During a key rotation Base44 sends two, and a receiver that
  *      parsed the header by equality rather than by splitting breaks on the
  *      first rotation.
+ *
+ * ## Where the public keys come from
+ *
+ * Two modes, and `BASE44_WEBHOOK_PUBLIC_KEYS` picks between them.
+ *
+ * **Pinned** (the variable is set): the keys are copied once out of the
+ * published set and verification touches the network not at all. That buys more
+ * than it sounds like. The fetch otherwise sits on the delivery request path
+ * inside Base44's 15s budget, and a receiver that cannot reach the platform for
+ * a minute can verify nothing for that minute — which it then answers non-2xx,
+ * which puts it on the retry ladder. It also drops the requirement that the
+ * receiver can reach Base44 at all, which is the difference between a deployment
+ * that can verify and one that cannot.
+ *
+ * **Fetched** (unset): the published set, cached for five minutes.
+ *
+ * What pinning costs is automatic rotation, and that cost is real. `v1a` carries
+ * no key id, so Base44 rotates by publishing both keys and signing with both for
+ * an overlap window — `valid_until` on the retiring one. A fetching receiver
+ * picks that up by itself; a pinned one needs the new key deployed inside the
+ * window or it stops verifying when the old key retires. The variable takes a
+ * list so both can be pinned while a rotation is in flight.
  */
 
 import crypto from "node:crypto";
 
-import { orgId, platformHost } from "@/lib/base44Config";
+import { orgId, platformHost, webhookPublicKeys } from "@/lib/base44Config";
 
 export const MESSAGE_ID_HEADER = "webhook-id";
 export const TIMESTAMP_HEADER = "webhook-timestamp";
@@ -53,6 +75,9 @@ const TOLERANCE_SECONDS = 300;
  * just this prefix followed by the key.
  */
 const SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
+
+/** Ed25519 public keys are exactly this long; a shorter one is a bad paste. */
+const ED25519_KEY_BYTES = 32;
 
 /** Public key sets are small and change only on rotation. */
 const KEY_SET_TTL_MS = 5 * 60 * 1000;
@@ -85,7 +110,44 @@ function keySetUrl(): string {
  * cache: `v1a` carries no key id, so the only way to tell "rotated" from
  * "forged" is to refetch once on a mismatch, which is the documented recovery.
  */
-async function publishedKeys(force = false): Promise<crypto.KeyObject[]> {
+function toKeyObject(wire: string): crypto.KeyObject {
+  if (!wire.startsWith(PUBLIC_KEY_PREFIX)) {
+    throw new Error(`Base44 public key must start with ${PUBLIC_KEY_PREFIX}: got "${wire.slice(0, 12)}…"`);
+  }
+  // Standard base64, not base64url — the wire format contains + and /.
+  const raw = Buffer.from(wire.slice(PUBLIC_KEY_PREFIX.length), "base64");
+  if (raw.length !== ED25519_KEY_BYTES) {
+    // Caught here rather than left to crypto's DER error, because the usual
+    // cause is a key truncated by a copy-paste and the DER message says nothing
+    // about that. A key that is silently wrong verifies nothing, for ever.
+    throw new Error(
+      `Base44 public key decoded to ${raw.length} bytes, expected ${ED25519_KEY_BYTES}`,
+    );
+  }
+  return crypto.createPublicKey({
+    key: Buffer.concat([SPKI_PREFIX, raw]),
+    format: "der",
+    type: "spki",
+  });
+}
+
+/** Whether this deployment verifies against pinned keys instead of the key set. */
+function isPinned(): boolean {
+  return webhookPublicKeys().length > 0;
+}
+
+/**
+ * The keys to verify against: pinned if configured, else the published set.
+ *
+ * `force` skips the cache. `v1a` carries no key id, so the only way to tell
+ * "rotated" from "forged" is to refetch once on a mismatch, which is the
+ * documented recovery — and why it is meaningless for a pinned set, where there
+ * is no newer answer to get.
+ */
+async function verificationKeys(force = false): Promise<crypto.KeyObject[]> {
+  const pinned = webhookPublicKeys();
+  if (pinned.length > 0) return pinned.map(toKeyObject);
+
   if (!force && cache && Date.now() - cache.at < KEY_SET_TTL_MS) return cache.keys;
 
   const response = await fetch(keySetUrl(), { cache: "no-store" });
@@ -99,17 +161,7 @@ async function publishedKeys(force = false): Promise<crypto.KeyObject[]> {
   const body = (await response.json()) as { keys?: PublishedKey[] };
   const keys = (body.keys ?? [])
     .filter((key) => key.algorithm === "ed25519_v1" && key.public_key.startsWith(PUBLIC_KEY_PREFIX))
-    .map((key) =>
-      crypto.createPublicKey({
-        key: Buffer.concat([
-          SPKI_PREFIX,
-          // Standard base64, not base64url — the wire format contains + and /.
-          Buffer.from(key.public_key.slice(PUBLIC_KEY_PREFIX.length), "base64"),
-        ]),
-        format: "der",
-        type: "spki",
-      }),
-    );
+    .map((key) => toKeyObject(key.public_key));
 
   cache = { keys, at: Date.now() };
   return keys;
@@ -166,12 +218,16 @@ export async function verifyWebhook(
     Buffer.from(rawBody, "utf8"),
   ]);
 
-  if (verifiesAgainstAny(payload, entries, await publishedKeys())) {
+  if (verifiesAgainstAny(payload, entries, await verificationKeys())) {
     return { ok: true, messageId };
   }
+  // A pinned set has nothing to refetch — the answer cannot have changed since
+  // the last deploy. A mismatch here is a forgery or a rotation nobody applied.
+  if (isPinned()) return { ok: false, reason: "signature_mismatch" };
+
   // Refetch once: a key rotated since the cache was filled looks exactly like a
   // bad signature until the new key is in hand.
-  const rotated = await publishedKeys(true);
+  const rotated = await verificationKeys(true);
   if (rotated.length === 0) return { ok: false, reason: "no_published_keys" };
   if (verifiesAgainstAny(payload, entries, rotated)) return { ok: true, messageId };
 
