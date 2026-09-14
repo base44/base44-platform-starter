@@ -78,6 +78,29 @@ export function getLink(email: string): Promise<Base44Link | null> {
   return prisma.base44Link.findUnique({ where: { appUserEmail: norm(email) } });
 }
 
+/**
+ * Which shell user a Base44 *service principal* belongs to, or null if none.
+ *
+ * The reverse of the mapping everything else here uses, and it exists for the
+ * webhook receiver: an inbound app lifecycle event identifies its owner by
+ * `owner_service_external_id`, which is exactly this column, so an event joins
+ * back to a Sunny user without a lookup against Base44. Null is an ordinary
+ * answer — an app built by another tool in the same workspace has a principal we
+ * never provisioned.
+ *
+ * Returns the email only, not the row: a caller reconciling webhook state has no
+ * business holding this user's tokens.
+ */
+export async function emailForServiceExternalId(
+  serviceExternalId: string,
+): Promise<string | null> {
+  const link = await prisma.base44Link.findUnique({
+    where: { serviceExternalId },
+    select: { appUserEmail: true },
+  });
+  return link?.appUserEmail ?? null;
+}
+
 export function linkStatus(link: Base44Link | null): LinkStatus {
   return {
     linked: link?.status === "linked" && Boolean(link.accessToken),

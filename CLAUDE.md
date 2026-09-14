@@ -22,7 +22,7 @@ to demonstrate.
 Next.js App Router · TypeScript · Tailwind 4 · Postgres + Prisma · NextAuth (Google only) · Netlify
 + Neon.
 
-## The four boundaries
+## The five boundaries
 
 | Boundary | Code |
 | --- | --- |
@@ -30,6 +30,7 @@ Next.js App Router · TypeScript · Tailwind 4 · Postgres + Prisma · NextAuth 
 | 2. One Base44 identity per user | `src/lib/base44Link.ts`, `src/app/api/base44/link/route.ts` |
 | 3. A server-side allow-list in front of Base44's REST API | `src/app/api/base44/platform/route.ts` |
 | 4. A public data API the built apps call | `src/app/api/sunny/route.ts`, `src/lib/builderInstructions.ts` |
+| 5. Signed inbound webhooks from Base44 | `src/app/api/base44/webhooks/route.ts`, `src/lib/base44WebhookSignature.ts`, `src/lib/base44WebhookEvents.ts` |
 
 ## Conventions
 
@@ -42,7 +43,13 @@ Next.js App Router · TypeScript · Tailwind 4 · Postgres + Prisma · NextAuth 
   correctness risk in the codebase, and ESLint bans by-id `update`/`delete` on those models to keep
   it that way.
 - **`src/lib/base44Link.ts` is the only module that touches `Base44Link`**, and it never returns a
-  token to a caller. Vended tokens stay server-side.
+  token to a caller. Vended tokens stay server-side. The webhook receiver joins an event to a user
+  through `emailForServiceExternalId()` there, which returns an email and nothing else.
+- **An inbound webhook is untrusted until its signature verifies.** `src/lib/base44WebhookSignature.ts`
+  is the boundary: the URL is public, so the event type, the app id and above all
+  `owner_service_external_id` — which decides whose rows the projection touches — are all
+  attacker-controlled until it returns ok. Verify the **raw** body text, never a re-serialized one.
+  `app.deleted.v1` is a *trash* signal, restorable for 30 days; never purge on it.
 - **Server-only secrets** (`BASE44_SVC_KEY`, workspace id, platform host) live in env and are never
   shipped to the client, and never caller-supplied — a request-controlled host would be an SSRF and
   a request-controlled workspace id would defeat the tenancy boundary.
@@ -70,6 +77,7 @@ npm run auth:smoke       # boundary 1: session → actor
 npm run entities:smoke   # boundary 1: whitelisting, scoping, wire shape
 npm run base44:smoke     # boundaries 2–3: token containment, allow-list, session keying
 npm run sunny:smoke     # boundary 4: the public contract, action by action
+npm run webhook:smoke    # boundary 5: the inbound signature, incl. the negative controls
 ```
 
 The smoke suites need `npm run dev` running, write throwaway rows to `DATABASE_URL` and clean up
@@ -81,4 +89,5 @@ after themselves. Don't point them at a database you care about.
 - `docs/base44-platform-api.md` — the platform REST endpoints
 - `docs/base44-built-apps.md` — builder instructions, skills, and the callback API
 - `docs/sunny-platform-skill.md` — the skill text a built app reads, as a worked example
+- `docs/base44-webhooks.md` — inbound events: registration, signature, delivery semantics
 - `docs/deploy.md` — Netlify + Neon

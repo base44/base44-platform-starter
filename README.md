@@ -41,7 +41,7 @@ Live example: <https://sunny44.com>
             │      POST /api/sunny                with a shared token, over CORS
 ```
 
-Four boundaries, four steps:
+Five boundaries, five steps — four calling out to Base44, one where it calls back in:
 
 | Step | Boundary | Code |
 | --- | --- | --- |
@@ -49,6 +49,7 @@ Four boundaries, four steps:
 | [2](#step-2--give-each-user-their-own-base44-identity) | One Base44 identity per user, so their apps are theirs. | `src/lib/base44Link.ts`, `src/app/api/base44/link/route.ts` |
 | [3](#step-3--call-base44-from-your-server-behind-an-allow-list) | A server-side proxy in front of Base44's REST API. | `src/app/api/base44/platform/route.ts` |
 | [4](#step-4--let-the-built-apps-talk-to-your-data) | A public API the built apps call, plus instructions teaching them how. | `src/app/api/sunny/route.ts`, `src/lib/builderInstructions.ts` |
+| [5](#step-5--let-base44-tell-you-what-happened) | Signed inbound webhooks, so you learn about deletions at all. | `src/app/api/base44/webhooks/route.ts`, `src/lib/base44WebhookSignature.ts` |
 
 ---
 
@@ -292,6 +293,43 @@ Treat the contract as frozen once apps are built against it: they're deployed co
 control.
 
 → Instructions, skills, the callback contract and CORS: **[docs/base44-built-apps.md](docs/base44-built-apps.md)**
+
+---
+
+## Step 5 — Let Base44 tell you what happened
+
+Steps 1–4 are all your shell calling out. This is the one direction where Base44 calls in, and the
+reason it has to exist is deletion.
+
+`listApps` is a poll. It costs a round trip per page load, it lags reality, and **it cannot report a
+deletion at all** — a trashed app simply stops appearing, which is indistinguishable from a failed
+call. There is no version of polling that tells you *an app was deleted*; there is only a list that
+used to have it. Webhooks carry the transition itself: `app.created`, `app.published`,
+`app.unpublished`, `app.deleted`, `app.restored`.
+
+Every payload carries `owner_service_external_id` — the same value you stored on
+`Base44Link.serviceExternalId` in step 2 — so an event joins straight back to one of your users with
+one indexed lookup and no call to Base44. That join is the reason the field is in the payload.
+
+Two things decide whether an integration here is correct:
+
+**The signature is the whole security boundary.** The URL is public, so nothing in a request is
+trustworthy until it verifies — including the owner field that decides whose rows get touched. An
+unverified body is an attacker naming a victim. Base44 signs Ed25519 (`v1a`) over
+`webhook-id + "." + webhook-timestamp + "." + raw body` and publishes the public key; you only ever
+hold public keys. Read the body once as text and verify *that* — `JSON.parse` then re-serialize
+changes the bytes and breaks every signature.
+
+**`app.deleted` is trash, not erasure.** Restorable for 30 days self-serve, longer through support. A
+receiver that purges on it is wrong for every app that comes back, which is what `app.restored` is
+for. The projection here marks the app `trashed` and keeps the row.
+
+```bash
+npm run webhook:smoke   # the signature, case by case — no server, no database
+```
+
+→ Registration, delivery semantics, the retry ladder, and what this receiver deliberately leaves
+out: **[docs/base44-webhooks.md](docs/base44-webhooks.md)**
 
 ---
 
