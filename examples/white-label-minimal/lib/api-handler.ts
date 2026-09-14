@@ -32,7 +32,6 @@ export function createHandler(resolveClient: () => Promise<AppClient>) {
       const client = await resolveClient();
       if (request.headers.get("content-type")?.split(";")[0].trim() !== "application/json")
         bad("Send application/json.", 415);
-      // Read a bounded stream instead of trusting Content-Length.
       const reader = request.body?.getReader();
       if (!reader) return bad("A JSON body is required.");
       const chunks: Uint8Array[] = [];
@@ -71,37 +70,48 @@ export function createHandler(resolveClient: () => Promise<AppClient>) {
         if (!/^[A-Za-z0-9_-]+$/.test(v)) bad(`Invalid ${key}.`);
         return v;
       };
+      const skip = () => {
+        const value = p.skip ?? 0;
+        if (
+          typeof value !== "number" ||
+          !Number.isSafeInteger(value) ||
+          value < 0 ||
+          value > 100_000
+        )
+          return bad("Invalid skip.");
+        return value;
+      };
+      function execute<Args extends unknown[], Result>(
+        operation: (...args: Args) => Promise<Result>,
+        ...args: Args
+      ) {
+        dispatched = true;
+        return operation(...args);
+      }
       let result;
       if (p.appId !== undefined) await client.authorize(id("appId"));
-      dispatched = true;
       switch (p.action) {
         case "listApps": {
           fields("skip");
-          const skip = p.skip ?? 0;
-          if (typeof skip !== "number" || !Number.isSafeInteger(skip) || skip < 0 || skip > 100_000)
-            bad("Invalid skip.");
-          result = await client.listApps(skip as number);
+          result = await execute(client.listApps, skip());
           break;
         }
         case "createApp":
           fields("prompt");
-          result = await client.createApp(string("prompt"));
+          result = await execute(client.createApp, string("prompt"));
           break;
         case "getApp":
           fields("appId");
-          result = await client.getApp(id("appId"));
+          result = await execute(client.getApp, id("appId"));
           break;
         case "getConversation": {
           fields("appId", "skip");
-          const skip = p.skip ?? 0;
-          if (typeof skip !== "number" || !Number.isSafeInteger(skip) || skip < 0 || skip > 100_000)
-            bad("Invalid skip.");
-          result = await client.getConversation(id("appId"), skip as number);
+          result = await execute(client.getConversation, id("appId"), skip());
           break;
         }
         case "sendMessage":
           fields("appId", "content");
-          result = await client.sendMessage(id("appId"), string("content"));
+          result = await execute(client.sendMessage, id("appId"), string("content"));
           break;
         case "submitToolCallInput": {
           fields("appId", "toolCallId", "messageId", "approve", "extraUserInput");
@@ -112,7 +122,7 @@ export function createHandler(resolveClient: () => Promise<AppClient>) {
             Array.isArray(p.extraUserInput)
           )
             bad("Invalid tool-call decision or input.");
-          result = await client.submitToolCallInput({
+          result = await execute(client.submitToolCallInput, {
             appId: id("appId"),
             toolCallId: id("toolCallId"),
             messageId: id("messageId"),
@@ -123,15 +133,15 @@ export function createHandler(resolveClient: () => Promise<AppClient>) {
         }
         case "getPreviewUrl":
           fields("appId");
-          result = await client.getPreviewUrl(id("appId"));
+          result = await execute(client.getPreviewUrl, id("appId"));
           break;
         case "deployApp":
           fields("appId");
-          result = await client.deployApp(id("appId"));
+          result = await execute(client.deployApp, id("appId"));
           break;
         case "getPublishedUrl":
           fields("appId");
-          result = await client.getPublishedUrl(id("appId"));
+          result = await execute(client.getPublishedUrl, id("appId"));
           break;
         default:
           bad("Unsupported action.");
@@ -141,9 +151,7 @@ export function createHandler(resolveClient: () => Promise<AppClient>) {
       const safe =
         error instanceof Base44Error
           ? error
-          : new Base44Error(
-              "The local request failed. Check configuration and refresh app state.",
-            );
+          : new Base44Error("The local request failed. Check configuration and refresh app state.");
       return Response.json(
         { error: safe.message, outcome: dispatched ? "unknown" : "not_started" },
         { status: safe.status, headers },

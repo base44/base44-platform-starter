@@ -6,4 +6,3 @@ export class Base44Error extends Error {
     super(message);
   }
 }
-

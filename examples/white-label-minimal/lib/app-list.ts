@@ -1,5 +1,5 @@
-import type { App } from './types';
-import { Base44Error } from './base44-error';
+import type { App } from "./types";
+import { Base44Error } from "./base44-error";
 
 export async function resolveAppPage(
   rows: { appId: string }[],
@@ -7,12 +7,19 @@ export async function resolveAppPage(
   getApp: (id: string) => Promise<App>,
 ) {
   const page = rows.slice(0, 12);
-  const results = await Promise.all(page.map(async row => {
-    try { return await getApp(row.appId); }
-    catch (error) {
-      if (error instanceof Base44Error && error.status === 404) return null;
-      throw error;
-    }
-  }));
-  return { apps: results.filter((app): app is App => app !== null), hasMore: rows.length > 12, nextSkip: skip + page.length };
+  const results = await Promise.all(
+    page.map(async (row) => {
+      try {
+        return await getApp(row.appId);
+      } catch (error) {
+        if (error instanceof Base44Error && error.status === 404) return null;
+        throw error;
+      }
+    }),
+  );
+  return {
+    apps: results.filter((app): app is App => app !== null),
+    hasMore: rows.length > 12,
+    nextSkip: skip + page.length,
+  };
 }

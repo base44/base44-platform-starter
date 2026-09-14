@@ -25,7 +25,9 @@ export default function Builder({
   const lock = useRef(false);
   const previewVersion = useRef(0);
   const { app, messages, error: pollingError, refresh, resume } = useBuildPolling(appId);
-  useEffect(() => { if (app) onUpdated?.(app); }, [app, onUpdated]);
+  useEffect(() => {
+    if (app) onUpdated?.(app);
+  }, [app, onUpdated]);
   const waiting = messages.some((m) =>
     m.tool_calls?.some((t) => t.status === "waiting_for_user_input"),
   );
@@ -33,13 +35,21 @@ export default function Builder({
 
   useEffect(() => {
     if (!preview) return;
-    // Tokens last five minutes. Drop the credential before expiry, not into storage.
+    // Preview tokens expire after five minutes.
     const timer = setTimeout(() => setPreview(null), 240_000);
     return () => clearTimeout(timer);
   }, [preview]);
 
   async function send(prompt: string) {
-    if (lock.current || !prompt.trim() || waiting || processing || pollingError || creationUncertain) return false;
+    if (
+      lock.current ||
+      !prompt.trim() ||
+      waiting ||
+      processing ||
+      pollingError ||
+      creationUncertain
+    )
+      return false;
     lock.current = true;
     setBusy(appId ? "Sending prompt…" : "Creating app…");
     setError("");
@@ -146,13 +156,12 @@ export default function Builder({
         </aside>
       )}
       {!appId && creationUncertain && (
-        <details open={creationUncertain}>
+        <details open>
           <summary>Resume an existing app</summary>
-          {creationUncertain && (
-            <p>
-              Creation may have succeeded. Check your Base44 workspace before creating another app.
-            </p>
-          )}
+          <p>
+            Creation may have succeeded. Check your Base44 workspace before creating another app.
+            Only apps already saved to your account can be resumed here.
+          </p>
           <label>
             Existing app ID
             <input value={resumeId} onChange={(e) => setResumeId(e.target.value)} />
@@ -168,22 +177,20 @@ export default function Builder({
             >
               Resume this app
             </button>
-            {creationUncertain && (
-              <button
-                className="secondary"
-                onClick={() => {
-                  setCreationUncertain(false);
-                  setError("");
-                }}
-              >
-                I checked — allow a new creation
-              </button>
-            )}
+            <button
+              className="secondary"
+              onClick={() => {
+                setCreationUncertain(false);
+                setError("");
+              }}
+            >
+              I checked — allow a new creation
+            </button>
           </div>
         </details>
       )}
       <BuilderChat
-        key={appId || 'new'}
+        key={appId || "new"}
         appId={appId}
         messages={messages}
         busy={!!busy}
@@ -194,62 +201,76 @@ export default function Builder({
         onSend={send}
         onAnswer={answer}
       >
-      {appId && (
-        <section className="delivery" aria-label="Preview and publish">
-          <div className="ready-heading"><strong>{app?.name || "Your app"}</strong></div>
-          <div className="actions">
-            <button className="secondary" aria-label={preview ? "Refresh preview" : "Open preview"} disabled={!!busy} onClick={() => void openPreview()}>
-              <Eye size={14} /> {preview ? "Refresh preview" : "Preview"}
-            </button>
-            <button
-              disabled={!!busy || waiting || !!pollingError || app?.status?.state !== "ready"}
-              aria-label="Deploy app" onClick={() => void deploy()}
-            >
-              <Upload size={14} /> Publish
-            </button>
-            <button
-              className="secondary"
-              disabled={!!busy}
-              onClick={() =>
-                void publishedLink().catch(() => setError("Could not read the published URL."))
-              }
-            >
-              <ExternalLink size={13} /> Check published URL
-            </button>
-            {published && (
-              <a href={published} target="_blank" rel="noreferrer">
-                Open published app ↗
-              </a>
-            )}
-          </div>
-
-          {preview && (
-            <>
+        {appId && (
+          <section className="delivery" aria-label="Preview and publish">
+            <div className="ready-heading">
+              <strong>{app?.name || "Your app"}</strong>
+            </div>
+            <div className="actions">
               <button
                 className="secondary"
-                onClick={() => {
-                  previewVersion.current++;
-                  setPreview(null);
-                }}
+                aria-label={preview ? "Refresh preview" : "Open preview"}
+                disabled={!!busy}
+                onClick={() => void openPreview()}
               >
-                Close preview
+                <Eye size={14} /> {preview ? "Refresh preview" : "Preview"}
               </button>
-              <iframe
-                title="Generated app preview"
-                src={preview}
-                referrerPolicy="no-referrer"
-                sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-              />
-            </>
-          )}
-        </section>
-      )}
-        {(busy || waiting || processing || pollingError) && <div className="build-progress" role="status">
-          {(busy || processing) && <Loader2 size={12} className="spin" />}
-          {busy || (pollingError ? "Connection paused" : waiting ? "Waiting for your answer" : "Building…")}
-        </div>}
-      </BuilderChat>
+              <button
+                disabled={!!busy || waiting || !!pollingError || app?.status?.state !== "ready"}
+                aria-label="Deploy app"
+                onClick={() => void deploy()}
+              >
+                <Upload size={14} /> Publish
+              </button>
+              <button
+                className="secondary"
+                disabled={!!busy}
+                onClick={() =>
+                  void publishedLink().catch(() => setError("Could not read the published URL."))
+                }
+              >
+                <ExternalLink size={13} /> Check published URL
+              </button>
+              {published && (
+                <a href={published} target="_blank" rel="noreferrer">
+                  Open published app ↗
+                </a>
+              )}
+            </div>
 
+            {preview && (
+              <>
+                <button
+                  className="secondary"
+                  onClick={() => {
+                    previewVersion.current++;
+                    setPreview(null);
+                  }}
+                >
+                  Close preview
+                </button>
+                <iframe
+                  title="Generated app preview"
+                  src={preview}
+                  referrerPolicy="no-referrer"
+                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+                />
+              </>
+            )}
+          </section>
+        )}
+        {(busy || waiting || processing || pollingError) && (
+          <div className="build-progress" role="status">
+            {(busy || processing) && <Loader2 size={12} className="spin" />}
+            {busy ||
+              (pollingError
+                ? "Connection paused"
+                : waiting
+                  ? "Waiting for your answer"
+                  : "Building…")}
+          </div>
+        )}
+      </BuilderChat>
     </div>
   );
 }

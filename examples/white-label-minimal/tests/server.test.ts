@@ -31,14 +31,16 @@ const request = (body: unknown, headers = {}) => POST(new Request('http://127.0.
 
 test('invalid actions, paths, fields, pagination and decisions never reach Base44', async () => {
   const calls = setup();
-  for (const body of [null, [], { action: 'proxy' }, { action: 'getApp', appId: '../other' },
+  for (const body of [null, [], { action: 'proxy' }, { action: 'createApp', prompt: '' }, { action: 'getApp', appId: '../other' },
     { action: 'getApp', appId: 'app_1', host: 'https://evil.example' },
     { action: 'getApp', appId: 'app_1', workspaceId: 'other' },
     { action: 'getApp', appId: 'app_1', api_key: 'other' },
     { action: 'getConversation', appId: 'app_1', skip: -1 },
     { action: 'getConversation', appId: 'app_1', skip: 1.5 },
     { action: 'submitToolCallInput', appId: 'app_1', toolCallId: 'tool_1', messageId: 'message_1', approve: 'false', extraUserInput: {} }]) {
-    assert.equal((await request(body)).status, 400);
+    const response = await request(body);
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).outcome, 'not_started');
   }
   assert.equal(calls.length, 0);
 });
@@ -51,16 +53,16 @@ test('rejects foreign origins, nonlocal hosts, non-JSON and oversized bodies', a
   assert.equal(calls.length, 0);
 });
 test('creation uses the user token without organization routing', async () => {
-  const calls = setup({ id: 'app_1', custom_instructions: customInstructions, api_key: 'should-not-return' });
+  const calls = setup({ id: 'app_1', name: 'Build a reading list', user_description: 'Build a reading list', custom_instructions: customInstructions, api_key: 'should-not-return' });
   delete process.env.BASE44_ORG_ID;
   const response = await request({ action: 'createApp', prompt: 'Build a reading list' });
-  assert.deepEqual(await response.json(), { id: 'app_1', name: 'Reading List', user_description: 'Build a reading list' });
+  assert.deepEqual(await response.json(), { id: 'app_1', name: 'Build a reading list', user_description: 'Build a reading list' });
   const init = calls[0].init!;
   assert.equal(new Headers(init.headers).get('authorization'), 'Bearer user-token-canary');
   assert.equal(new Headers(init.headers).get('X-Active-Workspace-Id'), null);
   const body = JSON.parse(String(init.body));
   assert.equal(Object.hasOwn(body, 'organization_id'), false);
-  assert.equal(body.name, 'Reading List');
+  assert.equal(body.name, 'Build a reading list');
   assert.equal(body.initial_message.content, 'Build a reading list');
   assert.equal(body.custom_instructions, customInstructions);
   assert.equal(init.cache, 'no-store');

@@ -1,93 +1,83 @@
 # Tiny Sunny
 
-Sunny's My Apps experience with Google login, an apps grid, and a chat editor.
-There is no marketplace, installation flow, or dashboard data API.
+A minimal Base44 integration: sign in, connect a workspace, create an app,
+chat with the builder, answer its questions, preview, and publish.
 
-## Development
+## Run locally
 
-Use Node.js 24 (also configured for Netlify). The assistant-ui dependencies
-require Node.js 22, 24, or 26+; Node.js 20 is no longer supported by this example.
-
-Run from the repository root:
+Use Node.js 24. From the repository root:
 
 ```sh
 npm install
 cp examples/white-label-minimal/.env.example examples/white-label-minimal/.env.local
+```
+
+Fill in `.env.local` with Sunny's Google OAuth credentials, Auth.js secret,
+migrated Prisma database, and Base44 workspace service key. Keep `NEXTAUTH_URL`
+set to `http://127.0.0.1:3001`, then run:
+
+```sh
 npm run minimal:dev
 ```
 
-Fill in the environment variables before starting. Keep `NEXTAUTH_URL` explicitly
-set to `http://127.0.0.1:3001` locally so Prisma does not inherit Sunny’s root URL. Tiny uses Sunny's existing
-Google/Auth.js configuration, Prisma database, and Base44 service-principal
-integration. It must stay in this repository because it imports those shared
-server modules and the Sunny logo. It does not require a personal API key or a
-builder password.
+Open [Tiny Sunny](http://127.0.0.1:3001), sign in, and select **Connect workspace**.
+Apps are saved in Sunny's ownership table, so existing apps in the same database
+and workspace are available here too.
 
-Sign in at http://127.0.0.1:3001, connect the workspace, then create an app or
-edit one you own. Apps are persisted in the shared ownership table and survive
-refreshing the page. Sharing Sunny's database and workspace also makes a user's
-existing Sunny apps available in Tiny.
+## Copy the integration
 
-## Netlify
+Start with [lib/base44-server.ts](lib/base44-server.ts). It contains the Base44
+endpoints and request payloads for creation, conversation, tool answers, preview,
+and publishing. Copy it with `base44-config.ts`, `base44-error.ts`,
+`custom-instructions.ts`, and `types.ts`. It uses `fetch` and `server-only`, with
+no Sunny imports. Set `BASE44_PLATFORM_HOST` to your Base44 HTTPS origin and
+adapt `custom-instructions.ts` to your product. New apps use the first 80
+characters of the prompt as their initial name.
 
-Keep the repository root as the base directory and set the package directory to
-`examples/white-label-minimal`. The package's `netlify.toml` builds Tiny.
+For a complete browser integration, follow this path:
 
-Configure the variables from `.env.example` for builds and production functions.
-Set `NEXTAUTH_URL` and `BUILDER_ORIGIN` to `https://tiny.sunny44.com`.
-Use an existing migrated Sunny database; this build does not run migrations.
+```text
+components/Builder.tsx → lib/builder-api.ts → app/api/base44/route.ts
+  → lib/api-handler.ts → lib/app-service.ts → lib/base44-server.ts
+```
 
-For Google login, either register
-`https://tiny.sunny44.com/api/auth/callback/google` on the Google OAuth client, or
-use Sunny's existing Auth.js redirect proxy: set `AUTH_REDIRECT_PROXY_URL` to
-`https://sunny44.com/api/auth` and use the same `NEXTAUTH_SECRET` and Google client
-as Sunny. Cookies remain scoped to each hostname.
+[lib/app-service.ts](lib/app-service.ts) is where your application plugs in:
 
-Netlify cannot export production variables marked as secret. Populate these
-from their original values; changing a variable name does not convert a workspace
-key into a personal API key.
+- `auth.ts` supplies the verified user from your session.
+- `base44-identity.ts` supplies that user's Base44 access token and renews it near expiry.
+- `app-repository.ts` saves ownership and scopes app access to that user.
 
-## Code layout
+These three adapters currently use Sunny's shared server modules in `../../src/lib`.
+Replace them with your authentication, identity provisioning, and storage when
+copying the example into another project. The full demo also imports Sunny's
+logo and Google sign-in button; it runs inside this repository as shipped.
 
-- `lib/types.ts`: shared app, conversation, tool-input, and app-service contracts.
-- `lib/builder-api.ts`: browser requests to Tiny's `/api/base44` endpoint.
-- `lib/base44-server.ts`: server-to-Base44 app operations using a supplied access token.
-- `lib/base44-config.ts`: validated platform origin and workspace configuration.
-- `lib/auth.ts`: Sunny session entry point, backed by Auth.js v5 / Google in
-  `../../src/lib/auth.ts`. Login does not provision or mint Base44 credentials.
-- `lib/base44-identity.ts`: Base44 connection and token renewal, backed by the shared
-  service-principal integration in `../../src/lib/base44Link.ts`. Its workspace-key
-  and issuer settings remain in `../../src/lib/base44Config.ts`.
-- `lib/app-repository.ts`: Prisma app ownership storage, always scoped to the Sunny user.
-- `lib/app-service.ts`: combines the verified session, Base44 token, API client, and
-  ownership repository for a builder request. This replaces `lib/workspace.ts`.
+Google login and Base44 connection are separate. `/api/base44/connection`
+provisions a service principal using the workspace key. Builder requests use its
+stored token; they do not provision identities or send credentials to the browser.
+The API handler validates requests and checks app ownership before app operations.
 
-Google login runs through `/api/auth`. After login, the separate **Connect workspace**
-action calls `/api/base44/connection` to provision a service principal and mint its token.
-Builder requests reuse that stored token and renew it near expiry; they do not
-provision identities. The browser receives no Base44 access tokens.
+For the chat UI, copy `components/`, `lib/builder-api.ts`, `lib/conversation.ts`,
+and `lib/assistant-messages.ts`. The chat uses assistant-ui's external-store runtime
+with Base44's polled conversation as its source of truth. `Question.tsx` handles
+approvals, choices, and secrets; retries preserve the original answer and request ID.
+Preview tokens stay in page memory and are cleared before expiry. A timed-out
+creation may still succeed, so the UI asks users to check before creating again.
+An app can only be resumed here if its ownership was saved successfully.
 
-## Boundaries
+## Deploy to Netlify
 
-The chat uses `@assistant-ui/react` with an external-store runtime. Base44's
-polled conversation remains the source of truth; `lib/assistant-messages.ts`
-maps it into message and tool-call parts. `components/BuilderChat.tsx` composes
-the library's viewport, Markdown, and composer primitives using the existing
-styles. `Question` and `ToolActivity` remain inline tool renderers, preserving
-Base44 approvals, choices, secret inputs, and retry behavior. No assistant-ui
-cloud account or separate model endpoint is needed.
+Use the repository root as the base directory and `examples/white-label-minimal`
+as the package directory. Its `netlify.toml` builds the example without running
+migrations; use an already migrated Sunny database.
 
-Every builder request requires a server-verified session. App reads, edits,
-previews, and deploys check ownership in the database before contacting Base44.
-The workspace key provisions and mints a token for the signed-in user's service
-principal. Tokens remain server-side. The browser cannot choose its identity,
-workspace, credentials, or upstream URL.
+Set the variables from `.env.example` for builds and production functions.
+Set `NEXTAUTH_URL` and `BUILDER_ORIGIN` to your deployment's exact HTTPS origin.
+Register `<origin>/api/auth/callback/google` with your Google OAuth client, or
+set `AUTH_REDIRECT_PROXY_URL=https://sunny44.com/api/auth` and use Sunny's Google
+client and `NEXTAUTH_SECRET` for its existing redirect proxy.
 
-Preview credentials stay in page memory and are removed before expiry. Long
-Base44 operations can exceed the hosting provider's request limit; uncertain
-creation responses offer recovery instead of automatically creating another app.
-
-## Checks
+## Verify
 
 ```sh
 npm run minimal:typecheck
@@ -96,7 +86,5 @@ npm run test:browser --workspace @base44/white-label-minimal
 npm run minimal:build
 ```
 
-Browser tests run a separate fixture application outside the production `app`
-directory. It supplies a sample user for UI tests, without adding a login bypass
-to Tiny. API tests cover missing sessions, ownership, origins, request validation,
-and upstream failures.
+API tests cover session checks, ownership, validation, and upstream failures.
+Browser tests use a separate fixture app with mocked Base44 responses.

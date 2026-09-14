@@ -9,9 +9,7 @@ export async function getBase44AccessToken(email: string): Promise<string> {
   let link = await getLink(email);
   if (link?.status !== "linked" || !link.accessToken)
     throw new Base44Error("Connect your workspace to start building.", 428);
-  if (!link.expiresAt || link.expiresAt.getTime() < Date.now() + 60_000)
-    link = await remint(link);
-  if (!link?.accessToken)
-    throw new Base44Error("Reconnect your workspace to continue.", 428);
+  if (!link.expiresAt || link.expiresAt.getTime() < Date.now() + 60_000) link = await remint(link);
+  if (!link?.accessToken) throw new Base44Error("Reconnect your workspace to continue.", 428);
   return link.accessToken;
 }

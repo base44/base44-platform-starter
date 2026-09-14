@@ -17,7 +17,10 @@ export default function Workspace({ name }: { name: string }) {
   const [needsConnection, setNeedsConnection] = useState(false);
   const [nextSkip, setNextSkip] = useState(0);
   const [hasMore, setHasMore] = useState(false);
-  const [editor, setEditor] = useState<{ app: App | null; version: number }>({ app: null, version: 0 });
+  const [editor, setEditor] = useState<{ app: App | null; version: number }>({
+    app: null,
+    version: 0,
+  });
   function closeAssistant() {
     setMobileEditorOpen(false);
     assistantButton.current?.focus();
@@ -25,31 +28,36 @@ export default function Workspace({ name }: { name: string }) {
   const [activeName, setActiveName] = useState("");
   const [mobileEditorOpen, setMobileEditorOpen] = useState(false);
   useEffect(() => {
-    if (mobileEditorOpen && window.matchMedia("(max-width: 760px)").matches) closeButton.current?.focus();
+    if (mobileEditorOpen && window.matchMedia("(max-width: 760px)").matches)
+      closeButton.current?.focus();
   }, [mobileEditorOpen]);
   const updateApp = useCallback((app: App) => {
     setActiveName(app.name || "");
-    setApps(current => current.map(item => item.id === app.id ? app : item));
-    setEditor(current => current.app?.id === app.id ? { ...current, app } : current);
-  }, [setActiveName, setApps, setEditor]);
+    setApps((current) => current.map((item) => (item.id === app.id ? app : item)));
+    setEditor((current) => (current.app?.id === app.id ? { ...current, app } : current));
+  }, []);
   function openEditor(app: App | null = null) {
     setActiveName(app?.name || "");
-    setEditor(current => ({ app, version: current.version + 1 }));
+    setEditor((current) => ({ app, version: current.version + 1 }));
     setMobileEditorOpen(true);
   }
-  const load = useCallback((skip = 0) => api.listApps(skip)
-    .then(result => {
-      setError("");
-      setApps(current => skip ? [...current, ...result.apps] : result.apps);
-      setHasMore(result.hasMore);
-      setNextSkip(result.nextSkip);
-      setNeedsConnection(false);
-    })
-    .catch(err => {
-      if (err instanceof api.ApiError && err.status === 428) setNeedsConnection(true);
-      else setError(err instanceof Error ? err.message : "Could not load your apps.");
-    })
-    .finally(() => setLoading(false)), []);
+  const load = useCallback((skip = 0) => {
+    setLoading(true);
+    return api
+      .listApps(skip)
+      .then((result) => {
+        setError("");
+        setApps((current) => (skip ? [...current, ...result.apps] : result.apps));
+        setHasMore(result.hasMore);
+        setNextSkip(result.nextSkip);
+        setNeedsConnection(false);
+      })
+      .catch((err) => {
+        if (err instanceof api.ApiError && err.status === 428) setNeedsConnection(true);
+        else setError(err instanceof Error ? err.message : "Could not load your apps.");
+      })
+      .finally(() => setLoading(false));
+  }, []);
   useEffect(() => {
     void load();
   }, [load]);
@@ -175,14 +183,36 @@ export default function Workspace({ name }: { name: string }) {
             )}
           </div>
         </main>
-        <button ref={assistantButton} className="mobile-assistant" onClick={() => setMobileEditorOpen(true)} aria-expanded={mobileEditorOpen} aria-controls="app-editor"><MessageSquare size={18} /> Assistant</button>
-        <section id="app-editor" className={`editor-panel ${mobileEditorOpen ? "is-open" : ""}`} aria-label="App editor" onKeyDown={e => { if (e.key === "Escape") closeAssistant(); }}>
+        <button
+          ref={assistantButton}
+          className="mobile-assistant"
+          onClick={() => setMobileEditorOpen(true)}
+          aria-expanded={mobileEditorOpen}
+          aria-controls="app-editor"
+        >
+          <MessageSquare size={18} /> Assistant
+        </button>
+        <section
+          id="app-editor"
+          className={`editor-panel ${mobileEditorOpen ? "is-open" : ""}`}
+          aria-label="App editor"
+          onKeyDown={(e) => {
+            if (e.key === "Escape") closeAssistant();
+          }}
+        >
           <header className="editor-heading">
             <div>
               <Sparkles size={14} />
               <strong>{activeName || "Build an app"}</strong>
             </div>
-            <button ref={closeButton} className="icon-button mobile-close" aria-label="Close assistant" onClick={closeAssistant}><X size={20} /></button>
+            <button
+              ref={closeButton}
+              className="icon-button mobile-close"
+              aria-label="Close assistant"
+              onClick={closeAssistant}
+            >
+              <X size={20} />
+            </button>
           </header>
           <Builder
             key={`${editor.app?.id || "new"}:${editor.version}`}

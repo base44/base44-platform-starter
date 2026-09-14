@@ -1,13 +1,22 @@
-import { suggestAppName } from "../../../src/lib/appName";
 import "server-only";
 import { customInstructions } from "./custom-instructions";
 import type { App, Message, ToolInput } from "./types";
-
 import { Base44Error } from "./base44-error";
 import { getBase44Config } from "./base44-config";
 
 export function createBase44Client(accessToken: string) {
-  async function request(path: string, body?: object, timeout = 30_000, headers = {}) {
+  async function request(
+    path: string,
+    {
+      body,
+      timeout = 30_000,
+      headers,
+    }: {
+      body?: object;
+      timeout?: number;
+      headers?: Record<string, string>;
+    } = {},
+  ) {
     const { host } = getBase44Config();
     let response: Response;
     try {
@@ -57,7 +66,7 @@ export function createBase44Client(accessToken: string) {
       throw new Base44Error("Base44 returned an app without an ID.");
     return {
       id: value.id,
-      name: value.name && !/^untitled(?: app)?$/i.test(value.name) ? value.name : suggestAppName(value.user_description || ""),
+      name: value.name,
       preview_screenshot_url: value.preview_screenshot_url,
       user_description: value.user_description,
       status: value.status
@@ -67,34 +76,29 @@ export function createBase44Client(accessToken: string) {
   }
 
   async function createApp(prompt: string) {
-    const app = await request(
-      "/api/apps",
-      {
-        name: suggestAppName(prompt),
+    const app = await request("/api/apps", {
+      body: {
+        name: prompt.trim().slice(0, 80),
         user_description: prompt,
         initial_message: { content: prompt },
         custom_instructions: customInstructions,
         prevent_iframe_embedding: false,
       },
-      120_000,
-    );
-    if (app?.custom_instructions !== customInstructions) {
-      console.warn("Base44 did not return the expected custom_instructions after creation.");
-    }
-    return appSummary({ ...app, user_description: app.user_description || prompt });
+      timeout: 120_000,
+    });
+    return appSummary(app);
   }
+
   const getApp = async (id: string) => appSummary(await request(`/api/apps/${id}`));
   async function getConversation(id: string, skip: number) {
-    const data = await request(
-      `/api/apps/${id}/chat/full-conversation?limit=20&skip=${skip}`,
-      undefined,
-      60_000,
-    );
+    const data = await request(`/api/apps/${id}/chat/full-conversation?limit=20&skip=${skip}`, {
+      timeout: 60_000,
+    });
     if (!data || typeof data !== "object")
       throw new Base44Error("Unexpected conversation response.");
     if (data.messages != null && !Array.isArray(data.messages))
       throw new Base44Error("Unexpected conversation response.");
-    const messages: Message[] = (data?.messages ?? []).map((m: Message) => {
+    const messages: Message[] = (data.messages ?? []).map((m: Message) => {
       if (!m || typeof m.id !== "string" || !m.id)
         throw new Base44Error("A conversation message has no stable ID.");
       return {
@@ -115,20 +119,22 @@ export function createBase44Client(accessToken: string) {
     return { messages };
   }
   const sendMessage = (id: string, content: string) =>
-    request(`/api/apps/${id}/chat/message`, { content }, 120_000).then(() => ({}));
+    request(`/api/apps/${id}/chat/message`, { body: { content }, timeout: 120_000 }).then(
+      () => ({}),
+    );
   const submitToolCallInput = (p: ToolInput) =>
-    request(
-      `/api/apps/${p.appId}/chat/submit-tool-call-input`,
-      {
+    request(`/api/apps/${p.appId}/chat/submit-tool-call-input`, {
+      body: {
         tool_call_id: p.toolCallId,
         message_id: p.messageId,
         action: p.approve ? "approved" : "rejected",
         extra_user_input: p.extraUserInput,
       },
-      120_000,
-      { "X-Request-ID": `submit-${p.toolCallId}` },
-    ).then(() => ({}));
-  const deployApp = (id: string) => request(`/api/apps/${id}/deploy`, {}, 120_000).then(() => ({}));
+      timeout: 120_000,
+      headers: { "X-Request-ID": `submit-${p.toolCallId}` },
+    }).then(() => ({}));
+  const deployApp = (id: string) =>
+    request(`/api/apps/${id}/deploy`, { body: {}, timeout: 120_000 }).then(() => ({}));
 
   function httpsUrl(raw: unknown) {
     if (typeof raw !== "string" || !raw)
@@ -144,7 +150,7 @@ export function createBase44Client(accessToken: string) {
     return url;
   }
   async function getPreviewUrl(id: string) {
-    const data = await request(`/api/apps/${id}/sandbox/preview-url`, undefined, 120_000);
+    const data = await request(`/api/apps/${id}/sandbox/preview-url`, { timeout: 120_000 });
     const url = httpsUrl(data?.preview_url);
     if (data.preview_token) url.searchParams.set("_preview_token", data.preview_token);
     return { url: url.href };

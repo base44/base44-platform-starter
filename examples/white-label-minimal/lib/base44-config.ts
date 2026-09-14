@@ -20,4 +20,3 @@ export function getBase44Config() {
   }
   return { host: host.origin };
 }
-
