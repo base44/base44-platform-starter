@@ -31,30 +31,38 @@ and workspace are available here too.
 
 ## Copy the integration
 
-Start with [lib/base44-server.ts](lib/base44-server.ts). It contains the Base44
+| Folder | Responsibility |
+| --- | --- |
+| `lib/base44/` | Base44 API calls, identity lifecycle, and custom instructions |
+| `lib/server/` | Authentication and request handling |
+| `lib/storage/` | Database access and app ownership |
+| `lib/chat/` | Browser API calls and conversation helpers |
+| `lib/types.ts` | Shared types |
+
+Start with [lib/base44/client.ts](lib/base44/client.ts). It contains the Base44
 endpoints and request payloads for creation, conversation, tool answers, preview,
-and publishing. Copy it with `base44-config.ts`, `base44-error.ts`,
-`custom-instructions.ts`, and `types.ts`. It uses `fetch` and `server-only`, with
+and publishing. Copy it with `lib/base44/config.ts`, `lib/base44/error.ts`,
+`lib/base44/custom-instructions.ts`, and `lib/types.ts`. It uses `fetch` and `server-only`, with
 no Sunny imports. Set `BASE44_PLATFORM_HOST` to your Base44 HTTPS origin and
-adapt `custom-instructions.ts` to your product. New apps use the first 80
+adapt `lib/base44/custom-instructions.ts` to your product. New apps use the first 80
 characters of the prompt as their initial name.
 
 For a complete browser integration, follow this path:
 
 ```text
-components/Builder.tsx → lib/builder-api.ts → app/api/base44/route.ts
-  → lib/api-handler.ts → lib/app-service.ts → lib/base44-server.ts
+components/Builder.tsx → lib/chat/builder-api.ts → app/api/base44/route.ts
+  → lib/server/api-handler.ts → lib/server/app-service.ts → lib/base44/client.ts
 ```
 
-[lib/app-service.ts](lib/app-service.ts) is where your application plugs in:
+[lib/server/app-service.ts](lib/server/app-service.ts) is where your application plugs in:
 
-- `auth.ts` supplies the verified user from your session.
-- [base44-identity.ts](lib/base44-identity.ts) provisions a service user, mints its token,
+- [server/auth.ts](lib/server/auth.ts) supplies the verified user from your session.
+- [base44/identity.ts](lib/base44/identity.ts) provisions a service user, mints its token,
   and refreshes it near expiry.
-- `app-repository.ts` saves ownership and scopes app access to that user.
+- [storage/app-repository.ts](lib/storage/app-repository.ts) saves ownership and scopes app access to that user.
 
 [prisma/schema.prisma](prisma/schema.prisma) defines identity links and app ownership.
-[lib/db.ts](lib/db.ts) connects through `DATABASE_URL`. The Prisma client is generated
+[lib/storage/db.ts](lib/storage/db.ts) connects through `DATABASE_URL`. The Prisma client is generated
 on install and build; run `npm run db:generate` from the example after schema edits.
 
 Google login and Base44 connection are separate. `/api/base44/connection`
@@ -62,8 +70,8 @@ provisions a service principal using the workspace key. Builder requests use its
 stored token; they do not provision identities or send credentials to the browser.
 The API handler validates requests and checks app ownership before app operations.
 
-For the chat UI, copy `components/`, `lib/builder-api.ts`, `lib/conversation.ts`,
-and `lib/assistant-messages.ts`. The chat uses assistant-ui's external-store runtime
+For the chat UI, copy `components/`, `lib/chat/builder-api.ts`, `lib/chat/conversation.ts`,
+and `lib/chat/assistant-messages.ts`. The chat uses assistant-ui's external-store runtime
 with Base44's polled conversation as its source of truth. `Question.tsx` handles
 approvals, choices, and secrets; retries preserve the original answer and request ID.
 Preview tokens stay in page memory and are cleared before expiry. A timed-out

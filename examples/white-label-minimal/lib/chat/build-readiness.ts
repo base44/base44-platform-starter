@@ -1,4 +1,4 @@
-import type { Message } from "./types";
+import type { Message } from "../types";
 
 const CODE_TOOLS = new Set(["write_file", "find_replace"]);
 const ACTIVE_STATUSES = new Set(["pending", "running", "waiting_for_user_input"]);

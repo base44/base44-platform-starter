@@ -1,8 +1,8 @@
 import "server-only";
 import { customInstructions } from "./custom-instructions";
-import type { App, Message, ToolInput } from "./types";
-import { Base44Error } from "./base44-error";
-import { getBase44Config } from "./base44-config";
+import type { App, Message, ToolInput } from "../types";
+import { Base44Error } from "./error";
+import { getBase44Config } from "./config";
 
 export function createBase44Client(accessToken: string) {
   async function request(

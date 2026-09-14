@@ -1,4 +1,4 @@
-import type { App, AppPage, Message, ToolInput } from "./types";
+import type { App, AppPage, Message, ToolInput } from "../types";
 
 export class ApiError extends Error {
   constructor(

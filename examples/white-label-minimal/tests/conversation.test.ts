@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { refreshConversation } from '../lib/conversation';
+import { refreshConversation } from '../lib/chat/conversation';
 import type { Message } from '../lib/types';
 const messages = (count: number): Message[] => Array.from({ length: count }, (_, i) => ({ id: `m${i}`, content: `Message ${i}` }));
 const page = (all: Message[], skip: number) => ({ messages: all.slice(Math.max(0, all.length - skip - 20), all.length - skip) });
@@ -34,7 +34,7 @@ test('overlapping pages from concurrent appends are deduplicated', async () => {
   assert.deepEqual(result, old);
 });
 
-import { mergeOptimisticMessages } from '../lib/optimistic-messages';
+import { mergeOptimisticMessages } from '../lib/chat/optimistic-messages';
 test('optimistic prompts survive empty polls and merge once without confusing repeated text', () => {
   const first: Message = { id: 'local:1', role: 'user', content: 'Add a button' };
   const pending = [{ message: first, knownIds: [] }];
@@ -50,7 +50,7 @@ test('optimistic prompts survive empty polls and merge once without confusing re
 });
 
  test('build readiness requires code and a settled assistant turn', async () => {
-  const { hasCompletedBuild } = await import('../lib/build-readiness');
+  const { hasCompletedBuild } = await import('../lib/chat/build-readiness');
   const built = { id: 'built', role: 'assistant', tool_calls: [{ name: 'write_file', status: 'success' }] };
   assert.equal(hasCompletedBuild([{ id: 'hello', role: 'assistant', content: 'Hello!' }]), false);
   assert.equal(hasCompletedBuild([built]), true);

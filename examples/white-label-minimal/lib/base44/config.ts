@@ -1,5 +1,5 @@
 import "server-only";
-import { Base44Error } from "./base44-error";
+import { Base44Error } from "./error";
 
 export function getBase44Config() {
   let host: URL;

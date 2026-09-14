@@ -1,5 +1,5 @@
-import { Base44Error } from "./base44-error";
-import type { AppClient } from "./types";
+import { Base44Error } from "../base44/error";
+import type { AppClient } from "../types";
 
 const headers = { "Cache-Control": "no-store, private", "Referrer-Policy": "no-referrer" };
 const bad = (message: string, status = 400): never => {

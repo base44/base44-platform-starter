@@ -10,7 +10,7 @@ import {
 } from "@assistant-ui/react";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
 import { Bot, Loader2, Send, User } from "lucide-react";
-import { toAssistantMessage } from "../lib/assistant-messages";
+import { toAssistantMessage } from "../lib/chat/assistant-messages";
 import type { Message, ToolCall, ToolInput } from "../lib/types";
 import Question from "./Question";
 import ToolActivity from "./ToolActivity";

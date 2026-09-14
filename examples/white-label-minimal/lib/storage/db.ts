@@ -1,5 +1,5 @@
 import "server-only";
-import { PrismaClient } from "../generated/prisma";
+import { PrismaClient } from "../../generated/prisma";
 
 const globalForDb = globalThis as unknown as { minimalPrisma?: PrismaClient };
 

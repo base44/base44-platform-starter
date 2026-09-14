@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 import { createHash } from "node:crypto";
-import { prisma } from "../lib/db";
-import { connect, disconnect, getBase44AccessToken } from "../lib/base44-identity";
+import { prisma } from "../lib/storage/db";
+import { connect, disconnect, getBase44AccessToken } from "../lib/base44/identity";
 
 const originalFetch = globalThis.fetch;
 const originalEnv = { ...process.env };

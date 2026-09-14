@@ -1,10 +1,10 @@
 "use client";
-import { hasCompletedBuild } from "../lib/build-readiness";
+import { hasCompletedBuild } from "../lib/chat/build-readiness";
 import type { App, ToolInput } from "../lib/types";
 import { useEffect, useMemo, useRef, useState } from "react";
-import * as api from "../lib/builder-api";
+import * as api from "../lib/chat/builder-api";
 import { Loader2, Eye, Upload, ExternalLink } from "lucide-react";
-import { mergeOptimisticMessages, type OptimisticMessage } from "../lib/optimistic-messages";
+import { mergeOptimisticMessages, type OptimisticMessage } from "../lib/chat/optimistic-messages";
 import BuilderChat from "./BuilderChat";
 import { useBuildPolling } from "./useBuildPolling";
 

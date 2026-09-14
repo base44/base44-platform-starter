@@ -1,10 +1,10 @@
 import "server-only";
 import { requireUser } from "./auth";
-import { getBase44AccessToken } from "./base44-identity";
-import { createAppRepository } from "./app-repository";
-import { resolveAppPage } from "./app-list";
-import { createBase44Client } from "./base44-server";
-import type { AppClient } from "./types";
+import { getBase44AccessToken } from "../base44/identity";
+import { createAppRepository } from "../storage/app-repository";
+import { resolveAppPage } from "../storage/app-list";
+import { createBase44Client } from "../base44/client";
+import type { AppClient } from "../types";
 
 export async function getAppClient(): Promise<AppClient> {
   const actor = await requireUser();

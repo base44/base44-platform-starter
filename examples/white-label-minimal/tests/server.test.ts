@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
-import { createHandler } from '../lib/api-handler';
-import { createBase44Client } from '../lib/base44-server';
-import { Base44Error } from '../lib/base44-error';
+import { createHandler } from '../lib/server/api-handler';
+import { createBase44Client } from '../lib/base44/client';
+import { Base44Error } from '../lib/base44/error';
 let signedIn = true;
 const POST = createHandler(async () => {
   if (!signedIn) throw new Base44Error('Sign in to continue.', 401);
@@ -10,7 +10,7 @@ const POST = createHandler(async () => {
     if (id === 'other_app') throw new Base44Error('App not found.', 404);
   }, listApps: async () => ({ apps: [], hasMore: false, nextSkip: 0 }) };
 });
-import { customInstructions } from '../lib/custom-instructions';
+import { customInstructions } from '../lib/base44/custom-instructions';
 
 const originalFetch = globalThis.fetch;
 const originalEnv = { ...process.env };
@@ -138,7 +138,7 @@ test('another owner’s apps cannot be read, edited, previewed or deployed', asy
 
 
 test('unavailable apps do not hide valid apps or corrupt pagination', async () => {
-  const { resolveAppPage } = await import('../lib/app-list');
+  const { resolveAppPage } = await import('../lib/storage/app-list');
   const rows = Array.from({ length: 13 }, (_, i) => ({ appId: `app_${i}` }));
   const page = await resolveAppPage(rows, 24, async id => {
     if (id === 'app_0') throw new Base44Error('App not found.', 404);

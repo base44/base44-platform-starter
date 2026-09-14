@@ -2,7 +2,7 @@ import "server-only";
 import { cache } from "react";
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
-import { Base44Error } from "./base44-error";
+import { Base44Error } from "../base44/error";
 
 export const { handlers, auth } = NextAuth({
   secret: process.env.NEXTAUTH_SECRET,

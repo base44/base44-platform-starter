@@ -1,7 +1,7 @@
 import "server-only";
 import { prisma } from "./db";
-import type { App } from "./types";
-import { Base44Error } from "./base44-error";
+import type { App } from "../types";
+import { Base44Error } from "../base44/error";
 
 export function createAppRepository(actor: { email: string }) {
   const owner = { createdBy: actor.email };

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { signOut } from "next-auth/react";
 import { Grid2X2, Loader2, LogOut, MessageSquare, Pencil, Plus, X, Sparkles } from "lucide-react";
 import SunnyLogo from "@/components/SunnyLogo";
-import * as api from "../lib/builder-api";
+import * as api from "../lib/chat/builder-api";
 import Builder from "./Builder";
 import AppPreview from "./AppPreview";
 

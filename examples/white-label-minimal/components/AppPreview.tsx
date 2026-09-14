@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
-import { getPreviewUrl } from "../lib/builder-api";
+import { getPreviewUrl } from "../lib/chat/builder-api";
 import type { App } from "../lib/types";
 
 export default function AppPreview({ app, onClose }: { app: App; onClose: () => void }) {

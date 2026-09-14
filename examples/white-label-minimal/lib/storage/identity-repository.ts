@@ -1,5 +1,5 @@
 import "server-only";
-import type { Prisma } from "../generated/prisma";
+import type { Prisma } from "../../generated/prisma";
 import { prisma } from "./db";
 
 export function withIdentityLock<T>(

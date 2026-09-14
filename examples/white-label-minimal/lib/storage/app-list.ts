@@ -1,5 +1,5 @@
-import type { App } from "./types";
-import { Base44Error } from "./base44-error";
+import type { App } from "../types";
+import { Base44Error } from "../base44/error";
 
 export async function resolveAppPage(
   rows: { appId: string }[],

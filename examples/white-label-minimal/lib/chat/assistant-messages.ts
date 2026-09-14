@@ -1,5 +1,5 @@
 import type { ThreadMessageLike } from "@assistant-ui/react";
-import type { Message } from "./types";
+import type { Message } from "../types";
 
 export function toAssistantMessage(message: Message): ThreadMessageLike {
   const role = message.role === "user" ? "user" : "assistant";

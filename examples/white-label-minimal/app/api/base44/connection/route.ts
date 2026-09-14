@@ -1,6 +1,6 @@
-import { requireUser } from "../../../../lib/auth";
-import { connect, disconnect, getLink, linkStatus } from "../../../../lib/base44-identity";
-import { Base44Error } from "../../../../lib/base44-error";
+import { requireUser } from "../../../../lib/server/auth";
+import { connect, disconnect, getLink, linkStatus } from "../../../../lib/base44/identity";
+import { Base44Error } from "../../../../lib/base44/error";
 
 const headers = { "Cache-Control": "no-store, private" };
 

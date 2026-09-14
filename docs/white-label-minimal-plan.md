@@ -127,10 +127,11 @@ examples/white-label-minimal/
 │   ├── useBuildPolling.ts
 │   └── Question.tsx
 ├── lib/
-│   ├── base44-client.ts
-│   ├── base44-server.ts
-│   ├── conversation.ts
-│   └── custom-instructions.ts
+│   ├── base44/
+│   ├── server/
+│   ├── storage/
+│   ├── chat/
+│   └── types.ts
 ├── .env.example
 ├── README.md
 ├── package.json
@@ -145,9 +146,9 @@ Responsibilities:
 | `components/Builder.tsx` | Own the build loop, polling, conversation, preview, and deploy actions. |
 | `components/Question.tsx` | Render and submit `choice`, `input`, and `approval` questions. |
 | `app/api/base44/route.ts` | Enforce the local origin boundary, validate action-specific payloads, and return safe errors. |
-| `lib/base44-server.ts` | Hold credentials and make the allow-listed Base44 HTTP calls. |
-| `lib/base44-client.ts` | Provide small typed functions that call the local API route. |
-| `lib/custom-instructions.ts` | Keep the full per-app custom instructions visible and easy to find. |
+| `lib/base44/client.ts` | Hold credentials and make the allow-listed Base44 HTTP calls. |
+| `lib/chat/builder-api.ts` | Provide small typed functions that call the local API route. |
+| `lib/base44/custom-instructions.ts` | Keep the full per-app custom instructions visible and easy to find. |
 
 Avoid a separate types file unless shared types make at least three of these files clearer.
 
@@ -298,7 +299,7 @@ continues.
 
 ### 7. Add custom instructions
 
-Keep the complete instruction string in `lib/custom-instructions.ts`. It should explain only what a
+Keep the complete instruction string in `lib/base44/custom-instructions.ts`. It should explain only what a
 generated app needs to know about the example platform and name any workspace skill it should use.
 
 Pass it during app creation, because the initial build starts in that request. Read

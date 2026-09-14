@@ -1,10 +1,10 @@
 import "server-only";
 import { createHash } from "node:crypto";
-import type { Base44Link } from "../generated/prisma";
-import { prisma } from "./db";
-import { Base44Error } from "./base44-error";
-import { getBase44Config } from "./base44-config";
-import { withIdentityLock } from "./identity-repository";
+import type { Base44Link } from "../../generated/prisma";
+import { prisma } from "../storage/db";
+import { Base44Error } from "./error";
+import { getBase44Config } from "./config";
+import { withIdentityLock } from "../storage/identity-repository";
 
 export function getLink(email: string) {
   return prisma.base44Link.findUnique({ where: { appUserEmail: email.toLowerCase() } });

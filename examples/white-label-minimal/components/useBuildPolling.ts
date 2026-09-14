@@ -1,8 +1,8 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getApp, getConversation } from "../lib/builder-api";
+import { getApp, getConversation } from "../lib/chat/builder-api";
 import type { App, Message } from "../lib/types";
-import { refreshConversation } from "../lib/conversation";
+import { refreshConversation } from "../lib/chat/conversation";
 
 export function useBuildPolling(appId: string | null) {
   const [app, setApp] = useState<App | null>(null);
