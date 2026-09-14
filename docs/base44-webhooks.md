@@ -46,12 +46,20 @@ environment:
 
 ```bash
 npm run webhook:register -- --url https://your-shell.example.com
+npm run webhook:register -- --url https://… --events app.deleted.v1,app.restored.v1
 ```
 
 It registers, waits for the probe, reports `activated`, and then prints the workspace's public key as
 a `BASE44_WEBHOOK_PUBLIC_KEYS=` line ready to paste — see [Verifying a delivery](#verifying-a-delivery)
 for why you might want it. The order matters: **registering is what mints the workspace's first
 signing key**, so there is nothing to copy before it runs.
+
+`--events` (repeatable, comma- or space-separated; or `BASE44_WEBHOOK_EVENT_TYPES`) defaults to every
+type the receiver handles. Narrowing it is the useful case, because the **subscription is what makes
+Base44 write an outbox row at all** — an unselected type costs nothing rather than being delivered and
+discarded. Unknown names pass through to the platform to accept or refuse, so a type added to Base44's
+catalog after this script was written still works; the script warns instead about a type *it* has no
+handler for, which the platform has no way to know.
 
 It is a script rather than a route on purpose. A platform brings a workspace online once, and nothing
 a user can trigger should be able to point Base44 at a different URL.

@@ -338,6 +338,10 @@ Register once per environment, and it prints the public key to pin:
 npm run webhook:register -- --url https://your-shell.example.com
 ```
 
+`--events` narrows the subscription, and that is the lever worth knowing: the subscription is what
+makes Base44 write an outbox row at all, so an unselected event costs nothing rather than arriving and
+being discarded.
+
 Verification material comes from one of two places, and `BASE44_WEBHOOK_PUBLIC_KEYS` picks. **Pinned**
 — paste the `whpk_` keys — and verification makes no network call, so a receiver that cannot reach
 Base44 still works; the cost is applying a key rotation yourself, inside Base44's dual-sign overlap.

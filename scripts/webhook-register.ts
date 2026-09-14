@@ -3,6 +3,14 @@
  * the public key to pin.
  *
  *   npm run webhook:register -- --url https://your-shell.example.com
+ *   npm run webhook:register -- --url https://… --events app.deleted.v1,app.restored.v1
+ *
+ * `--events` defaults to every type this receiver handles. Narrowing it is the
+ * useful case: a subscription is what makes Base44 write an outbox row at all,
+ * so registering for less is less traffic rather than traffic that gets
+ * filtered afterwards. Unknown names are passed through and left to the platform
+ * to refuse — the catalog grows, and a script holding its own allowlist would
+ * reject a type that is perfectly valid upstream.
  *
  * Registration is a **deploy-time** action, which is why it is a script and not
  * a route: a platform brings a workspace online once, and nothing a user does
@@ -21,17 +29,16 @@
  */
 
 import { orgId, platformHost, webhookKey } from "../src/lib/base44Config";
+import { HANDLED_EVENT_TYPES } from "../src/lib/base44WebhookEventTypes";
 
-const EVENT_TYPES = [
-  "app.created.v1",
-  "app.published.v1",
-  "app.unpublished.v1",
-  "app.deleted.v1",
-  "app.restored.v1",
-];
+const HANDLED = new Set<string>(HANDLED_EVENT_TYPES);
 
-const ENDPOINTS_URL = `${platformHost()}/api/service/outbound-webhooks/endpoints`;
-const KEYS_URL = `${platformHost()}/api/workspace/public/outbound-webhooks/${orgId()}/keys`;
+// Functions, not constants: these read required env vars, and at module scope a
+// missing one throws before main() can catch it — a stack trace where
+// MissingConfigError's own sentence is what the operator needs.
+const endpointsUrl = () => `${platformHost()}/api/service/outbound-webhooks/endpoints`;
+const keysUrl = () =>
+  `${platformHost()}/api/workspace/public/outbound-webhooks/${orgId()}/keys`;
 
 type Endpoint = { id: string; target_url: string; state: string; activated_at: string | null };
 type Activation = {
@@ -42,10 +49,21 @@ type Activation = {
   detail: string;
 };
 
+/** Every value given for `flag`, in order — the flag may repeat. */
+function flagValues(flag: string): string[] {
+  const found: string[] = [];
+  process.argv.forEach((arg, i) => {
+    if (arg !== flag) return;
+    const value = process.argv[i + 1];
+    if (!value || value.startsWith("--")) throw new Error(`${flag} needs a value.`);
+    found.push(value);
+  });
+  return found;
+}
+
 function targetUrl(): string {
-  const flag = process.argv.indexOf("--url");
   const raw =
-    (flag >= 0 ? process.argv[flag + 1] : undefined) ??
+    flagValues("--url").at(-1) ??
     process.env.BASE44_WEBHOOK_TARGET_URL ??
     process.env.NEXTAUTH_URL;
   if (!raw) {
@@ -55,6 +73,33 @@ function targetUrl(): string {
   }
   const base = raw.replace(/\/+$/, "");
   return base.endsWith("/api/base44/webhooks") ? base : `${base}/api/base44/webhooks`;
+}
+
+/**
+ * The types to subscribe to: `--events` (repeatable, and comma- or
+ * space-separated), else `BASE44_WEBHOOK_EVENT_TYPES`, else every type this
+ * receiver handles.
+ */
+function eventTypes(): string[] {
+  const flags = flagValues("--events");
+  const fromEnv = process.env.BASE44_WEBHOOK_EVENT_TYPES ?? "";
+  const asked = flags.length > 0 || fromEnv.trim().length > 0;
+
+  const named = [...new Set(
+    [...flags, fromEnv]
+      .join(" ")
+      .split(/[\s,]+/)
+      .map((type) => type.trim())
+      .filter((type) => type.length > 0),
+  )];
+
+  // Asked for explicitly and resolved to nothing — `--events ","`, say. Falling
+  // back to all five here would subscribe to more than was requested, which is
+  // the one wrong answer.
+  if (asked && named.length === 0) {
+    throw new Error("--events (or BASE44_WEBHOOK_EVENT_TYPES) named no event types.");
+  }
+  return named.length > 0 ? named : [...HANDLED_EVENT_TYPES];
 }
 
 /** Bare or `Bearer` — Base44's workspace-key auth takes either. Never a JWT. */
@@ -72,14 +117,14 @@ async function readJson(res: Response): Promise<unknown> {
   }
 }
 
-async function register(url: string): Promise<Activation> {
-  const res = await fetch(ENDPOINTS_URL, {
+async function register(url: string, selected: string[]): Promise<Activation> {
+  const res = await fetch(endpointsUrl(), {
     method: "POST",
     headers: authHeaders(),
     body: JSON.stringify({
       target_url: url,
       description: "Sunny shell",
-      selected_event_types: EVENT_TYPES,
+      selected_event_types: selected,
     }),
     signal: AbortSignal.timeout(60_000),
   });
@@ -95,7 +140,7 @@ async function register(url: string): Promise<Activation> {
 }
 
 async function publishedKeys(): Promise<string[]> {
-  const res = await fetch(KEYS_URL, { cache: "no-store" });
+  const res = await fetch(keysUrl(), { cache: "no-store" });
   if (!res.ok) throw new Error(`key set returned ${res.status}`);
   const { keys = [] } = (await res.json()) as { keys?: { public_key: string }[] };
   return keys.map((k) => k.public_key);
@@ -103,9 +148,21 @@ async function publishedKeys(): Promise<string[]> {
 
 async function main() {
   const url = targetUrl();
-  console.log(`registering ${url}\n  workspace ${orgId()} at ${platformHost()}\n`);
+  const selected = eventTypes();
+  console.log(`registering ${url}`);
+  console.log(`  workspace   ${orgId()} at ${platformHost()}`);
+  console.log(`  events      ${selected.join(", ")}`);
 
-  const result = await register(url);
+  // Said before the call, not after: Base44 will accept these happily and
+  // deliver them, and this receiver will answer 2xx and do nothing. The platform
+  // cannot warn about it — only this side knows what it handles.
+  const ignored = selected.filter((type) => !HANDLED.has(type));
+  if (ignored.length > 0) {
+    console.log(`  note        this receiver ignores ${ignored.join(", ")} — 2xx, no effect`);
+  }
+  console.log("");
+
+  const result = await register(url, selected);
   const { endpoint, activated, http_status, failure_category, detail } = result;
 
   console.log(`  endpoint    ${endpoint.id}`);

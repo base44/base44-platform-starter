@@ -27,6 +27,7 @@
 import type { Base44AppLifecycle, Prisma } from "@prisma/client";
 
 import { mirrorTransition } from "@/lib/base44AppMirror";
+import { HANDLED_EVENT_TYPES } from "@/lib/base44WebhookEventTypes";
 import { emailForServiceExternalId } from "@/lib/base44Link";
 import { prisma } from "@/lib/prisma";
 
@@ -48,13 +49,7 @@ export const ACTIVATION_EVENT = "webhook.test.v1";
  * consecutive failures auto-pause the endpoint — losing the events we *do* care
  * about. Selecting types happens at registration, not here.
  */
-const HANDLED = new Set([
-  "app.created.v1",
-  "app.published.v1",
-  "app.unpublished.v1",
-  "app.deleted.v1",
-  "app.restored.v1",
-]);
+const HANDLED = new Set<string>(HANDLED_EVENT_TYPES);
 
 export type ProjectionOutcome = "applied" | "ignored_unknown_type" | "ignored_stale" | "no_app_id";
 
