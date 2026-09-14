@@ -3,7 +3,9 @@
 How your platform acts on Base44 *as each of your own users*. This is step 2 of the
 [README](../README.md) walkthrough, in full.
 
-Reference implementation: `src/lib/base44Link.ts` (the only module that reads or writes tokens) and
+SDK: [public contract](../platform-sdk/docs/api.md).
+
+Starter adapter: `src/lib/base44Link.ts` (the only module that reads or writes tokens) and
 `src/app/api/base44/link/route.ts` (the three-action route in front of it).
 
 ---
@@ -80,7 +82,7 @@ format Base44's workspace-key auth accepts; `Bearer` is for the *minted* tokens.
 
 ```http
 POST {BASE44_PLATFORM_HOST}/api/service/users
-Authorization: {BASE44_PROVISION_KEY}
+Authorization: {BASE44_SVC_KEY}
 Content-Type: application/json
 
 { "service_external_id": "sunny-9f2c…", "display_name": "Sunny user 9f2c…" }
@@ -157,7 +159,7 @@ prefixes (`chatgpt_`, `claude_`, `cursor_`, `oauth_`) is rejected everywhere exc
 
 ```http
 DELETE {BASE44_PLATFORM_HOST}/api/service/users/{service_external_id}
-Authorization: {BASE44_PROVISION_KEY}
+Authorization: {BASE44_SVC_KEY}
 ```
 
 Scope: `service_users:provision`. Idempotent — a `404` is a no-op.
@@ -171,18 +173,17 @@ this repo it's exported (`deprovisionPrincipal()`) but deliberately not wired to
 
 ---
 
-## Why the two keys are worth splitting
+## One SDK key
 
-`BASE44_SVC_KEY` (mint) sits on the hot path — every re-mint, every hour, every active user. The
-provision key is used twice in an account's lifetime.
+The Platform SDK uses one key with both `service_users:provision` and `user_tokens:mint`.
+Existing deployments using a separate provisioning key must add provisioning permission
+to `BASE44_SVC_KEY` before deploying this migration. The separate provisioning variable
+is no longer read. Your server must prohibit offboarded users from explicitly connecting
+again; SDK token acquisition never auto-provisions.
 
-A mint-only key can vend tokens for principals that already exist but cannot *create* one, so it can
-never become an impersonate-anyone primitive. And it's what makes deprovision stick: with a
-provision-capable key on the hot path, a removed user presses Connect, gets re-provisioned, and the
-offboarding quietly undoes itself.
-
-`BASE44_PROVISION_KEY` defaults to `BASE44_SVC_KEY` when unset, so a single-key deployment works.
-Split them when you go to production.
+The SDK owns acquisition, renewal and revocation. `src/lib/base44Link.ts` supplies a
+persistent adapter over the existing rows, preserving principal IDs and webhook lookup.
+See [the complete SDK storage contract](../platform-sdk/docs/tokens.md).
 
 ---
 
@@ -193,7 +194,7 @@ connect      provision (idempotent) ─► mint ─► store row {status: linked
              ▲ order matters: mint 404s on an unknown principal and will not create one
 
 use          expiry within 5 min?  ─► re-mint, then call
-             mid-call 401?         ─► re-mint once, retry once, else 428 reauthorize_required
+             mid-call 401?         ─► app SDK calls: clear + 428; legacy chat: one re-mint/retry
 
 disconnect   revoke refresh token (best effort) ─► delete the row
              ✗ does NOT deprovision — the principal owns the user's apps

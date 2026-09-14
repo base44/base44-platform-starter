@@ -65,6 +65,13 @@ const OPS: Record<string, Op> = { listApps: {…}, createApp: {…}, … };
 
 ## The endpoints
 
+Non-chat requests below are implemented by the [Platform SDK](../platform-sdk/README.md).
+The SDK projects documented camelCase results; the starter adapter maps these into the
+existing browser response names. It excludes internal app fields and returns only
+`has_custom_instructions` for the creation check, never the instruction contents.
+Non-chat calls do not automatically retry after a mutation failure.
+
+
 Base URL is your platform host. Every call carries the two headers above.
 
 ### `GET /api/apps` — list
