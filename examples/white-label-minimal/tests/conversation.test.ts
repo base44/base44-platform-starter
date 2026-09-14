@@ -33,3 +33,18 @@ test('overlapping pages from concurrent appends are deduplicated', async () => {
   assert.equal(new Set(result.map(m => m.id)).size, result.length);
   assert.deepEqual(result, old);
 });
+
+import { mergeOptimisticMessages } from '../lib/optimistic-messages';
+test('optimistic prompts survive empty polls and merge once without confusing repeated text', () => {
+  const first: Message = { id: 'local:1', role: 'user', content: 'Add a button' };
+  const pending = [{ message: first, knownIds: [] }];
+  assert.deepEqual(mergeOptimisticMessages([], pending), [first]);
+  const server: Message = { ...first, id: 'server:1' };
+  const reply: Message = { id: 'reply', role: 'assistant', content: 'Done' };
+  assert.deepEqual(mergeOptimisticMessages([reply], pending), [first, reply]);
+  assert.deepEqual(mergeOptimisticMessages([server, reply], pending), [first, reply]);
+  const second = { ...first, id: 'local:2' };
+  const repeated = [...pending, { message: second, knownIds: [server.id, reply.id] }];
+  assert.deepEqual(mergeOptimisticMessages([server, reply], repeated), [first, reply, second]);
+  assert.deepEqual(mergeOptimisticMessages([server, reply, { ...server, id: 'server:2' }], repeated), [first, reply, second]);
+});

@@ -274,3 +274,93 @@ test('assistant-ui composer sends a follow-up once and Shift+Enter inserts a new
   await expect(input).toHaveValue('');
   expect(f.counts().creates).toBe(1);
 });
+
+test('preview card waits for build completion and hides during follow-up submission', async ({ page }) => {
+  await page.clock.install();
+  let state = 'processing';
+  let releaseSend: (() => void) | undefined;
+  await page.route('**/api/base44', async route => {
+    const { action } = route.request().postDataJSON();
+    if (action === 'listApps') return route.fulfill({ json: { apps: [], hasMore: false } });
+    if (action === 'sendMessage') {
+      await new Promise<void>(resolve => { releaseSend = resolve; });
+      state = 'processing';
+      return route.fulfill({ json: {} });
+    }
+    if (action === 'getConversation') return route.fulfill({ json: { messages: [
+      { id: 'm1', role: 'assistant', content: 'Your scoreboard is live.' },
+    ] } });
+    return route.fulfill({ json: { id: 'app_1', name: 'Scoreboard', status: { state } } });
+  });
+  await page.goto('/');
+  await page.getByLabel('What would you like to build?').fill('Build a scoreboard');
+  await page.getByRole('button', { name: 'Create app', exact: true }).click();
+  await expect(page.getByText('Your scoreboard is live.')).toBeVisible();
+  await expect(page.getByText('Building…', { exact: true })).toBeVisible();
+  const card = page.getByRole('region', { name: 'Preview and publish' });
+  await expect(card).toHaveCount(0);
+
+  state = 'ready';
+  await page.clock.fastForward(2_100);
+  await expect(card).toBeVisible();
+  await page.getByLabel('What should change?').fill('Add a reset button');
+  await page.getByRole('button', { name: 'Send prompt', exact: true }).click();
+  await expect.poll(() => !!releaseSend).toBe(true);
+  await expect(card).toHaveCount(0);
+  releaseSend!();
+  await expect(page.getByText('Building…', { exact: true })).toBeVisible();
+  await expect(card).toHaveCount(0);
+
+  state = 'ready';
+  await page.clock.fastForward(2_100);
+  await expect(card).toBeVisible();
+});
+
+test('first prompt stays visible through creation and empty polls, then merges once', async ({ page }) => {
+  await page.clock.install();
+  let releaseCreate: (() => void) | undefined;
+  let includeMessage = false;
+  const prompt = 'Build a four-player scoreboard';
+  await page.route('**/api/base44', async route => {
+    const { action } = route.request().postDataJSON();
+    if (action === 'listApps') return route.fulfill({ json: { apps: [], hasMore: false } });
+    if (action === 'createApp') await new Promise<void>(resolve => { releaseCreate = resolve; });
+    if (action === 'getConversation') return route.fulfill({ json: { messages: includeMessage
+      ? [{ id: 'server-user', role: 'user', content: prompt }] : [] } });
+    return route.fulfill({ json: { id: 'app_1', status: { state: 'processing' } } });
+  });
+  await page.goto('/');
+  await page.getByLabel('What would you like to build?').fill(prompt);
+  await page.getByRole('button', { name: 'Create app', exact: true }).click();
+  await expect(page.getByText(prompt, { exact: true })).toBeVisible();
+  await expect(page.locator('.from-assistant')).toHaveCount(0);
+  await expect.poll(() => !!releaseCreate).toBe(true);
+  releaseCreate!();
+  await expect(page.getByText('Building…', { exact: true })).toBeVisible();
+  await expect(page.getByText(prompt, { exact: true })).toBeVisible();
+  await expect(page.getByText('No messages yet.', { exact: true })).toHaveCount(0);
+  includeMessage = true;
+  await page.clock.fastForward(2_100);
+  await expect(page.locator('.from-user')).toHaveCount(1);
+  await expect(page.getByText(prompt, { exact: true })).toHaveCount(1);
+});
+
+test('failed creation removes the optimistic bubble and restores the draft', async ({ page }) => {
+  let failCreate: (() => void) | undefined;
+  await page.route('**/api/base44', async route => {
+    const { action } = route.request().postDataJSON();
+    if (action === 'listApps') return route.fulfill({ json: { apps: [], hasMore: false } });
+    await new Promise<void>(resolve => { failCreate = resolve; });
+    return route.fulfill({ status: 400, json: { error: 'Creation rejected' } });
+  });
+  await page.goto('/');
+  const input = page.getByLabel('What would you like to build?');
+  await input.fill('Build a scoreboard');
+  await page.getByRole('button', { name: 'Create app', exact: true }).click();
+  await expect(page.locator('.from-user')).toHaveCount(1);
+  await expect.poll(() => !!failCreate).toBe(true);
+  failCreate!();
+  await expect(input).toHaveValue('Build a scoreboard');
+  await expect(page.locator('.from-user')).toHaveCount(0);
+  await expect(page.locator('aside[role=alert]')).toBeVisible();
+});

@@ -67,7 +67,7 @@ export default function BuilderChat({
               </div>
             ))}
           <ThreadPrimitive.Messages>
-            {({ message }) => (
+            {({ message }) => message.content.length === 0 ? null : (
               <MessagePrimitive.Root
                 className={`chat-message ${message.role === "user" ? "from-user" : "from-assistant"}`}
               >

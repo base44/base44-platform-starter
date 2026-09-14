@@ -1,8 +1,9 @@
 "use client";
 import type { App, ToolInput } from "../lib/types";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../lib/builder-api";
 import { Loader2, Eye, Upload, ExternalLink } from "lucide-react";
+import { mergeOptimisticMessages, type OptimisticMessage } from "../lib/optimistic-messages";
 import BuilderChat from "./BuilderChat";
 import { useBuildPolling } from "./useBuildPolling";
 
@@ -22,9 +23,13 @@ export default function Builder({
   const [resumeId, setResumeId] = useState("");
   const [preview, setPreview] = useState<string | null>(null);
   const [published, setPublished] = useState<string | null>(null);
+  const [optimistic, setOptimistic] = useState<OptimisticMessage[]>([]);
   const lock = useRef(false);
   const previewVersion = useRef(0);
   const { app, messages, error: pollingError, refresh, resume } = useBuildPolling(appId);
+  const displayedMessages = useMemo(
+    () => mergeOptimisticMessages(messages, optimistic), [messages, optimistic],
+  );
   useEffect(() => {
     if (app) onUpdated?.(app);
   }, [app, onUpdated]);
@@ -32,6 +37,11 @@ export default function Builder({
     m.tool_calls?.some((t) => t.status === "waiting_for_user_input"),
   );
   const processing = app?.status?.state === "processing";
+  // A prompt/answer invalidates the previous ready state before polling catches up.
+  // Preview and deploy operations themselves should keep the card mounted.
+  const submittingBuild = busy === "Sending prompt…" || busy === "Answering question…";
+  const canDeliver = app?.id === appId && app?.status?.state === "ready" &&
+    !waiting && !pollingError && !submittingBuild;
 
   useEffect(() => {
     if (!preview) return;
@@ -51,6 +61,11 @@ export default function Builder({
     )
       return false;
     lock.current = true;
+    const optimisticId = `local:${crypto.randomUUID()}`;
+    setOptimistic((current) => [...current, {
+      message: { id: optimisticId, role: "user", content: prompt },
+      knownIds: messages.map((message) => message.id),
+    }]);
     setBusy(appId ? "Sending prompt…" : "Creating app…");
     setError("");
     try {
@@ -64,6 +79,7 @@ export default function Builder({
       }
       return true;
     } catch (err) {
+      setOptimistic((current) => current.filter(({ message }) => message.id !== optimisticId));
       setError(err instanceof Error ? err.message : "Request failed.");
       if (!appId) setCreationUncertain(!(err instanceof api.ApiError && err.notStarted));
       else await refresh();
@@ -86,7 +102,7 @@ export default function Builder({
     }
   }
   async function openPreview() {
-    if (!appId || lock.current) return;
+    if (!appId || lock.current || !canDeliver) return;
     const version = ++previewVersion.current;
     lock.current = true;
     setBusy("Starting preview…");
@@ -109,7 +125,7 @@ export default function Builder({
     if (!result.url) setError("No published URL is available yet.");
   }
   async function deploy() {
-    if (!appId || lock.current) return;
+    if (!appId || lock.current || !canDeliver) return;
     lock.current = true;
     setBusy("Deploying…");
     setError("");
@@ -190,9 +206,8 @@ export default function Builder({
         </details>
       )}
       <BuilderChat
-        key={appId || "new"}
         appId={appId}
-        messages={messages}
+        messages={displayedMessages}
         busy={!!busy}
         processing={processing}
         waiting={waiting}
@@ -201,7 +216,7 @@ export default function Builder({
         onSend={send}
         onAnswer={answer}
       >
-        {appId && (
+        {canDeliver && (
           <section className="delivery" aria-label="Preview and publish">
             <div className="ready-heading">
               <strong>{app?.name || "Your app"}</strong>
