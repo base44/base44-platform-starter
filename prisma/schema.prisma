@@ -272,3 +272,101 @@ model AppInstall {
   @@index([createdBy])
   @@map("app_installs")
 }
+
+enum Base44AppLifecycle {
+  active
+  /// Deleted in Base44 = moved to trash, self-serve restorable for 30 days.
+  /// Deliberately not `deleted`: naming it that invites a purge, and a purge is
+  /// wrong for every app that comes back via app.restored.v1.
+  trashed
+}
+
+/// A transition the app's owner has not been shown yet. Set by the webhook
+/// receiver, cleared by the browser that claims it — see src/lib/base44AppMirror.ts.
+enum Base44AppNotice {
+  deleted
+  restored
+}
+
+/// Every inbound Base44 webhook we accepted. Written by
+/// src/app/api/base44/webhooks/route.ts and nothing else.
+///
+/// Delivery is at-least-once: Base44 retries any non-2xx up to 8 times over
+/// ~27h, and a delivery whose response was lost in flight arrives again with the
+/// same CloudEvents id. The unique index on `cloudEventId` is what makes
+/// reprocessing a no-op, so it is the de-duplication mechanism rather than a
+/// diagnostic — see the note in the route.
+model Base44WebhookEvent {
+  id String @id @default(cuid())
+
+  /// The CloudEvents `id`, also sent as the `webhook-id` header and covered by
+  /// the signature. Unique: this is the dedupe key.
+  cloudEventId String @unique @map("cloud_event_id")
+
+  eventType String  @map("event_type")
+  /// Null for webhook.test.v1, which is about the endpoint, not an app.
+  appId     String? @map("app_id")
+  /// The Base44 workspace the event came from; asserted against BASE44_ORG_ID.
+  workspaceId String @map("workspace_id")
+
+  receivedAt  DateTime  @default(now()) @map("received_at")
+  /// Set once the reconciler has run. A row with this null is an event we
+  /// accepted and then failed to project — the signal worth alerting on.
+  processedAt DateTime? @map("processed_at")
+
+  @@index([eventType, receivedAt])
+  @@map("base44_webhook_events")
+}
+
+/// What the webhooks say is true of each Base44 app, projected out of the event
+/// stream. One row per app.
+///
+/// This exists because the shell cannot learn some of it any other way:
+/// `listApps` is a poll, it costs a round trip per page load, and it cannot
+/// report a deletion at all — a trashed app simply stops being listed, which is
+/// indistinguishable from a failed call. Events carry the transition.
+model Base44AppState {
+  id String @id @default(cuid())
+
+  /// The Base44 app. Not an FK — apps live in Base44, not here.
+  appId String @unique @map("app_id")
+
+  lifecycle Base44AppLifecycle @default(active)
+
+  /// The app's display name as the shell last knew it, read off the local
+  /// Widget/AppOwnership rows before they are removed.
+  ///
+  /// Not from the event: app lifecycle payloads carry identifiers and timestamps
+  /// and nothing a user authored, because an app named after a person would
+  /// reclassify the whole event stream as PII-bearing. So this is the only place
+  /// a notice can honestly get a name from, and it survives the rows it came off.
+  appName String? @map("app_name")
+
+  /// A transition the owner has not been told about. Claimed — read and cleared
+  /// in one compare-and-swap — so two open tabs share the notices rather than
+  /// both announcing all of them.
+  pendingNotice Base44AppNotice? @map("pending_notice")
+  noticeAt      DateTime?        @map("notice_at")
+
+  /// The shell user who owns the app, resolved from the event's
+  /// `owner_service_external_id` via Base44Link. Null when the owning principal
+  /// is not one of ours — an app built by another tool in the same workspace —
+  /// which is a legitimate state, not an error.
+  ownerEmail String? @map("owner_email")
+
+  /// Last published version identity, from app.published.v1. Null until first
+  /// publish, and left in place by an unpublish so "what was live" survives.
+  publishedVersion String?   @map("published_version")
+  publishedAt      DateTime? @map("published_at")
+  unpublishedAt    DateTime? @map("unpublished_at")
+
+  /// `time` from the newest event applied. Used to drop stale events: retries
+  /// mean a slow attempt 3 can land after a fresh attempt 1 for a later event,
+  /// and applying it would move the app backwards in time.
+  lastEventAt DateTime @map("last_event_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([ownerEmail])
+  @@map("base44_app_states")
+}
