@@ -48,3 +48,13 @@ test('optimistic prompts survive empty polls and merge once without confusing re
   assert.deepEqual(mergeOptimisticMessages([server, reply], repeated), [first, reply, second]);
   assert.deepEqual(mergeOptimisticMessages([server, reply, { ...server, id: 'server:2' }], repeated), [first, reply, second]);
 });
+
+ test('build readiness requires code and a settled assistant turn', async () => {
+  const { hasCompletedBuild } = await import('../lib/build-readiness');
+  const built = { id: 'built', role: 'assistant', tool_calls: [{ name: 'write_file', status: 'success' }] };
+  assert.equal(hasCompletedBuild([{ id: 'hello', role: 'assistant', content: 'Hello!' }]), false);
+  assert.equal(hasCompletedBuild([built]), true);
+  assert.equal(hasCompletedBuild([{ ...built, tool_calls: [{ name: 'write_file', status: 'error' }] }]), false);
+  assert.equal(hasCompletedBuild([built, { id: 'followup', role: 'user' }]), false);
+  assert.equal(hasCompletedBuild([built, { id: 'running', role: 'assistant', tool_calls: [{ name: 'find_replace', status: 'running' }] }]), false);
+});

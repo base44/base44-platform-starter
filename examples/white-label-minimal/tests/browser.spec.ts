@@ -14,7 +14,7 @@ async function fixture(page: Page, tool?: ToolCall, failFirst = false) {
       case 'createApp': creates++; json = { id: 'app_1' }; break;
       case 'getApp': json = { id: 'app_1', status: { state: 'ready' } }; break;
       case 'getConversation': json = { messages: [{ id: 'm1', role: 'assistant', content: 'Your app is taking shape.',
-        tool_calls: tool ? [{ ...tool, status }] : [] }] }; break;
+        tool_calls: [{ id: "built-file", name: "write_file", status: "success" }, ...(tool ? [{ ...tool, status }] : [])] }] }; break;
       case 'submitToolCallInput':
         submissions.push(p);
         if (failFirst && submissions.length === 1) return route.abort('failed');
@@ -288,7 +288,7 @@ test('preview card waits for build completion and hides during follow-up submiss
       return route.fulfill({ json: {} });
     }
     if (action === 'getConversation') return route.fulfill({ json: { messages: [
-      { id: 'm1', role: 'assistant', content: 'Your scoreboard is live.' },
+      { id: 'm1', role: 'assistant', content: 'Your scoreboard is live.', tool_calls: [{ id: 'write', name: 'write_file', status: 'success' }] },
     ] } });
     return route.fulfill({ json: { id: 'app_1', name: 'Scoreboard', status: { state } } });
   });
@@ -363,4 +363,19 @@ test('failed creation removes the optimistic bubble and restores the draft', asy
   await expect(input).toHaveValue('Build a scoreboard');
   await expect(page.locator('.from-user')).toHaveCount(0);
   await expect(page.locator('aside[role=alert]')).toBeVisible();
+});
+
+ test('a greeting-only reply never offers preview or publish', async ({ page }) => {
+  await page.route('**/api/base44', route => {
+    const { action } = route.request().postDataJSON();
+    return route.fulfill({ json: action === 'listApps' ? { apps: [], hasMore: false } : action === 'getConversation'
+      ? { messages: [{ id: 'u1', role: 'user', content: 'say hello world' }, { id: 'a1', role: 'assistant', content: 'Hello world! What would you like to build?' }] }
+      : { id: 'app_1', name: 'say hello world', status: { state: 'ready' } } });
+  });
+  await page.goto('/');
+  await page.getByLabel('What would you like to build?').fill('say hello world');
+  await page.getByRole('button', { name: 'Create app', exact: true }).click();
+  await expect(page.getByText('Hello world! What would you like to build?')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Preview and publish' })).toHaveCount(0);
+  await expect(page.getByLabel('What should change?')).toBeEnabled();
 });

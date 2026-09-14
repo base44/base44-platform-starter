@@ -1,4 +1,5 @@
 "use client";
+import { hasCompletedBuild } from "../lib/build-readiness";
 import type { App, ToolInput } from "../lib/types";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../lib/builder-api";
@@ -41,7 +42,7 @@ export default function Builder({
   // Preview and deploy operations themselves should keep the card mounted.
   const submittingBuild = busy === "Sending prompt…" || busy === "Answering question…";
   const canDeliver = app?.id === appId && app?.status?.state === "ready" &&
-    !waiting && !pollingError && !submittingBuild;
+    !waiting && !pollingError && !submittingBuild && hasCompletedBuild(messages);
 
   useEffect(() => {
     if (!preview) return;
