@@ -77,6 +77,34 @@ export const platformHost = () => required("BASE44_PLATFORM_HOST").replace(/\/+$
 export const appsFolderId = () => required("BASE44_APPS_FOLDER_ID");
 
 /**
+ * The workspace's Ed25519 public keys, pinned in env instead of fetched.
+ *
+ * `whpk_`-prefixed, whitespace- or comma-separated, copied once out of the
+ * published key set (`npm run webhook:register` prints them). Unset means fetch
+ * — see src/lib/base44WebhookSignature.ts for what each mode costs.
+ *
+ * **The one BASE44_* value that is not a secret.** It is a public key: it
+ * verifies signatures and cannot produce them, so leaking it buys nothing. It
+ * stays server-side anyway because nothing in the browser verifies webhooks.
+ */
+export const webhookPublicKeys = (): string[] =>
+  (process.env.BASE44_WEBHOOK_PUBLIC_KEYS ?? "")
+    .split(/[\s,]+/)
+    .map((key) => key.trim())
+    .filter((key) => key.length > 0);
+
+/**
+ * The `b44k_` key that registers this deployment's webhook endpoint. Needs
+ * `outbound_webhooks:write`.
+ *
+ * Used by `npm run webhook:register` and by nothing on a request path —
+ * registration is a deploy-time action, not something a user triggers. Falls
+ * back to `BASE44_SVC_KEY` so a single-key deployment works, the same shape
+ * `provisionKey` uses.
+ */
+export const webhookKey = () => process.env.BASE44_WEBHOOK_KEY?.trim() || svcKey();
+
+/**
  * The reserved, non-routable domain Base44 mints synthetic principal addresses
  * in (RFC 2606 `.invalid`, so it can never resolve). Asserted on the provision
  * response: if what comes back is *not* in this domain we did not get a robot

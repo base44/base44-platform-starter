@@ -41,8 +41,22 @@ What does get removed is the shell's own — see [Acting on a deletion](#acting-
 
 ## Registering the endpoint
 
-The receiver lives at `POST /api/base44/webhooks`. Register it against your workspace with the
-workspace API key (scope `outbound_webhooks:write`):
+The receiver lives at `POST /api/base44/webhooks`. Registering is a **deploy-time** action, once per
+environment:
+
+```bash
+npm run webhook:register -- --url https://your-shell.example.com
+```
+
+It registers, waits for the probe, reports `activated`, and then prints the workspace's public key as
+a `BASE44_WEBHOOK_PUBLIC_KEYS=` line ready to paste — see [Verifying a delivery](#verifying-a-delivery)
+for why you might want it. The order matters: **registering is what mints the workspace's first
+signing key**, so there is nothing to copy before it runs.
+
+It is a script rather than a route on purpose. A platform brings a workspace online once, and nothing
+a user can trigger should be able to point Base44 at a different URL.
+
+The same thing by hand, with the workspace API key (scope `outbound_webhooks:write`):
 
 ```bash
 # The workspace key goes in Authorization — bare or `Bearer`-prefixed. This
@@ -109,16 +123,45 @@ Four ways to get this wrong, each of which breaks every signature:
    that only ever handled one breaks on the first rotation.
 4. **base64url.** The wire format is *standard* base64 — it contains `+` and `/`.
 
-`v1a` carries no key id, so a rotated key is indistinguishable from a forgery until you refetch. The
-verifier caches the key set for five minutes and refetches **once** on a mismatch; that refetch is
-the documented recovery path, not an optimisation.
+### Pinned or fetched
+
+`BASE44_WEBHOOK_PUBLIC_KEYS` picks between two ways of holding the verification material, and the
+choice is a real one.
+
+**Pinned.** Copy the `whpk_` keys once — `npm run webhook:register` prints them — and verification
+makes no network call at all. Worth more than it sounds: the fetch otherwise sits on the delivery
+request path inside Base44's 15s budget, and a receiver that cannot reach the platform for a minute
+can verify nothing for that minute, answers non-2xx, and puts itself on the retry ladder. Pinning
+also drops the requirement that the receiver can reach Base44 *at all*, which is the difference
+between a deployment that can verify and one that cannot — a shell whose `BASE44_PLATFORM_HOST` is a
+machine the receiver cannot route to (a laptop, a private network) has no working fetch and a
+perfectly working pin.
+
+Note what pinning is *not*: a secret. It is a public key. It verifies signatures and cannot produce
+one, so it is the single `BASE44_*` value whose leak costs nothing.
+
+**Fetched** (leave it unset). The published set, cached five minutes.
+
+**What pinning costs is automatic rotation, and it is not free.** `v1a` carries no key id, so Base44
+rotates by publishing both keys and signing with both through an overlap window — `valid_until` on
+the retiring one. A fetching receiver picks that up by itself; a pinned one stops verifying when the
+old key retires unless the new one was deployed inside the window. The variable takes a list, so pin
+both while a rotation is in flight and drop the old one afterwards.
+
+On the fetched path only: a rotated key is indistinguishable from a forgery until you refetch, so the
+verifier refetches **once** on a mismatch. That is the documented recovery, not an optimisation — and
+it is deliberately skipped when pinned, where there is no newer answer to get.
 
 Signatures older than 300 seconds are refused even when they verify, which bounds replay of a
 captured request to a window rather than forever.
 
-`npm run webhook:smoke` drives all of that against a freshly minted keypair. The negative controls
-are the point — a tampered body, a relabelled replay, an unknown key and a stale timestamp each have
-to be refused, and refused for the stated reason.
+`npm run webhook:smoke` drives all of that against a freshly minted keypair, both key sources
+included. The negative controls are the point — a tampered body, a relabelled replay, an unknown key
+and a stale timestamp each have to be refused, and refused for the stated reason. Two of the checks
+count fetches rather than outcomes: a pinned deployment that quietly still reached the network would
+pass every correctness assertion while keeping the dependency pinning exists to remove. One asserts
+that a key truncated by a bad paste **throws**, because a silently invalid key verifies nothing for
+ever, which looks identical to every event being forged.
 
 ## Acting on a deletion
 

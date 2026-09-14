@@ -332,6 +332,18 @@ its own, so the apps list would eventually self-correct — but a pinned widget 
 stored URL and is in no list. Without the event it sits on the dashboard indefinitely, showing an app
 that is not there.
 
+Register once per environment, and it prints the public key to pin:
+
+```bash
+npm run webhook:register -- --url https://your-shell.example.com
+```
+
+Verification material comes from one of two places, and `BASE44_WEBHOOK_PUBLIC_KEYS` picks. **Pinned**
+— paste the `whpk_` keys — and verification makes no network call, so a receiver that cannot reach
+Base44 still works; the cost is applying a key rotation yourself, inside Base44's dual-sign overlap.
+**Unset** and it fetches the published set, which handles rotation on its own. The pinned value is a
+public key, not a secret: it verifies signatures and cannot make them.
+
 ```bash
 npm run webhook:smoke              # the signature, case by case — no server, no database
 npm run webhook:projection:smoke   # what a verified event does: removal, notice, restore, replay
@@ -365,7 +377,7 @@ npm run auth:smoke       # step 1: session → actor
 npm run entities:smoke   # step 1: whitelisting, scoping, wire shape
 npm run base44:smoke     # steps 2–3: token containment, allow-list, session keying
 npm run sunny:smoke     # step 4: the public contract, action by action
-npm run webhook:smoke    # step 5: the inbound signature, incl. the negative controls
+npm run webhook:smoke    # step 5: the inbound signature, both key sources, negative controls
 npm run webhook:projection:smoke   # step 5: what a verified event does to the shell's own rows
 ```
 

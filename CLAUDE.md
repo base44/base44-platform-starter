@@ -49,6 +49,9 @@ Next.js App Router · TypeScript · Tailwind 4 · Postgres + Prisma · NextAuth 
   is the boundary: the URL is public, so the event type, the app id and above all
   `owner_service_external_id` — which decides whose rows the projection touches — are all
   attacker-controlled until it returns ok. Verify the **raw** body text, never a re-serialized one.
+  Verification material comes from `BASE44_WEBHOOK_PUBLIC_KEYS` when set (pinned, no network call,
+  rotation applied by hand) and from the published key set otherwise (fetched, rotation automatic);
+  the pinned value is a public key, so it is the one `BASE44_*` variable that is not a secret.
   `app.deleted.v1` is a *trash* signal, restorable for 30 days; never purge on it — and mind that
   the stakes are no longer cosmetic: `src/lib/base44AppMirror.ts` removes the shell's own rows for a
   deleted app, so a forged event would be data loss against a named user.
@@ -86,7 +89,8 @@ npm run auth:smoke       # boundary 1: session → actor
 npm run entities:smoke   # boundary 1: whitelisting, scoping, wire shape
 npm run base44:smoke     # boundaries 2–3: token containment, allow-list, session keying
 npm run sunny:smoke     # boundary 4: the public contract, action by action
-npm run webhook:smoke    # boundary 5: the inbound signature, incl. the negative controls
+npm run webhook:register # boundary 5: register the endpoint, print the key to pin (deploy-time)
+npm run webhook:smoke    # boundary 5: the inbound signature, both key sources, negative controls
 npm run webhook:projection:smoke   # boundary 5: removal, notice claim, restore, replayed delete
 ```
 

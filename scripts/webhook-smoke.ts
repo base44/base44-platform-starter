@@ -13,6 +13,11 @@
  * makes the suite mean something is that a tampered body, a relabelled event id,
  * an unknown key and a stale timestamp are each refused, and refused for the
  * stated reason.
+ *
+ * Both key sources are covered, and the fetch counter is what proves the pinned
+ * one: a pinned deployment that quietly still reached the network would pass
+ * every correctness assertion while keeping the runtime dependency pinning
+ * exists to remove.
  */
 
 import crypto from "node:crypto";
@@ -159,6 +164,47 @@ async function main() {
     failed += 1;
     console.log(` FAIL expected exactly one refetch, saw ${fetches - before}`);
   }
+
+  // --- pinned keys: the same verifier, with no network at all ---------------
+  resetKeySetCache();
+  process.env.BASE44_WEBHOOK_PUBLIC_KEYS = known.wire;
+  let pinnedFetches = fetches;
+  await expect("a pinned key verifies a genuine signature", true, signedHeaders());
+  if (fetches !== pinnedFetches) {
+    failed += 1;
+    console.log(" FAIL pinned verification still fetched the key set");
+  }
+
+  // The refetch-on-mismatch path must NOT run when pinned: there is no newer
+  // answer, and reaching for one would restore the dependency.
+  pinnedFetches = fetches;
+  await expect(
+    "a pinned key refuses a signature it does not cover",
+    "signature_mismatch",
+    signedHeaders({ signers: [stranger] }),
+  );
+  if (fetches !== pinnedFetches) {
+    failed += 1;
+    console.log(" FAIL a pinned mismatch refetched the key set");
+  }
+
+  // Two pinned keys is how a rotation is survived without a redeploy mid-window.
+  process.env.BASE44_WEBHOOK_PUBLIC_KEYS = `${stranger.wire} ${known.wire}`;
+  await expect("both keys of a pinned rotation verify", true, signedHeaders());
+
+  // A key truncated by a copy-paste must fail loudly. Silently verifying
+  // nothing would look exactly like every event being forged.
+  process.env.BASE44_WEBHOOK_PUBLIC_KEYS = known.wire.slice(0, -8);
+  let threw = false;
+  try {
+    await verifyWebhook(signedHeaders(), BODY);
+  } catch {
+    threw = true;
+  }
+  console.log(`${threw ? "  ok  " : " FAIL "} a truncated pinned key throws rather than verifying nothing`);
+  if (!threw) failed += 1;
+
+  delete process.env.BASE44_WEBHOOK_PUBLIC_KEYS;
 
   console.log(failed === 0 ? "\nall checks passed" : `\n${failed} check(s) FAILED`);
   process.exit(failed === 0 ? 0 : 1);
