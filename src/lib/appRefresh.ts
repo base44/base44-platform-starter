@@ -1,9 +1,17 @@
 /**
- * Tells embedded copies of a built app that it changed. A rebuilt or redeployed
- * app is served from the same URL, so an iframe has no reason to refetch and the
- * user keeps seeing the old bundle. Keyed by app id: a dashboard holds several.
+ * Cross-page announcements about a built app, for the two cases a page has no
+ * other way to learn about.
+ *
+ * **Rebuilt.** A rebuilt or redeployed app is served from the same URL, so an
+ * iframe has no reason to refetch and the user keeps seeing the old bundle.
+ * Keyed by app id: a dashboard holds several.
+ *
+ * **Removed.** Base44 deleted the app and the shell has dropped its rows — see
+ * src/lib/base44AppMirror.ts. The removal already happened server-side; this is
+ * how a page that is *already open* stops showing it, rather than waiting for a
+ * reload.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export const APP_REBUILT = "app-rebuilt";
 
@@ -34,4 +42,34 @@ export function useAppRebuildNonce(appId: string | null | undefined): number {
 export function withNonce(url: string | null, nonce: number): string | null {
   if (!url || !nonce) return url;
   return `${url}${url.includes("?") ? "&" : "?"}v=${nonce}`;
+}
+
+/** An app Base44 deleted, which the shell has stopped carrying. */
+export const APP_REMOVED = "base44-app-removed";
+
+export function announceAppRemoved(appId: string): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(APP_REMOVED, { detail: { appId } }));
+}
+
+/**
+ * Calls `onRemoved(appId)` when an app the shell was carrying goes away.
+ *
+ * Ref-held so an inline arrow does not rebind — and miss an event — every
+ * render, matching `useMarketChanges`.
+ */
+export function useAppRemoved(onRemoved: (appId: string) => void): void {
+  const latest = useRef(onRemoved);
+  useEffect(() => {
+    latest.current = onRemoved;
+  }, [onRemoved]);
+
+  useEffect(() => {
+    const fire = (e: Event) => {
+      const appId = (e as CustomEvent<{ appId?: string }>).detail?.appId;
+      if (appId) latest.current(appId);
+    };
+    window.addEventListener(APP_REMOVED, fire);
+    return () => window.removeEventListener(APP_REMOVED, fire);
+  }, []);
 }

@@ -12,7 +12,7 @@
  */
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useAppFrameAuth } from "@/lib/appFrameAuth";
-import { useAppRebuildNonce, withNonce } from "@/lib/appRefresh";
+import { useAppRebuildNonce, useAppRemoved, withNonce } from "@/lib/appRefresh";
 import { listUsableApps } from "@/lib/usableApps";
 import PublishDialog from "@/components/market/PublishDialog";
 import AppNameField from "@/components/AppNameField";
@@ -84,6 +84,15 @@ export default function MyTools() {
     setApps((prev) => prev.map((a) => (a.id === id ? { ...a, name } : a)));
     setSelectedApp((prev) => (prev?.id === id ? { ...prev, name } : prev));
   }, []);
+
+  // Base44 deleted it and the shell has already dropped its rows, so the list
+  // here is stale rather than authoritative. Closing it matters as much as
+  // removing the card: an open frame on a deleted app just fails, with nothing
+  // on screen to say why.
+  useAppRemoved((appId) => {
+    setApps((prev) => prev.filter((a) => a.id !== appId));
+    setSelectedApp((prev) => (prev?.id === appId ? null : prev));
+  });
 
   if (selectedApp) {
     const url = selectedUrl;
