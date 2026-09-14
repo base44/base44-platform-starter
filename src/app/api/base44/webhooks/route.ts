@@ -12,10 +12,17 @@
  * ## What makes a request trustworthy
  *
  * Nothing about the request except its signature. The URL is public, so the
- * event type, the app id, and above all the `owner_service_external_id` the
- * reconciler uses to pick *whose* rows to touch are all attacker-controlled
- * until `verifyWebhook` returns ok. There is no shared secret and no allow-list
- * of source IPs; the Ed25519 signature over the raw body is the whole control.
+ * event type, the app id, and above all the `owner_service_external_id` that
+ * decides *whose* rows get touched are all attacker-controlled until
+ * `verifyWebhook` returns ok. There is no shared secret and no allow-list of
+ * source IPs; the Ed25519 signature over the raw body is the whole control.
+ *
+ * That control carries the weight of a deletion. `app.deleted.v1` removes this
+ * shell's rows for the app — the dashboard pins and the ownership register (see
+ * src/lib/base44AppMirror.ts) — so a forged event is a data-loss primitive
+ * against a named user, not a wrong badge. Nothing below runs before the
+ * signature verifies, and the removal is scoped through the RLS predicate to the
+ * one owner the verified event names.
  *
  * The body is read **once** as text and passed to both the verifier and the
  * parser. Verifying a re-serialized body is the classic way to make every
@@ -146,12 +153,13 @@ export async function POST(request: Request) {
  * no session, so anything it returns is public.
  */
 export async function GET() {
-  const [accepted, unprocessed, trashed, latest] = await Promise.all([
+  const [accepted, unprocessed, trashed, unclaimed, latest] = await Promise.all([
     prisma.base44WebhookEvent.count(),
     prisma.base44WebhookEvent.count({ where: { processedAt: null } }),
     // The payoff, as one number: apps the shell knows are gone. Polling
     // `listApps` can never produce this — a trashed app just stops being listed.
     prisma.base44AppState.count({ where: { lifecycle: "trashed" } }),
+    prisma.base44AppState.count({ where: { pendingNotice: { not: null } } }),
     prisma.base44WebhookEvent.findFirst({
       orderBy: { receivedAt: "desc" },
       select: { eventType: true, receivedAt: true },
@@ -163,6 +171,10 @@ export async function GET() {
     // Non-zero for more than a few minutes is the thing to alert on.
     unprocessed,
     apps_trashed: trashed,
+    // Removals nobody has been shown yet. Ordinary in ones and twos — a notice
+    // waits for its owner to open the shell. A number that only grows means the
+    // claim path is broken, not that users are ignoring it.
+    notices_unclaimed: unclaimed,
     last_event_type: latest?.eventType ?? null,
     last_received_at: latest?.receivedAt ?? null,
   });

@@ -34,8 +34,10 @@ purges on this event is wrong for every app that comes back** — which is exact
 `app.restored.v1` exists. This is the single most likely way to get an integration wrong, because
 "deleted" reads as final and is not.
 
-So the projection here sets `lifecycle = trashed` and keeps the row. Nothing is deleted, and a
-restore is a one-field update rather than a resurrection.
+So the projection here sets `lifecycle = trashed` and keeps the row. Nothing about *Base44's* app is
+forgotten, and a restore is a one-field update rather than a resurrection.
+
+What does get removed is the shell's own — see [Acting on a deletion](#acting-on-a-deletion).
 
 ## Registering the endpoint
 
@@ -118,6 +120,67 @@ captured request to a window rather than forever.
 are the point — a tampered body, a relabelled replay, an unknown key and a stale timestamp each have
 to be refused, and refused for the stated reason.
 
+## Acting on a deletion
+
+Recording the state is half of it. `src/lib/base44AppMirror.ts` is the other half: what the shell has
+to change about *itself*, and how the owner finds out.
+
+**Two kinds of row point at a Base44 app.** A `Widget` is a pin on somebody's dashboard; an
+`AppOwnership` is the register `listAppsForUser` intersects the workspace folder against. Left in
+place after a delete, the first renders an iframe of an app that is not there and the second keeps
+claiming it. Both go.
+
+**This is the part polling could not have done, and it is worth being precise about why.** A trashed
+app drops out of `listApps`, so the apps list self-corrects on its own — eventually, and only because
+the shell recomputes an intersection on every page load. A `Widget` row is not in that intersection.
+It renders from its own stored `preview_url`, so nothing about a poll would ever reach it: it sits on
+the dashboard indefinitely, framing an app that no longer exists.
+
+**A restore puts the register back and deliberately does not put the pin back.** Without the
+ownership row a restored app is invisible in the shell for ever, and no later event will fix that. A
+dashboard pin is different — it is a placement its owner chose, a slot and a height and a width — and
+inventing one back is worse than letting them re-add it. The notice says so.
+
+**The name in the notice is the shell's, not the event's.** App lifecycle payloads carry identifiers
+and timestamps and nothing a user authored, because an app named after a person would reclassify the
+whole event stream as PII-bearing. So the receiver reads the last-known name off the rows it is about
+to delete and keeps it on `Base44AppState.appName` — which is the only place a notice can honestly
+get a name from, and why that column outlives the rows it came from.
+
+**Removal is scoped by the RLS predicate, not by the event.** Every delete goes through
+`src/lib/entityCrud.ts` with an actor built from the resolved owner, so a verified event can only
+reach that one user's rows. The read and write paths in that file are unchanged; the mirror composes
+what is already exported. An event whose `owner_service_external_id` belongs to no `Base44Link` — an
+app built by another tool in the same workspace — removes nothing and raises no notice, which is an
+ordinary answer rather than an error.
+
+### Telling the user
+
+A deletion happens while nobody is looking, so the notice waits on the app's state row:
+`pendingNotice` plus `noticeAt`. `POST /api/base44/app-notices` hands the signed-in user theirs and
+clears them in the same call — a compare-and-swap per notice, so two open tabs divide them rather
+than each announcing all of them. It is a POST because reading a notice consumes it; a GET here would
+be a cacheable mutation.
+
+`src/components/AppNotices.tsx` claims on mount, whenever the tab becomes visible, and on a slow
+timer. It sits inside `ToastProvider` above the pages, so a deletion reaches its owner on whatever
+screen they are on — then fires `widgets-updated` (the dashboard re-reads; its pin is gone) and
+`APP_REMOVED` (the apps list drops the card, and closes it if that app is the one on screen).
+
+Losing a notice to a tab that closes mid-flight is accepted by design. A notice is a courtesy; the
+removal it describes already happened and is durable. `GET /api/base44/webhooks` reports
+`notices_unclaimed` — ordinary in ones and twos, and a number that only ever grows means the claim
+path is broken rather than that users are ignoring it.
+
+```bash
+npm run webhook:projection:smoke   # needs a database, no dev server
+```
+
+Five properties, each a way to get this wrong: the removal captures the name before the rows go; a
+notice is claimed exactly once; a restore rebuilds the register and not the pin; a replayed
+`app.deleted` that a newer `app.restored` has superseded is dropped rather than re-applied; and an
+unresolvable owner touches nothing.
+
 ## Delivery semantics you have to design for
 
 **At-least-once.** Base44 retries every non-2xx and every timeout: 8 attempts over ~27h35m
@@ -142,17 +205,21 @@ receiver triggers.
 
 It is a reference receiver, not a finished product surface.
 
-- **The projection is not wired into the UI.** `Base44AppState` records that an app is trashed, and
-  `GET /api/base44/webhooks` reports the count, but no screen reads it. Hiding a trashed app's
-  widgets would mean changing the `Widget` read path in `src/lib/entityCrud.ts` — the RLS chokepoint
-  and, per `CLAUDE.md`, the single biggest correctness risk in this repo. That belongs in its own
-  change, reviewed on its own terms. `trashedAppIds(ownerEmail)` in
-  `src/lib/base44WebhookEvents.ts` is the query it would use, and it encodes the trap: a *missing*
-  row means "nothing reported", never "trashed".
+- **Only deletion and restore are acted on.** `app.created`, `app.published` and `app.unpublished`
+  are recorded and nothing reads them. Published state in particular is still resolved live from
+  Base44 wherever the UI needs it, so the projection is a second, weaker copy — useful for a
+  dashboard, not something to switch a render path onto without deciding which one wins.
+- **Only the owner's own rows are cleaned up.** A deleted app can still have a `MarketplaceListing`
+  offering it and `AppInstall` rows granting other users access to it, and both survive. Those are
+  other people's rows and a real product decision — does an installer get told, does a delisted
+  listing come back on restore — rather than an oversight to fix in the same pass. A production
+  deployment has to answer it; the shape to copy is the one here, routed through
+  `src/lib/marketplace.ts` and `src/lib/appInstall.ts`, which own those models.
 - **No replay of history.** Base44 does not send a newly registered endpoint the events it missed,
   and this receiver does not backfill. An app built before the endpoint existed has no state row
   until its next transition. Readers must treat a missing row as "nothing reported", never as
-  "trashed".
+  "trashed". Deleting such an app is still handled correctly, though — the removal keys off the
+  event's `app_id`, not off a state row that may not exist yet.
 - **One crash window is left open on purpose.** The event id is claimed before the projection runs,
   so a crash in between leaves a row with `processed_at` null and the retry is rejected as a
   duplicate. That is a visible, queryable defect — `GET /api/base44/webhooks` counts them — where

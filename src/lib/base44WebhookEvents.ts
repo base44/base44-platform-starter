@@ -16,11 +16,17 @@
  *     event can land after attempt 1 of a later one. Every apply is gated on the
  *     event's own `time` being newer than what the row has already seen, so a
  *     late arrival cannot move an app backwards — a stale `app.deleted` landing
- *     after a fresh `app.restored` would otherwise re-trash a live app.
+ *     after a fresh `app.restored` would otherwise re-trash a live app, and now
+ *     also tear down the rows that render it.
+ *
+ * Recording the state is only half of it. `src/lib/base44AppMirror.ts` owns the
+ * other half — the rows the shell has to remove or put back, and the notice its
+ * owner sees — and runs behind the same staleness gate for that reason.
  */
 
 import type { Base44AppLifecycle, Prisma } from "@prisma/client";
 
+import { mirrorTransition } from "@/lib/base44AppMirror";
 import { emailForServiceExternalId } from "@/lib/base44Link";
 import { prisma } from "@/lib/prisma";
 
@@ -109,15 +115,33 @@ export async function projectEvent(event: CloudEvent): Promise<ProjectionOutcome
   if (!appId) return "no_app_id";
 
   const occurredAt = asDate(event.time) ?? new Date();
+  const existing = await prisma.base44AppState.findUnique({
+    where: { appId },
+    select: { lastEventAt: true, appName: true },
+  });
+
+  // Gated before anything is changed, not just before the state write: the
+  // mirror deletes rows, and replaying a superseded deletion would take down an
+  // app that is back.
+  if (existing && existing.lastEventAt >= occurredAt) return "ignored_stale";
+
   const principal = asString(event.data.owner_service_external_id);
   const ownerEmail = principal ? await emailForServiceExternalId(principal) : null;
 
-  const changes = transition(event);
+  // No resolved owner means no rows to change and nobody to tell — an app built
+  // by another tool in the same workspace has a principal this shell never
+  // provisioned. An ordinary answer, so the state is still recorded.
+  const mirrored = ownerEmail
+    ? await mirrorTransition({
+        eventType: event.type,
+        appId,
+        ownerEmail,
+        occurredAt,
+        knownName: existing?.appName ?? null,
+      })
+    : {};
 
-  const existing = await prisma.base44AppState.findUnique({
-    where: { appId },
-    select: { lastEventAt: true },
-  });
+  const changes = { ...transition(event), ...mirrored };
 
   if (!existing) {
     await prisma.base44AppState.create({
@@ -131,8 +155,6 @@ export async function projectEvent(event: CloudEvent): Promise<ProjectionOutcome
     return "applied";
   }
 
-  if (existing.lastEventAt >= occurredAt) return "ignored_stale";
-
   await prisma.base44AppState.update({
     where: { appId },
     data: {
@@ -144,18 +166,4 @@ export async function projectEvent(event: CloudEvent): Promise<ProjectionOutcome
     },
   });
   return "applied";
-}
-
-/**
- * Apps the webhooks report as trashed for this owner.
- *
- * A missing row means "nothing has been reported", never "trashed" — the
- * endpoint only sees transitions that happened after it was activated, so an app
- * built before then has no row until it next changes.
- */
-export function trashedAppIds(ownerEmail: string): Promise<{ appId: string }[]> {
-  return prisma.base44AppState.findMany({
-    where: { ownerEmail, lifecycle: "trashed" },
-    select: { appId: true },
-  });
 }

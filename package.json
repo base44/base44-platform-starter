@@ -20,6 +20,7 @@
     "market:smoke": "tsx --env-file=.env scripts/marketplace-smoke.ts",
     "base44:smoke": "tsx --env-file=.env scripts/base44-smoke.ts",
     "webhook:smoke": "tsx --env-file=.env scripts/webhook-smoke.ts",
+    "webhook:projection:smoke": "tsx --env-file=.env scripts/webhook-projection-smoke.ts",
     "postinstall": "prisma generate",
     "minimal:dev": "npm run dev --workspace @base44/white-label-minimal",
     "minimal:build": "npm run build --workspace @base44/white-label-minimal",

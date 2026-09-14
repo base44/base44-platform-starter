@@ -281,6 +281,13 @@ enum Base44AppLifecycle {
   trashed
 }
 
+/// A transition the app's owner has not been shown yet. Set by the webhook
+/// receiver, cleared by the browser that claims it — see src/lib/base44AppMirror.ts.
+enum Base44AppNotice {
+  deleted
+  restored
+}
+
 /// Every inbound Base44 webhook we accepted. Written by
 /// src/app/api/base44/webhooks/route.ts and nothing else.
 ///
@@ -325,6 +332,21 @@ model Base44AppState {
   appId String @unique @map("app_id")
 
   lifecycle Base44AppLifecycle @default(active)
+
+  /// The app's display name as the shell last knew it, read off the local
+  /// Widget/AppOwnership rows before they are removed.
+  ///
+  /// Not from the event: app lifecycle payloads carry identifiers and timestamps
+  /// and nothing a user authored, because an app named after a person would
+  /// reclassify the whole event stream as PII-bearing. So this is the only place
+  /// a notice can honestly get a name from, and it survives the rows it came off.
+  appName String? @map("app_name")
+
+  /// A transition the owner has not been told about. Claimed — read and cleared
+  /// in one compare-and-swap — so two open tabs share the notices rather than
+  /// both announcing all of them.
+  pendingNotice Base44AppNotice? @map("pending_notice")
+  noticeAt      DateTime?        @map("notice_at")
 
   /// The shell user who owns the app, resolved from the event's
   /// `owner_service_external_id` via Base44Link. Null when the owning principal
