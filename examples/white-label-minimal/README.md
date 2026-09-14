@@ -3,6 +3,11 @@
 A minimal Base44 integration: sign in, connect a workspace, create an app,
 chat with the builder, answer its questions, preview, and publish.
 
+This example uses the [service-user tenancy model](https://base44-docs-white-label-rewrite.mintlify.site/white-label/tenancy-and-credentials#service-users).
+Each builder gets a Base44 service user that owns their apps. Your backend provisions
+that identity using a workspace API key, then uses the service user's access token
+to create and manage apps. Both credentials stay on the server.
+
 ## Run locally
 
 Use Node.js 24. From the repository root:
@@ -44,13 +49,13 @@ components/Builder.tsx → lib/builder-api.ts → app/api/base44/route.ts
 [lib/app-service.ts](lib/app-service.ts) is where your application plugs in:
 
 - `auth.ts` supplies the verified user from your session.
-- `base44-identity.ts` supplies that user's Base44 access token and renews it near expiry.
+- [base44-identity.ts](lib/base44-identity.ts) provisions a service user, mints its token,
+  and refreshes it near expiry.
 - `app-repository.ts` saves ownership and scopes app access to that user.
 
-These three adapters currently use Sunny's shared server modules in `../../src/lib`.
-Replace them with your authentication, identity provisioning, and storage when
-copying the example into another project. The full demo also imports Sunny's
-logo and Google sign-in button; it runs inside this repository as shipped.
+[prisma/schema.prisma](prisma/schema.prisma) defines identity links and app ownership.
+[lib/db.ts](lib/db.ts) connects through `DATABASE_URL`. The Prisma client is generated
+on install and build; run `npm run db:generate` from the example after schema edits.
 
 Google login and Base44 connection are separate. `/api/base44/connection`
 provisions a service principal using the workspace key. Builder requests use its

@@ -68,6 +68,7 @@ export function createBase44Client(accessToken: string) {
       id: value.id,
       name: value.name,
       preview_screenshot_url: value.preview_screenshot_url,
+      logo_url: value.logo_url,
       user_description: value.user_description,
       status: value.status
         ? { state: value.status.state, error_source: value.status.error_source }

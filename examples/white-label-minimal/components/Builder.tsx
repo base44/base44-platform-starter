@@ -12,7 +12,9 @@ export default function Builder({
   initialAppId,
   onCreated,
   onUpdated,
+  onPreview,
 }: {
+  onPreview: (app: App) => void;
   initialAppId?: string;
   onCreated?: (app: App) => void;
   onUpdated?: (app: App) => void;
@@ -22,11 +24,9 @@ export default function Builder({
   const [error, setError] = useState("");
   const [creationUncertain, setCreationUncertain] = useState(false);
   const [resumeId, setResumeId] = useState("");
-  const [preview, setPreview] = useState<string | null>(null);
   const [published, setPublished] = useState<string | null>(null);
   const [optimistic, setOptimistic] = useState<OptimisticMessage[]>([]);
   const lock = useRef(false);
-  const previewVersion = useRef(0);
   const { app, messages, error: pollingError, refresh, resume } = useBuildPolling(appId);
   const displayedMessages = useMemo(
     () => mergeOptimisticMessages(messages, optimistic), [messages, optimistic],
@@ -43,13 +43,6 @@ export default function Builder({
   const submittingBuild = busy === "Sending prompt…" || busy === "Answering question…";
   const canDeliver = app?.id === appId && app?.status?.state === "ready" &&
     !waiting && !pollingError && !submittingBuild && hasCompletedBuild(messages);
-
-  useEffect(() => {
-    if (!preview) return;
-    // Preview tokens expire after five minutes.
-    const timer = setTimeout(() => setPreview(null), 240_000);
-    return () => clearTimeout(timer);
-  }, [preview]);
 
   async function send(prompt: string) {
     if (
@@ -98,23 +91,6 @@ export default function Builder({
       await api.submitToolCallInput(input);
     } finally {
       await refresh();
-      lock.current = false;
-      setBusy("");
-    }
-  }
-  async function openPreview() {
-    if (!appId || lock.current || !canDeliver) return;
-    const version = ++previewVersion.current;
-    lock.current = true;
-    setBusy("Starting preview…");
-    setError("");
-    setPreview(null);
-    try {
-      const result = await api.getPreviewUrl(appId);
-      if (version === previewVersion.current) setPreview(result.url);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Preview failed.");
-    } finally {
       lock.current = false;
       setBusy("");
     }
@@ -219,17 +195,22 @@ export default function Builder({
       >
         {canDeliver && (
           <section className="delivery" aria-label="Preview and publish">
+            {(app?.preview_screenshot_url || app?.logo_url) && (
+              <button className="app-thumbnail" aria-label="Open app thumbnail preview" disabled={!!busy} onClick={() => app && onPreview(app)}>
+                <img src={app.preview_screenshot_url || app.logo_url} alt={`${app.name || "Your app"} thumbnail`} />
+              </button>
+            )}
             <div className="ready-heading">
               <strong>{app?.name || "Your app"}</strong>
             </div>
             <div className="actions">
               <button
                 className="secondary"
-                aria-label={preview ? "Refresh preview" : "Open preview"}
+                aria-label="Open preview"
                 disabled={!!busy}
-                onClick={() => void openPreview()}
+                onClick={() => app && onPreview(app)}
               >
-                <Eye size={14} /> {preview ? "Refresh preview" : "Preview"}
+                <Eye size={14} /> Preview
               </button>
               <button
                 disabled={!!busy || waiting || !!pollingError || app?.status?.state !== "ready"}
@@ -254,25 +235,6 @@ export default function Builder({
               )}
             </div>
 
-            {preview && (
-              <>
-                <button
-                  className="secondary"
-                  onClick={() => {
-                    previewVersion.current++;
-                    setPreview(null);
-                  }}
-                >
-                  Close preview
-                </button>
-                <iframe
-                  title="Generated app preview"
-                  src={preview}
-                  referrerPolicy="no-referrer"
-                  sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-                />
-              </>
-            )}
           </section>
         )}
         {(busy || waiting || processing || pollingError) && (

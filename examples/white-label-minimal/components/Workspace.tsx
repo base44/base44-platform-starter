@@ -7,11 +7,13 @@ import { Grid2X2, Loader2, LogOut, MessageSquare, Pencil, Plus, X, Sparkles } fr
 import SunnyLogo from "@/components/SunnyLogo";
 import * as api from "../lib/builder-api";
 import Builder from "./Builder";
+import AppPreview from "./AppPreview";
 
 export default function Workspace({ name }: { name: string }) {
   const assistantButton = useRef<HTMLButtonElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const [apps, setApps] = useState<App[]>([]);
+  const [previewApp, setPreviewApp] = useState<App | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [needsConnection, setNeedsConnection] = useState(false);
@@ -96,17 +98,18 @@ export default function Workspace({ name }: { name: string }) {
           </button>
         </div>
       </header>
+      {previewApp && <AppPreview key={previewApp.id} app={previewApp} onClose={() => setPreviewApp(null)} />}
       <div className="workspace-body">
         <main className="apps-page">
           <div className="page-heading">
             <div>
               <p className="eyebrow">Workspace</p>
               <h1>My apps</h1>
-              <p>Apps you built. Open one to keep creating.</p>
+              <p>Apps you built. Open one to use it.</p>
             </div>
-            <button onClick={() => openEditor()} disabled={needsConnection}>
+            {apps.length > 0 && <button onClick={() => openEditor()} disabled={needsConnection}>
               <Plus size={16} /> New app
-            </button>
+            </button>}
           </div>
           <div className="apps-content">
             {error && (
@@ -147,10 +150,10 @@ export default function Workspace({ name }: { name: string }) {
                     <button
                       className="app-thumbnail"
                       aria-label={`Open ${app.name || "Untitled"}`}
-                      onClick={() => openEditor(app)}
+                      onClick={() => setPreviewApp(app)}
                     >
-                      {app.preview_screenshot_url ? (
-                        <img src={app.preview_screenshot_url} alt="" />
+                      {(app.preview_screenshot_url || app.logo_url) ? (
+                        <img src={app.preview_screenshot_url || app.logo_url} alt="" />
                       ) : (
                         <span>{(app.name || "?")[0].toUpperCase()}</span>
                       )}
@@ -218,6 +221,7 @@ export default function Workspace({ name }: { name: string }) {
             key={`${editor.app?.id || "new"}:${editor.version}`}
             initialAppId={editor.app?.id}
             onUpdated={updateApp}
+            onPreview={setPreviewApp}
             onCreated={(app) => {
               setApps((current) => [app, ...current]);
             }}

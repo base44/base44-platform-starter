@@ -1,0 +1,53 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../generated/prisma"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Base44LinkStatus {
+  pending
+  linked
+}
+
+model AppOwnership {
+  id      String  @id @default(cuid())
+  appId   String  @map("app_id")
+  appName String? @map("app_name")
+
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([appId, createdBy])
+  @@index([createdBy])
+  @@map("app_ownerships")
+}
+
+model Base44Link {
+  id String @id @default(cuid())
+
+  appUserEmail String @unique @map("app_user_email")
+
+  serviceExternalId String? @unique @map("service_external_id")
+
+  status       Base44LinkStatus @default(pending)
+  accessToken  String?          @map("access_token")
+  refreshToken String?          @map("refresh_token")
+  expiresAt    DateTime?        @map("expires_at")
+
+  organizationId       String? @map("organization_id")
+  base44UserEmail      String? @map("base44_user_email")
+  principalProvisioned Boolean @default(false) @map("principal_provisioned")
+
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([createdBy])
+  @@map("base44_links")
+}

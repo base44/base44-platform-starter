@@ -1,5 +1,5 @@
 import { getSessionUser } from "../lib/auth";
-import GoogleSignInButton from "@/components/GoogleSignInButton";
+import GoogleSignInButton from "../components/GoogleSignInButton";
 import SunnyLogo from "@/components/SunnyLogo";
 import Workspace from "../components/Workspace";
 
@@ -16,7 +16,7 @@ export default async function Page() {
             Your next app.
           </h1>
           <p>Build something useful. Make it yours.</p>
-          <GoogleSignInButton callbackUrl="/" />
+          <GoogleSignInButton />
         </div>
       </main>
     );

@@ -1,11 +1,10 @@
 import "server-only";
-import { prisma } from "@/lib/prisma";
-import { scopedWhere, type RlsActor } from "@/lib/rls";
+import { prisma } from "./db";
 import type { App } from "./types";
 import { Base44Error } from "./base44-error";
 
-export function createAppRepository(actor: RlsActor) {
-  const owner = scopedWhere(actor);
+export function createAppRepository(actor: { email: string }) {
+  const owner = { createdBy: actor.email };
   return {
     async authorize(appId: string) {
       const owned = await prisma.appOwnership.findFirst({

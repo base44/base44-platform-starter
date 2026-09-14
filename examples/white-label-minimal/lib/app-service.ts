@@ -1,5 +1,5 @@
 import "server-only";
-import { requireSunnyUser } from "./auth";
+import { requireUser } from "./auth";
 import { getBase44AccessToken } from "./base44-identity";
 import { createAppRepository } from "./app-repository";
 import { resolveAppPage } from "./app-list";
@@ -7,7 +7,7 @@ import { createBase44Client } from "./base44-server";
 import type { AppClient } from "./types";
 
 export async function getAppClient(): Promise<AppClient> {
-  const actor = await requireSunnyUser();
+  const actor = await requireUser();
   const token = await getBase44AccessToken(actor.email);
   const client = createBase44Client(token);
   const apps = createAppRepository(actor);

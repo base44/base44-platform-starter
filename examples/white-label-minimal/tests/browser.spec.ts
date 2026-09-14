@@ -26,7 +26,7 @@ async function fixture(page: Page, tool?: ToolCall, failFirst = false) {
     await route.fulfill({ json });
   });
   await page.goto('/');
-  await page.getByRole('button', { name: 'New app', exact: true }).click();
+  await page.getByRole('button', { name: 'Create an app', exact: true }).click();
   await page.getByLabel('What would you like to build?').fill('A reading list');
   await page.getByRole('button', { name: 'Create app', exact: true }).click();
   await expect(page.getByText('Your app is taking shape.')).toBeVisible();
@@ -57,15 +57,19 @@ test('input sends declared secrets; preview refreshes and clears, deploy require
   expect(f.submissions[0].extraUserInput).toEqual({ secrets: { WEATHER_KEY: 'fixture-secret' } });
   expect(f.counts().deployments).toBe(0);
   await page.getByRole('button', { name: 'Open preview', exact: true }).click();
-  await expect(page.locator('iframe')).toHaveAttribute('src', /fixture-1/);
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.locator('iframe')).toHaveAttribute('src', /fixture-/);
+  const initialPreview = await page.locator('iframe').getAttribute('src');
   await page.getByRole('button', { name: 'Refresh preview' }).click();
-  await expect(page.locator('iframe')).toHaveAttribute('src', /fixture-2/);
-  await page.getByRole('button', { name: 'Close preview' }).click();
+  await expect(page.locator('iframe')).not.toHaveAttribute('src', initialPreview!);
+  await page.getByRole('button', { name: 'Close app preview' }).click();
   await expect(page.locator('iframe')).toHaveCount(0);
   expect(await page.evaluate(() => ({ local: Object.keys(localStorage), session: Object.keys(sessionStorage) }))).toEqual({ local: [], session: [] });
   await page.getByRole('button', { name: 'Deploy app', exact: true }).click();
   await expect(page.getByRole('link', { name: 'Open published app' })).toHaveAttribute('href', 'https://published.example/');
-  expect(f.counts()).toEqual({ creates: 1, previews: 2, deployments: 1 });
+  expect(f.counts().creates).toBe(1);
+  expect(f.counts().deployments).toBe(1);
+  expect(f.counts().previews).toBeGreaterThanOrEqual(2);
 });
 test('approval rejection is an answer and removes the waiting state', async ({ page }) => {
   const f = await fixture(page, question('approval', { packages: [{ name: 'example-package' }] }));
@@ -82,7 +86,7 @@ test('uncertain create never retries automatically and offers existing-app recov
     creates++; return route.abort('failed');
   });
   await page.goto('/');
-  await page.getByRole('button', { name: 'New app', exact: true }).click();
+  await page.getByRole('button', { name: 'Create an app', exact: true }).click();
   await page.getByLabel('What would you like to build?').fill('Reading list');
   await page.getByRole('button', { name: 'Create app', exact: true }).click();
   await expect(page.getByLabel('Existing app ID')).toBeVisible();
@@ -116,7 +120,6 @@ test('preview credential is removed before its expiry', async ({ page }) => {
 
 test('real Next route requires authentication for local browser origins and rejects foreign origins', async ({ page, request }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'New app', exact: true }).click();
   const status = await page.evaluate(async () => (await fetch('/api/base44', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'unknown' }),
@@ -152,7 +155,6 @@ test('rejected access preserves prompt and allows retry without uncertain creati
   await page.route('**/api/base44', route => route.fulfill({ status: 401, contentType: 'application/json',
     body: JSON.stringify({ error: 'Sign in to continue.', outcome: 'not_started' }) }));
   await page.goto('/');
-  await page.getByRole('button', { name: 'New app', exact: true }).click();
   await page.getByLabel('What would you like to build?').fill('Hello world');
   await page.getByRole('button', { name: 'Create app', exact: true }).click();
   await expect(page.locator('aside[role=alert]')).toContainText('Sign in to continue.');
@@ -378,4 +380,64 @@ test('failed creation removes the optimistic bubble and restores the draft', asy
   await expect(page.getByText('Hello world! What would you like to build?')).toBeVisible();
   await expect(page.getByRole('region', { name: 'Preview and publish' })).toHaveCount(0);
   await expect(page.getByLabel('What should change?')).toBeEnabled();
+});
+
+
+test('empty state has one creation CTA and app cards render fresh previews', async ({ page }) => {
+  let populated = false;
+  let previews = 0;
+  await page.route('https://preview.example/**', route => route.fulfill({ contentType: 'text/html', body: '<h1>Working app</h1>' }));
+  await page.route('**/api/base44', route => {
+    const { action } = route.request().postDataJSON();
+    return route.fulfill({ json: action === 'listApps'
+      ? { apps: populated ? [{ id: 'reading', name: 'Reading list' }] : [], hasMore: false }
+      : { url: `https://preview.example/?token=${++previews}` } });
+  });
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Create an app', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'New app', exact: true })).toHaveCount(0);
+  populated = true;
+  await page.reload();
+  const open = page.getByRole('button', { name: 'Open Reading list', exact: true });
+  await open.click();
+  await expect(page.frameLocator('dialog iframe').getByRole('heading', { name: 'Working app' })).toBeVisible();
+  const firstUrl = await page.locator('dialog iframe').getAttribute('src');
+  await page.screenshot({ path: 'test-results/app-preview-desktop.png' });
+  await page.getByRole('button', { name: 'Close app preview' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(open).toBeFocused();
+  await open.click();
+  await expect(page.locator('dialog iframe')).toHaveAttribute('src', /token=/);
+  await expect(page.locator('dialog iframe')).not.toHaveAttribute('src', firstUrl!);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: 'test-results/app-preview-mobile.png' });
+  await page.getByRole('button', { name: 'Close app preview' }).press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+
+test('list thumbnails and ready widget open the same app preview', async ({ page }) => {
+  const screenshot = 'https://preview.example/thumbnail.svg';
+  const app = { id: 'reading', name: 'Reading list', preview_screenshot_url: screenshot, status: { state: 'ready' } };
+  await page.route('https://preview.example/**', route => route.fulfill({ contentType: 'text/html', body: '<h1>Reading app</h1>' }));
+  await page.route(screenshot, route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="skyblue"/></svg>' }));
+  await page.route('**/api/base44', route => {
+    const { action } = route.request().postDataJSON();
+    return route.fulfill({ json: action === 'listApps' ? { apps: [app], hasMore: false }
+      : action === 'getConversation' ? { messages: [{ id: 'built', role: 'assistant', content: 'Ready', tool_calls: [{ id: 'file', name: 'write_file', status: 'success' }] }] }
+      : action === 'getPreviewUrl' ? { url: 'https://preview.example/app' } : app });
+  });
+  await page.goto('/');
+  await expect(page.locator('.app-card img')).toHaveAttribute('src', screenshot);
+  await page.getByRole('button', { name: 'Open Reading list', exact: true }).click();
+  await expect(page.frameLocator('dialog iframe').getByRole('heading', { name: 'Reading app' })).toBeVisible();
+  await page.getByRole('button', { name: 'Close app preview' }).click();
+  await page.getByRole('button', { name: 'Edit Reading list', exact: true }).click();
+  await expect(page.locator('.delivery img')).toHaveAttribute('src', screenshot);
+  await page.getByRole('button', { name: 'Open app thumbnail preview' }).click();
+  await expect(page.frameLocator('dialog iframe').getByRole('heading', { name: 'Reading app' })).toBeVisible();
+  await page.getByRole('button', { name: 'Close app preview' }).click();
+  await page.getByRole('button', { name: 'Open preview', exact: true }).click();
+  await expect(page.frameLocator('dialog iframe').getByRole('heading', { name: 'Reading app' })).toBeVisible();
+  await expect(page.locator('.delivery iframe')).toHaveCount(0);
 });

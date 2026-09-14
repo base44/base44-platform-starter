@@ -2,6 +2,7 @@ export type App = {
   id: string;
   name?: string;
   preview_screenshot_url?: string;
+  logo_url?: string;
   user_description?: string;
   status?: { state?: string; error_source?: string };
 };

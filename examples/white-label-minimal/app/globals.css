@@ -444,7 +444,7 @@ iframe {
 .delivery .actions { display: flex; flex-direction: column; gap: 8px; margin: 0; align-items: stretch; }
 .delivery button { font-size: 12px; padding: 9px 12px; border-radius: 4px; }
 .delivery .actions > button:nth-child(3) { background: transparent; border: 0; color: var(--muted); font-size: 11px; padding: 4px; }
-.delivery iframe { height: 360px; }
+.delivery .app-thumbnail { aspect-ratio: 16 / 9; border-radius: 6px; overflow: hidden; }
 .build-progress { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; margin: 12px 0 12px 34px; }
 .builder > details, .builder > aside { max-height: 35%; overflow: auto; flex-shrink: 0; margin: 12px; }
 .chat-welcome { display: flex; min-height: 100%; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 32px 0; }
@@ -455,3 +455,20 @@ iframe {
   .composer { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
   .composer textarea, input:not([type="radio"]):not([type="checkbox"]) { font-size: 16px; }
 }
+
+.app-preview {
+  margin: auto;
+  width: min(1100px, calc(100vw - 32px));
+  max-width: none;
+  height: min(800px, calc(100dvh - 32px));
+  max-height: none;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface, white);
+}
+.app-preview::backdrop { background: rgb(0 0 0 / 40%); }
+.app-preview[open] { display: flex; flex-direction: column; gap: 12px; }
+.app-preview > header { display: flex; align-items: center; justify-content: space-between; }
+.app-preview h2 { margin: 0; font-size: 16px; }
+.app-preview iframe { flex: 1; min-height: 0; width: 100%; margin: 0; }
