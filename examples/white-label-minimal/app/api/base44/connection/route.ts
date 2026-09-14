@@ -19,7 +19,7 @@ export async function POST(request: Request) {
       case 'status': result = linkStatus(await getLink(actor.email)); break;
       case 'connect': result = await connect(actor.email); break;
       case 'disconnect': result = await disconnect(actor.email); break;
-      default: return Response.json({ error: 'Invalid link action.' }, { status: 400, headers });
+      default: return Response.json({ error: 'Invalid connection action.' }, { status: 400, headers });
     }
     return Response.json(result, { headers });
   } catch (error) {

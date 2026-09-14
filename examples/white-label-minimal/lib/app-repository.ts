@@ -4,7 +4,6 @@ import { scopedWhere, type RlsActor } from "@/lib/rls";
 import type { App } from "./types";
 import { Base44Error } from "./base44-error";
 
-// Every database operation is scoped to the authenticated Sunny owner.
 export function createAppRepository(actor: RlsActor) {
   const owner = scopedWhere(actor);
   return {

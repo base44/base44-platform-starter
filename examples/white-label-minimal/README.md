@@ -63,7 +63,7 @@ key into a personal API key.
   ownership repository for a builder request. This replaces `lib/workspace.ts`.
 
 Google login runs through `/api/auth`. After login, the separate **Connect workspace**
-action calls `/api/base44/link` to provision a service principal and mint its token.
+action calls `/api/base44/connection` to provision a service principal and mint its token.
 Builder requests reuse that stored token and renew it near expiry; they do not
 provision identities. The browser receives no Base44 access tokens.
 

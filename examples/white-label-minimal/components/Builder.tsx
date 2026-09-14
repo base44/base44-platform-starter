@@ -196,7 +196,7 @@ export default function Builder({
       >
       {appId && (
         <section className="delivery" aria-label="Preview and publish">
-          <div className="ready-heading"><strong>{app?.name || "Your app"}</strong><p>{app?.status?.state === "ready" ? "Ready for a look?" : "Preview your progress"}</p></div>
+          <div className="ready-heading"><strong>{app?.name || "Your app"}</strong></div>
           <div className="actions">
             <button className="secondary" aria-label={preview ? "Refresh preview" : "Open preview"} disabled={!!busy} onClick={() => void openPreview()}>
               <Eye size={14} /> {preview ? "Refresh preview" : "Preview"}

@@ -6,7 +6,6 @@ import { resolveAppPage } from "./app-list";
 import { createBase44Client } from "./base44-server";
 import type { AppClient } from "./types";
 
-// Compose login, Base44 credentials, and ownership at the request boundary.
 export async function getAppClient(): Promise<AppClient> {
   const actor = await requireSunnyUser();
   const token = await getBase44AccessToken(actor.email);

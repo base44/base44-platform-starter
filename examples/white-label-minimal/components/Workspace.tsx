@@ -57,7 +57,7 @@ export default function Workspace({ name }: { name: string }) {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch("/api/base44/link", {
+      const response = await fetch("/api/base44/connection", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "connect" }),

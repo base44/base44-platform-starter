@@ -9,14 +9,12 @@ import {
   useExternalStoreRuntime,
 } from '@assistant-ui/react';
 import { MarkdownTextPrimitive } from '@assistant-ui/react-markdown';
-import { Bot, Hammer, Loader2, Send, User } from 'lucide-react';
+import { Bot, Loader2, Send, User } from 'lucide-react';
 import { toAssistantMessage } from '../lib/assistant-messages';
 import type { Message, ToolCall, ToolInput } from '../lib/types';
 import Question from './Question';
 import ToolActivity from './ToolActivity';
 
-// A minimal composition of assistant-ui primitives. The library owns composer
-// state, keyboard handling, resizing, message parts, and following the transcript.
 export default function BuilderChat({
   appId, messages, busy, processing, waiting, disabled, questionsDisabled,
   onSend, onAnswer, children,
@@ -51,15 +49,9 @@ export default function BuilderChat({
     <ThreadPrimitive.Root className="builder-chat">
       <ThreadPrimitive.Viewport aria-label="Conversation" role="region" className="conversation">
         {!visibleMessages.length && (appId
-          ? <p className="empty">Your build conversation will appear here.</p>
+          ? <p className="empty">No messages yet.</p>
           : <div className="chat-welcome">
-            <Hammer size={32} strokeWidth={1.5} />
             <h2>Build an app</h2>
-            <p>Describe what you want and I’ll create it.</p>
-            <div className="chat-suggestions">
-              {['A reading list with ratings', 'A habit tracker for my daily routine', 'A place to save my favorite recipes'].map(idea =>
-                <button className="secondary" key={idea} disabled={disabled} onClick={() => runtime.thread.composer.setText(idea)}>{idea}</button>)}
-            </div>
           </div>)}
         <ThreadPrimitive.Messages>
           {({ message }) => <MessagePrimitive.Root className={`chat-message ${message.role === 'user' ? 'from-user' : 'from-assistant'}`}>

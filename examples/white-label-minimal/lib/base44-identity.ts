@@ -2,7 +2,6 @@ import "server-only";
 import { getLink, remint } from "@/lib/base44Link";
 import { Base44Error } from "./base44-error";
 
-// Shared service-principal handshake and persistence, independent of Sunny login.
 // Callers must supply the email from a verified server session, never request data.
 export { connect, disconnect, getLink, linkStatus } from "@/lib/base44Link";
 

@@ -1,4 +1,3 @@
-// Browser transport to Tiny Sunny's API; Base44 credentials stay on the server.
 import type { App, AppPage, Message, ToolInput } from "./types";
 
 export class ApiError extends Error {
