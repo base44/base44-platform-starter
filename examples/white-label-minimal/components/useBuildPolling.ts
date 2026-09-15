@@ -9,6 +9,9 @@ export function useBuildPolling(appId: string | null) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
+  const [settledRequest, setSettledRequest] = useState("");
+  const requestKey = `${appId}:${revision}`;
+  const loading = !!appId && settledRequest !== requestKey;
   const refreshNow = useRef<() => Promise<void>>(async () => {});
 
   useEffect(() => {
@@ -43,6 +46,7 @@ export function useBuildPolling(appId: string | null) {
         } catch (err) {
           if (!stopped) setError(err instanceof Error ? err.message : "Polling failed.");
         } finally {
+          if (!stopped) setSettledRequest(`${appId}:${revision}`);
           flight = null;
         }
       })();
@@ -63,5 +67,5 @@ export function useBuildPolling(appId: string | null) {
 
   const refresh = useCallback(() => refreshNow.current(), []);
   const resume = () => setRevision((n) => n + 1);
-  return { app, messages, error, refresh, resume };
+  return { app, messages, error, loading, refresh, resume };
 }

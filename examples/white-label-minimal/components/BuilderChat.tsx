@@ -18,6 +18,7 @@ import ToolActivity from "./ToolActivity";
 export default function BuilderChat({
   appId,
   messages,
+  loading,
   busy,
   processing,
   waiting,
@@ -29,6 +30,7 @@ export default function BuilderChat({
 }: {
   appId: string | null;
   messages: Message[];
+  loading: boolean;
   busy: boolean;
   processing: boolean;
   waiting: boolean;
@@ -57,8 +59,14 @@ export default function BuilderChat({
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <ThreadPrimitive.Root className="builder-chat">
-        <ThreadPrimitive.Viewport aria-label="Conversation" role="region" className="conversation">
-          {!visibleMessages.length &&
+        <ThreadPrimitive.Viewport aria-label="Conversation" role="region" aria-busy={loading} className="conversation">
+          {loading && (
+            <div className="conversation-loading" role="status">
+              <Loader2 size={20} className="spin" aria-hidden="true" />
+              <span>Loading conversation…</span>
+            </div>
+          )}
+          {!loading && !visibleMessages.length &&
             (appId ? (
               <p className="empty">No messages yet.</p>
             ) : (

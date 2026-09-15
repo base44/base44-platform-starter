@@ -528,3 +528,26 @@ test('remove persists, handles failures, and New app lives in the chat header', 
   await expect(page.frameLocator('.app-widget iframe').getByRole('heading', { name: 'Live build' })).toBeVisible();
   await page.screenshot({ path: 'test-results/static-live-preview.png' });
 });
+
+test('editing shows a loader until the conversation arrives', async ({ page }) => {
+  let release!: () => void;
+  const conversationReady = new Promise<void>(resolve => { release = resolve; });
+  const app = { id: 'app_1', name: 'Reading list', status: { state: 'ready' } };
+  await page.route('**/api/base44', async route => {
+    const { action } = route.request().postDataJSON();
+    if (action === 'getConversation') {
+      await conversationReady;
+      return route.fulfill({ json: { messages: [{ id: 'm1', role: 'assistant', content: 'Your reading list is ready.' }] } });
+    }
+    return route.fulfill({ json: action === 'listApps' ? { apps: [app], hasMore: false } : app });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Edit Reading list', exact: true }).click();
+  await expect(page.getByText('Loading conversation…', { exact: true })).toBeVisible();
+  await expect(page.getByText('No messages yet.', { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel('What should change?')).toBeDisabled();
+  release();
+  await expect(page.getByText('Your reading list is ready.', { exact: true })).toBeVisible();
+  await expect(page.getByText('Loading conversation…', { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel('What should change?')).toBeEnabled();
+});

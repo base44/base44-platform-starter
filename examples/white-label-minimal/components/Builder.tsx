@@ -27,7 +27,7 @@ export default function Builder({
   const [published, setPublished] = useState<string | null>(null);
   const [optimistic, setOptimistic] = useState<OptimisticMessage[]>([]);
   const lock = useRef(false);
-  const { app, messages, error: pollingError, refresh, resume } = useBuildPolling(appId);
+  const { app, messages, error: pollingError, loading, refresh, resume } = useBuildPolling(appId);
   const displayedMessages = useMemo(
     () => mergeOptimisticMessages(messages, optimistic), [messages, optimistic],
   );
@@ -47,6 +47,7 @@ export default function Builder({
   async function send(prompt: string) {
     if (
       lock.current ||
+      loading ||
       !prompt.trim() ||
       waiting ||
       processing ||
@@ -185,10 +186,11 @@ export default function Builder({
       <BuilderChat
         appId={appId}
         messages={displayedMessages}
+        loading={loading}
         busy={!!busy}
         processing={processing}
         waiting={waiting}
-        disabled={!!busy || waiting || processing || !!pollingError || creationUncertain}
+        disabled={loading || !!busy || waiting || processing || !!pollingError || creationUncertain}
         questionsDisabled={!!busy || !!pollingError}
         onSend={send}
         onAnswer={answer}
