@@ -104,9 +104,9 @@ Browser tests use a separate fixture app with mocked Base44 responses.
 
 ### Static and live previews
 
-Browsing uses `https://preview--{slug}.{BASE44_STATIC_PREVIEW_DOMAIN}` (default
-`base44.app`). Confirm this hosting convention for your Base44 environment and
-set the domain accordingly. This URL is derived by Tiny, not returned by Base44.
+Browsing uses `https://preview--{slug}.{BASE44_STATIC_PREVIEW_DOMAIN}`. Set
+`BASE44_STATIC_PREVIEW_DOMAIN` to the preview hosting domain confirmed for your
+Base44 environment. Without it, browsing uses screenshots or placeholders. This URL is derived by Tiny, not returned by Base44.
 Apps without a slug show a screenshot or placeholder; browsing never starts a sandbox.
 Editing requests a live preview and keeps static visible until the live iframe loads.
 A load event only controls the visual transition; it does not verify app health.

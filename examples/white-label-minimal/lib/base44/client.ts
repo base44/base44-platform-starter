@@ -62,8 +62,8 @@ export function createBase44Client(accessToken: string) {
   }
 
   function staticPreviewUrl(slug: App["slug"]) {
-    const domain = process.env.BASE44_STATIC_PREVIEW_DOMAIN || "base44.app";
-    if (!slug || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(slug) ||
+    const domain = process.env.BASE44_STATIC_PREVIEW_DOMAIN;
+    if (!domain || !slug || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(slug) ||
       !/^[a-z0-9.-]+$/i.test(domain)) return undefined;
     return `https://preview--${slug}.${domain}`;
   }
