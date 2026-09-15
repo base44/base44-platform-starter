@@ -74,7 +74,7 @@ For the chat UI, copy `components/`, `lib/chat/builder-api.ts`, `lib/chat/conver
 and `lib/chat/assistant-messages.ts`. The chat uses assistant-ui's external-store runtime
 with Base44's polled conversation as its source of truth. `Question.tsx` handles
 approvals, choices, and secrets; retries preserve the original answer and request ID.
-Preview tokens stay in page memory and are cleared before expiry. A timed-out
+Preview URLs stay in page memory and remain stable during normal use. A timed-out
 creation may still succeed, so the UI asks users to check before creating again.
 An app can only be resumed here if its ownership was saved successfully.
 
@@ -111,5 +111,5 @@ Apps without a slug show a screenshot or placeholder; browsing never starts a sa
 Editing requests a live preview and keeps static visible until the live iframe loads.
 A load event only controls the visual transition; it does not verify app health.
 Edited widgets remain live for the page session instead of silently switching to a
-potentially stale static build. Expired previews offer manual refresh. No private
+potentially stale static build. Recovery checks the source window and live origin of `preview:requestRefresh` messages, with at most three recovery attempts per preview session and no retries on authorization failures. This observed Base44 message is not a confirmed public contract, so manual refresh remains available. Recovery reloads the iframe using its last parent-supplied path and parameters; cross-origin navigation inside the app cannot be preserved without a supported bridge. No private
 build-status, runtime-auth, or heartbeat endpoints are used.

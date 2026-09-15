@@ -110,12 +110,22 @@ test('read failure pauses polling, resume restores it', async ({ page }) => {
   await expect(page.getByText('Temporary read failure')).toHaveCount(0);
 });
 
-test('preview credential is removed before its expiry', async ({ page }) => {
+test('live preview stays stable and recovers only from its own expiry message', async ({ page }) => {
   await page.clock.install();
   await fixture(page);
   await page.getByRole('button', { name: 'Open preview', exact: true }).click();
-  await expect(page.locator('dialog iframe')).toHaveCount(1);
-  await page.clock.fastForward(241_000);
+  await expect(page.locator('dialog iframe')).toBeVisible();
+  const initialUrl = await page.locator('dialog iframe').getAttribute('src');
+  await page.clock.fastForward(300_000);
+  await expect(page.locator('dialog iframe')).toHaveAttribute('src', initialUrl!);
+  await page.evaluate(() => window.postMessage({ type: 'preview:requestRefresh' }, '*'));
+  await expect(page.locator('dialog iframe')).toHaveAttribute('src', initialUrl!);
+  const preview = page.frames().find(frame => frame.url() === initialUrl)!;
+  await preview.evaluate(() => window.parent.postMessage({ type: 'preview:requestRefresh' }, '*'));
+  await expect(page.locator('dialog iframe')).not.toHaveAttribute('src', initialUrl!);
+  await expect(page.locator('dialog iframe')).toBeVisible();
+  await page.getByRole('button', { name: 'Close app preview', exact: true }).click();
+  await page.clock.fastForward(60_000);
   await expect(page.locator('dialog iframe')).toHaveCount(0);
 });
 
