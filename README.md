@@ -61,12 +61,11 @@ You need, from Base44:
 | --- | --- |
 | An **enterprise workspace** with the platform capability enabled | All your users' apps live in it, so you have one place to govern and offboard |
 | Its **workspace id** | Sent as `X-Active-Workspace-Id` on every platform call |
-| A **workspace API key** (`b44k_…`) with the `user_tokens:mint` scope | Vends per-user access tokens |
-| Optionally a **second key** with `service_users:provision` | Creates the per-user identities. Splitting the two is the safer setup — see [step 2](#step-2--give-each-user-their-own-base44-identity) |
+| A **workspace API key** (`b44k_…`) with `user_tokens:mint` and `service_users:provision` | Provisions users and vends their server-side tokens |
 | The **platform host** your workspace is served from | Base of every REST call |
 | An **app folder id** | The one folder your platform files its apps into, so listing apps means listing that folder |
 
-Those land in env as `BASE44_ORG_ID`, `BASE44_SVC_KEY`, `BASE44_PROVISION_KEY`,
+Those land in env as `BASE44_ORG_ID`, `BASE44_SVC_KEY`,
 `BASE44_PLATFORM_HOST`, `BASE44_APPS_FOLDER_ID` (see `.env.example`). All server-only — none of
 them may ever reach the browser.
 
@@ -165,21 +164,21 @@ No OAuth redirect, no consent screen, no PKCE — you already own both sides. Th
 from the *key*, never from the request; that's your cross-tenant guarantee.
 
 **Mint never auto-provisions.** An unknown principal is a 404, and that's the feature: it's what
-makes removing someone actually stick. Which is also why the two scopes are worth splitting —
-if the hot-path key can provision, a removed user just presses "Connect" and walks back in.
+keeps ordinary requests from recreating a removed identity. The SDK uses one key, so your own
+server must prevent offboarded users from invoking the explicit Connect/onboarding action again.
 
 ### 2c. Store it, refresh it, and never return it
 
 ```ts
-// src/lib/base44Link.ts is the ONLY module that reads or writes tokens,
-// and no function in it returns one to a caller:
+// Browser responses expose connection status, never stored credentials.
 export function linkStatus(link) {
   return { linked: …, base44_user_email: …, organization_id: … };  // booleans and display fields
 }
 ```
 
 Tokens live ~1h, so re-minting is routine. This repo re-mints proactively 5 minutes before expiry
-and once more on a mid-call 401, then gives up and asks the user to reconnect. Note the distinction
+through the SDK. Non-chat calls do not automatically retry a mutation after a 401; they clear
+the rejected credential and ask the user to reconnect. Legacy chat retains its single retry. Note the distinction
 that matters: a **429 or 5xx is a blip** (leave the row alone and retry), a **4xx is a dead grant**
 (downgrade to `pending` and show the Connect button). Conflating them turns a busy minute into a
 fleet-wide forced reconnect.
@@ -196,19 +195,25 @@ Your frontend must never hold a Base44 credential. So it calls *you*, and you ca
 browser → POST /api/base44/platform {action, …params} → your server → Base44 REST
 ```
 
-`src/app/api/base44/platform/route.ts` is that proxy. Its design is a single table of allowed
-actions — the caller names an action, never a URL:
+`src/app/api/base44/platform/route.ts` is that proxy. It dispatches provisioning and non-chat
+app operations through the [Platform SDK](https://github.com/base44/javascript-sdk/blob/28beeea/platform-docs/README.md), imported from
+`@base44/sdk/platform/server`. Its [reference](https://github.com/base44/javascript-sdk/blob/28beeea/platform-docs/api.md) documents every input, response,
+error and token-storage shape. Chat remains on its existing HTTP implementation.
 
-```ts
-const OPS = {
-  listApps:   { method: "GET",  path: (p) => `/api/apps?…folder_id=${appsFolderId()}` },
-  createApp:  { method: "POST", path: () => "/api/apps", body: (p) => ({ … }) },
-  sendMessage:{ method: "POST", path: (p) => `/api/apps/${p.appId}/chat/message`, … },
-  …
-};
-```
+The dependency is currently pinned to `@base44-preview/sdk@0.8.48-pr.283.2de4c8a`
+using an npm alias named `@base44/sdk`. After the platform entry point is released,
+replace that alias with the stable SDK version; the imports stay the same. The
+SDK's own tests and reference documentation live in the JavaScript SDK repository.
+Run `npm run platform-sdk:test` here to verify Sunny's storage and app adapters
+against the installed package without calling live services.
 
-Nine actions, and that's the whole surface. Why an allow-list and not a passthrough: Base44 enforces
+Read the integration in this order:
+
+1. `getPlatformClient()` and `connect()` in `src/lib/base44Link.ts`: configure the SDK, provision a user, and record their connection.
+2. `src/lib/base44AppOperations.ts`: call the SDK as that user and map results to Sunny’s browser contract.
+3. `src/lib/base44TokenStore.ts`: persist credentials using Sunny’s database when the default in-memory store is insufficient.
+
+The caller still names an allowlisted action, never a URL. Why an allow-list and not a passthrough: Base44 enforces
 OAuth scopes in its MCP tool layer, *not* on this REST surface, so `apps:read apps:write` does not
 constrain what a token can do here. **Your allow-list is the actual limit.** Never let a caller
 supply a path, a host, or a workspace id.

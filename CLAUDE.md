@@ -42,8 +42,9 @@ Next.js App Router · TypeScript · Tailwind 4 · Postgres + Prisma · NextAuth 
   *only* module that queries owner-scoped models — never query them raw. This is the single biggest
   correctness risk in the codebase, and ESLint bans by-id `update`/`delete` on those models to keep
   it that way.
-- **`src/lib/base44Link.ts` is the only module that touches `Base44Link`**, and it never returns a
-  token to a caller. Vended tokens stay server-side. The webhook receiver joins an event to a user
+- **`src/lib/base44Link.ts` and `src/lib/base44TokenStore.ts` own `Base44Link` persistence.**
+  The first handles connection lifecycle; the second implements the SDK token store.
+  Tokens stay server-side; browser responses use `linkStatus()` to expose only connection status. The webhook receiver joins an event to a user
   through `emailForServiceExternalId()` there, which returns an email and nothing else.
 - **An inbound webhook is untrusted until its signature verifies.** `src/lib/base44WebhookSignature.ts`
   is the boundary: the URL is public, so the event type, the app id and above all
@@ -77,6 +78,9 @@ Next.js App Router · TypeScript · Tailwind 4 · Postgres + Prisma · NextAuth 
 - **Two lint regimes.** Platform infrastructure (`src/lib`, `src/app`) is strict `.tsx`/`.ts`. The
   example product UI (`src/components`, `src/views`) is `.jsx` with relaxed lint — it's the example,
   not the lesson.
+- This is a getting-started guide: optimize integration code for human readers. Use descriptive
+  names, explicit control flow, and one meaningful operation per statement. Keep SDK usage visible;
+  separate storage details from the connection flow instead of compressing them together.
 - Comments explain what the code *is*, not what it used to be.
 
 ## Checks

@@ -11,7 +11,7 @@
  * via `X-Active-Workspace-Id` (and `createApp`'s `organization_id`), and apps are
  * filed into the `sunny_widgets` folder.
  *
- * `OPS` below is an **allow-list, and it is the only limit** on what a compromised
+ * `SDK_APP_ACTIONS` and `CHAT_OPERATIONS` form the **allow-list** for what a compromised
  * frontend could reach: Base44 enforces OAuth scopes in its MCP tool layer, not on
  * this REST surface, so `apps:read apps:write` does not constrain these calls.
  * Keep it tight — never add a passthrough action, and never let the caller supply
@@ -26,12 +26,20 @@ import {
   APP_SECRETS,
   MissingConfigError,
   REFRESH_SKEW_MS,
-  appsFolderId,
   orgId,
   platformHost,
-  resolveAppSecrets,
 } from "@/lib/base44Config";
-import { type Base44Link, getLink, remint } from "@/lib/base44Link";
+import {
+  type Base44Link,
+  getLink,
+  remint,
+  getPlatformClient,
+  principalId,
+  clearLinkCredentials,
+} from "@/lib/base44Link";
+
+import { Base44PlatformError } from "@base44/sdk/platform/server";
+import { SDK_APP_ACTIONS, runAppOperation } from "@/lib/base44AppOperations";
 
 type Params = Record<string, unknown>;
 
@@ -72,66 +80,7 @@ const CONVERSATION_TIMEOUT_MS = 60_000;
 const str = (v: unknown) => (v === undefined || v === null ? "" : String(v));
 const num = (v: unknown, fallback: number) => String(Number(v) > 0 ? Number(v) : fallback);
 
-function createSecretsPayload(names: readonly string[] | undefined) {
-  if (!names?.length) return undefined;
-  const values = resolveAppSecrets(names);
-  return Object.fromEntries(
-    Object.entries(values).map(([name, value]) => [name, { type: "value", value }]),
-  );
-}
-
-const OPS: Record<string, Op> = {
-  listApps: {
-    method: "GET",
-    path: (p) =>
-      `/api/apps?${new URLSearchParams({
-        q: JSON.stringify({ app_type: { $nin: ["user_agent"] } }),
-        sort: "-updated_date",
-        limit: num(p.limit, 20),
-        skip: String(Number(p.skip) || 0),
-        filter_mode: "all_apps_workspace",
-        // Only apps this builder filed in — the workspace holds others.
-        folder_id: appsFolderId(),
-      })}`,
-  },
-  createApp: {
-    method: "POST",
-    path: () => "/api/apps",
-    body: (p) => ({
-      name: p.name || undefined,
-      user_description: p.prompt,
-      organization_id: orgId(),
-      public_settings: "public_without_login",
-      // Persisted on the app and applied by the builder on every turn. Set here
-      // rather than after create because initial_message starts the first build
-      // in this same call — a later update would miss it.
-      custom_instructions: p.customInstructions || undefined,
-      // Written before the first build turn is scheduled.
-      secrets: createSecretsPayload(p.secrets as string[] | undefined),
-      // Create-only: kicks off the first build, never persisted on the app.
-      initial_message: { content: p.prompt },
-      // Required for the preview to be embeddable in an iframe.
-      prevent_iframe_embedding: false,
-    }),
-    // `initial_message` starts the first build inside this same call.
-    timeoutMs: BUILDER_TIMEOUT_MS,
-  },
-  getApp: {
-    method: "GET",
-    path: (p) => `/api/apps/${str(p.appId)}`,
-  },
-  /** `name` only. PUT, not PATCH — see docs/base44-platform-api.md. */
-  renameApp: {
-    method: "PUT",
-    path: (p) => `/api/apps/${str(p.appId)}`,
-    body: (p) => ({ name: str(p.name).trim() }),
-  },
-  /** Moves apps into the folder. Returns an empty body on success. */
-  fileAppsInFolder: {
-    method: "POST",
-    path: () => `/api/app-folders/${appsFolderId()}/items`,
-    body: (p) => ({ app_ids: p.appIds }),
-  },
+const CHAT_OPERATIONS: Record<string, Op> = {
   getConversation: {
     method: "GET",
     timeoutMs: CONVERSATION_TIMEOUT_MS,
@@ -146,19 +95,6 @@ const OPS: Record<string, Op> = {
     path: (p) => `/api/apps/${str(p.appId)}/chat/message`,
     body: (p) => ({ content: p.content }),
     // Blocks on a builder turn — see BUILDER_TIMEOUT_MS.
-    timeoutMs: BUILDER_TIMEOUT_MS,
-  },
-  getPreviewUrl: {
-    method: "GET",
-    path: (p) => `/api/apps/${str(p.appId)}/sandbox/preview-url`,
-  },
-  deployApp: {
-    method: "POST",
-    path: (p) => `/api/apps/${str(p.appId)}/deploy`,
-    body: () => ({}),
-    // Precautionary: deploy answers well inside 30s for a small app, but it
-    // bundles, so a large one could exceed it. The cost of a too-long timeout is
-    // a slow failure; of a too-short one, a spurious error on a working deploy.
     timeoutMs: BUILDER_TIMEOUT_MS,
   },
   /**
@@ -282,12 +218,12 @@ export async function POST(req: NextRequest) {
     const action = str(rawAction);
     console.log(`[base44/platform] START action=${action} appId=${str(params.appId) || "-"}`);
 
-    const op = OPS[action];
-    if (!op) {
+    const op = CHAT_OPERATIONS[action];
+    if (!op && !SDK_APP_ACTIONS.has(action)) {
       return jsonError(
         400,
         "invalid_request",
-        `Unknown action "${action}". Allowed: ${Object.keys(OPS).join(", ")}`,
+        `Unknown action "${action}". Allowed: ${[...Object.keys(CHAT_OPERATIONS), ...SDK_APP_ACTIONS].join(", ")}`,
       );
     }
 
@@ -310,6 +246,24 @@ export async function POST(req: NextRequest) {
     if (link.expiresAt && link.expiresAt.getTime() - Date.now() < REFRESH_SKEW_MS) {
       link = await remint(link);
       if (!link?.accessToken) return reauthorize();
+    }
+
+    if (SDK_APP_ACTIONS.has(action)) {
+      if (!link.serviceExternalId) {
+        link = await remint(link);
+        if (!link?.accessToken) return reauthorize();
+      }
+      const user = getPlatformClient().asUser(link.serviceExternalId ?? principalId(actor.email));
+      try {
+        const result = await runAppOperation(user, action, params);
+        return NextResponse.json(result);
+      } catch (error) {
+        if (error instanceof Base44PlatformError && error.status === 401) {
+          await clearLinkCredentials(actor.email);
+          return reauthorize();
+        }
+        throw error;
+      }
     }
 
     let path: string;
@@ -392,6 +346,9 @@ export async function POST(req: NextRequest) {
       );
     }
   } catch (err) {
+    if (err instanceof Base44PlatformError) {
+      return NextResponse.json({ error: err.message, code: err.code }, { status: err.status || 502 });
+    }
     if (err instanceof MissingConfigError) {
       console.error("[base44/platform]", err.message);
       return NextResponse.json(

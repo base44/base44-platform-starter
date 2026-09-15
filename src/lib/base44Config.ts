@@ -27,28 +27,12 @@ export class MissingConfigError extends Error {
 
 /**
  * The `b44k_` workspace key used on the **hot path**: minting. Needs
- * `user_tokens:mint`. Sent in `Authorization` **bare** — no `Bearer` — which is
+ * `user_tokens:mint` and `service_users:provision`. Sent in `Authorization` **bare** — no `Bearer` — which is
  * the format Base44's workspace-key auth accepts.
  *
- * Minting and provisioning are separate Base44 scopes (`user_tokens:mint` vs
- * `service_users:provision`), and that split is the point: a mint-only key can
- * vend tokens for principals that already exist but cannot *create* one, so it
- * can never be turned into an impersonate-anyone primitive.
+ * The SDK uses this one key for provisioning, deprovisioning and minting.
  */
 export const svcKey = () => required("BASE44_SVC_KEY");
-
-/**
- * The key used for the two rare, privileged calls: provision and deprovision
- * (`service_users:provision`).
- *
- * Defaults to `BASE44_SVC_KEY` so a single-key deployment still works. Setting
- * `BASE44_PROVISION_KEY` separately — and giving `BASE44_SVC_KEY` only
- * `user_tokens:mint` — is the stronger posture, because it is what makes
- * Base44's deprovision lever real: with a provision-capable key on the hot path,
- * a deprovisioned user can simply press Connect and be re-provisioned, which
- * quietly undoes the offboarding.
- */
-export const provisionKey = () => process.env.BASE44_PROVISION_KEY?.trim() || svcKey();
 
 /**
  * The Base44 enterprise workspace every Sunny user is provisioned into. One
@@ -99,8 +83,7 @@ export const webhookPublicKeys = (): string[] =>
  *
  * Used by `npm run webhook:register` and by nothing on a request path —
  * registration is a deploy-time action, not something a user triggers. Falls
- * back to `BASE44_SVC_KEY` so a single-key deployment works, the same shape
- * `provisionKey` uses.
+ * back to `BASE44_SVC_KEY` so a single-key deployment works, the same configured workspace key used by the SDK.
  */
 export const webhookKey = () => process.env.BASE44_WEBHOOK_KEY?.trim() || svcKey();
 

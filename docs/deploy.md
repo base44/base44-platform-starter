@@ -78,8 +78,7 @@ one is.
 | `NEXTAUTH_URL` | `https://<your-host>` — the production domain, exactly. **Scope it to production**: it overrides the origin read off the request, so a preview holding it would sign users into production |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | the production OAuth client |
 | `AUTH_REDIRECT_PROXY_URL` | `https://<your-host>/api/auth` — only needed if you turn previews on; set it on production *and* the preview contexts |
-| `BASE44_SVC_KEY` | the `b44k_` workspace key — without it the builder shows its "Connect" state |
-| `BASE44_PROVISION_KEY` | optional second key; defaults to `BASE44_SVC_KEY` |
+| `BASE44_SVC_KEY` | one `b44k_` key with `user_tokens:mint` and `service_users:provision` — without it the builder shows its "Connect" state |
 | `BASE44_ORG_ID`, `BASE44_PLATFORM_HOST`, `BASE44_APPS_FOLDER_ID` | from your workspace |
 | `NEXT_PUBLIC_BASE44_APP_HOST` | the host Base44 serves built apps from. The one public var — these URLs are built in the browser to be iframed. Unset, the UI shows no app previews |
 
