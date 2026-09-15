@@ -11,6 +11,7 @@ import AppPreview from "./AppPreview";
 import AppWidget from "./AppWidget";
 
 export default function Workspace({ name }: { name: string }) {
+  const [liveApps, setLiveApps] = useState<Set<string>>(() => new Set());
   const activeAppId = useRef<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
   const editorPanel = useRef<HTMLElement>(null);
@@ -46,6 +47,7 @@ export default function Workspace({ name }: { name: string }) {
     setEditor((current) => (current.app?.id === app.id ? { ...current, app } : current));
   }, []);
   function openEditor(app: App | null = null) {
+    if (app) setLiveApps(current => new Set(current).add(app.id));
     activeAppId.current = app?.id || null;
     setActiveName(app?.name || "");
     setEditor((current) => ({ app, version: current.version + 1 }));
@@ -127,7 +129,7 @@ export default function Workspace({ name }: { name: string }) {
           </button>
         </div>
       </header>
-      {previewApp && <AppPreview key={previewApp.id} app={previewApp} onClose={() => setPreviewApp(null)} />}
+      {previewApp && <AppPreview key={previewApp.id} app={previewApp} live={liveApps.has(previewApp.id)} onClose={() => setPreviewApp(null)} />}
       <div className="workspace-body">
         <main className="apps-page">
           <div className="page-heading">
@@ -168,7 +170,7 @@ export default function Workspace({ name }: { name: string }) {
             ) : (
               <div className="apps-grid">
                 {apps.map((app) => (
-                  <AppWidget key={app.id} app={app} removing={!!removing || loading}
+                  <AppWidget key={app.id} app={app} live={liveApps.has(app.id)} removing={!!removing || loading}
                     onEdit={() => openEditor(app)} onRemove={() => void removeApp(app)}
                     onExpand={() => setPreviewApp(app)} />
                 ))}
@@ -218,8 +220,9 @@ export default function Workspace({ name }: { name: string }) {
             key={`${editor.app?.id || "new"}:${editor.version}`}
             initialAppId={editor.app?.id}
             onUpdated={updateApp}
-            onPreview={setPreviewApp}
+            onPreview={app => { setLiveApps(current => new Set(current).add(app.id)); setPreviewApp(app); }}
             onCreated={(app) => {
+              setLiveApps(current => new Set(current).add(app.id));
               activeAppId.current = app.id;
               setApps((current) => [app, ...current]);
             }}

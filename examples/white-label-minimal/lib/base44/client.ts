@@ -61,12 +61,21 @@ export function createBase44Client(accessToken: string) {
     }
   }
 
+  function staticPreviewUrl(slug: App["slug"]) {
+    const domain = process.env.BASE44_STATIC_PREVIEW_DOMAIN || "base44.app";
+    if (!slug || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(slug) ||
+      !/^[a-z0-9.-]+$/i.test(domain)) return undefined;
+    return `https://preview--${slug}.${domain}`;
+  }
+
   function appSummary(value: App): App {
     if (!value || typeof value.id !== "string")
       throw new Base44Error("Base44 returned an app without an ID.");
     return {
       id: value.id,
       name: value.name,
+      slug: value.slug,
+      static_preview_url: staticPreviewUrl(value.slug),
       preview_screenshot_url: value.preview_screenshot_url,
       logo_url: value.logo_url,
       user_description: value.user_description,
@@ -154,6 +163,9 @@ export function createBase44Client(accessToken: string) {
     const data = await request(`/api/apps/${id}/sandbox/preview-url`, { timeout: 120_000 });
     const url = httpsUrl(data?.preview_url);
     if (data.preview_token) url.searchParams.set("_preview_token", data.preview_token);
+    url.searchParams.set("server_url", url.origin);
+    url.searchParams.set("hide_badge", "true");
+    url.searchParams.set("analytics-enable", "false");
     return { url: url.href };
   }
   async function getPublishedUrl(id: string) {

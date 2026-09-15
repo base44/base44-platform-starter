@@ -61,7 +61,7 @@ test('input sends declared secrets; preview refreshes and clears, deploy require
   await expect(page.getByRole('dialog')).toBeVisible();
   await expect(page.locator('dialog iframe')).toHaveAttribute('src', /fixture-/);
   const initialPreview = await page.locator('dialog iframe').getAttribute('src');
-  await page.getByRole('button', { name: 'Refresh preview' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Refresh preview' }).click();
   await expect(page.locator('dialog iframe')).not.toHaveAttribute('src', initialPreview!);
   await page.getByRole('button', { name: 'Close app preview' }).click();
   await expect(page.locator('dialog iframe')).toHaveCount(0);
@@ -391,7 +391,7 @@ test('empty state has one creation CTA and app cards render fresh previews', asy
   await page.route('**/api/base44', route => {
     const { action } = route.request().postDataJSON();
     return route.fulfill({ json: action === 'listApps'
-      ? { apps: populated ? [{ id: 'reading', name: 'Reading list' }] : [], hasMore: false }
+      ? { apps: populated ? [{ id: 'reading', name: 'Reading list', static_preview_url: 'https://preview.example/static' }] : [], hasMore: false }
       : { url: `https://preview.example/?token=${++previews}` } });
   });
   await page.goto('/');
@@ -412,8 +412,8 @@ test('empty state has one creation CTA and app cards render fresh previews', asy
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(open).toBeFocused();
   await open.click();
-  await expect(page.locator('dialog iframe')).toHaveAttribute('src', /token=/);
-  await expect(page.locator('dialog iframe')).not.toHaveAttribute('src', firstUrl!);
+  await expect(page.locator('dialog iframe')).toHaveAttribute('src', /static/);
+  await expect(page.locator('dialog iframe')).toHaveAttribute('src', firstUrl!);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: 'test-results/app-preview-mobile.png' });
   await page.getByRole('button', { name: 'Close app preview' }).press('Escape');
@@ -423,7 +423,7 @@ test('empty state has one creation CTA and app cards render fresh previews', asy
 
 test('list thumbnails and ready widget open the same app preview', async ({ page }) => {
   const screenshot = 'https://preview.example/thumbnail.svg';
-  const app = { id: 'reading', name: 'Reading list', preview_screenshot_url: screenshot, status: { state: 'ready' } };
+  const app = { id: 'reading', name: 'Reading list', static_preview_url: 'https://preview.example/static', preview_screenshot_url: screenshot, status: { state: 'ready' } };
   await page.route('https://preview.example/**', route => route.fulfill({ contentType: 'text/html', body: '<h1>Reading app</h1>' }));
   await page.route(screenshot, route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="skyblue"/></svg>' }));
   await page.route('**/api/base44', route => {
@@ -485,7 +485,7 @@ test('remove persists, handles failures, and New app lives in the chat header', 
     const { action, skip, appId } = route.request().postDataJSON();
     if (action === 'listApps') {
       skips.push(skip);
-      return route.fulfill({ json: { apps: [{ id: skip ? 'second' : 'first', name: skip ? 'Second app' : 'First app' }], hasMore: !skip, nextSkip: skip + 12 } });
+      return route.fulfill({ json: { apps: [{ id: skip ? 'second' : 'first', name: skip ? 'Second app' : 'First app', static_preview_url: `https://widgets.example/${skip}` }], hasMore: !skip, nextSkip: skip + 12 } });
     }
     return route.fulfill({ json: { url: `https://widgets.example/${appId}` } });
   });
@@ -500,4 +500,31 @@ test('remove persists, handles failures, and New app lives in the chat header', 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: 'test-results/widgets-mobile.png' });
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
+});
+
+ test('browsing never starts sandboxes; editing keeps static until live loads', async ({ page }) => {
+  let requests = 0;
+  let release: (() => void) | undefined;
+  await page.route('https://static.example/**', route => route.fulfill({ contentType: 'text/html', body: '<h1>Static build</h1>' }));
+  await page.route('https://live.example/**', async route => {
+    await new Promise<void>(resolve => { release = resolve; });
+    await route.fulfill({ contentType: 'text/html', body: '<h1>Live build</h1>' });
+  });
+  const app = { id: 'reading', name: 'Reading list', static_preview_url: 'https://static.example/app', status: { state: 'ready' } };
+  await page.route('**/api/base44', route => {
+    const { action } = route.request().postDataJSON();
+    if (action === 'getPreviewUrl') { requests++; return route.fulfill({ json: { url: 'https://live.example/app' } }); }
+    return route.fulfill({ json: action === 'listApps' ? { apps: [app], hasMore: false } : action === 'getConversation' ? { messages: [] } : app });
+  });
+  await page.goto('/');
+  await expect(page.frameLocator('.app-widget iframe').getByRole('heading', { name: 'Static build' })).toBeVisible();
+  expect(requests).toBe(0);
+  await page.getByRole('button', { name: 'Edit Reading list', exact: true }).click();
+  await expect.poll(() => !!release).toBe(true);
+  await expect(page.frameLocator('.app-widget iframe:not(.preview-loading-frame)').getByRole('heading', { name: 'Static build' })).toBeVisible();
+  expect(requests).toBe(1);
+  release!();
+  await expect(page.locator('.app-widget iframe')).toHaveCount(1);
+  await expect(page.frameLocator('.app-widget iframe').getByRole('heading', { name: 'Live build' })).toBeVisible();
+  await page.screenshot({ path: 'test-results/static-live-preview.png' });
 });

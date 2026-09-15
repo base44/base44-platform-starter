@@ -158,3 +158,12 @@ test('remove requires ownership and never calls the upstream app deletion API', 
   assert.equal((await request({ action: 'removeApp' })).status, 400);
   assert.equal(calls.length, 0);
 });
+
+ test('app summaries expose configurable static previews without starting a sandbox', async () => {
+  const calls = setup({ id: 'app_1', slug: 'my-app' });
+  process.env.BASE44_STATIC_PREVIEW_DOMAIN = 'preview.example';
+  const response = await request({ action: 'getApp', appId: 'app_1' });
+  assert.equal((await response.json()).static_preview_url, 'https://preview--my-app.preview.example');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://platform.example/api/apps/app_1');
+});

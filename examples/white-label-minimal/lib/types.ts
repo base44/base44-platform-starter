@@ -1,6 +1,8 @@
 export type App = {
   id: string;
   name?: string;
+  slug?: string | null;
+  static_preview_url?: string;
   preview_screenshot_url?: string;
   logo_url?: string;
   user_description?: string;

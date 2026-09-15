@@ -1,37 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { Loader2, Maximize2, Pencil, Trash2 } from "lucide-react";
-import { getPreviewUrl } from "../lib/chat/builder-api";
+import PreviewFrame from "./PreviewFrame";
 import type { App } from "../lib/types";
 
-export default function AppWidget({ app, removing, onEdit, onRemove, onExpand }: {
+export default function AppWidget({ app, live, removing, onEdit, onRemove, onExpand }: {
   app: App;
+  live: boolean;
   removing: boolean;
   onEdit: () => void;
   onRemove: () => void;
   onExpand: () => void;
 }) {
-  const [url, setUrl] = useState("");
-  const [error, setError] = useState("");
-  const [attempt, setAttempt] = useState(0);
   const building = app.status?.state === "processing";
-  useEffect(() => {
-    let cancelled = false;
-    let expiry: ReturnType<typeof setTimeout>;
-    void getPreviewUrl(app.id).then(({ url }) => {
-      if (cancelled) return;
-      setUrl(url);
-      setError("");
-      expiry = setTimeout(() => {
-        setUrl("");
-        setError("Preview expired. Refresh to continue.");
-      }, 240_000);
-    }).catch(err => {
-      if (!cancelled) setError(err instanceof Error ? err.message : "Preview unavailable.");
-    });
-    return () => { cancelled = true; clearTimeout(expiry); };
-  }, [app.id, attempt, building]);
   return <article className="app-widget" aria-label={app.name || "Untitled"}>
     <header className="widget-heading">
       <h2>{app.name || "Untitled"}</h2>
@@ -43,9 +24,7 @@ export default function AppWidget({ app, removing, onEdit, onRemove, onExpand }:
       </div>
     </header>
     <div className="widget-preview">
-      {error ? <div className="widget-placeholder" role="alert"><p>{error}</p><button className="secondary" onClick={() => { setError(""); setUrl(""); setAttempt(value => value + 1); }}>Refresh preview</button></div>
-        : url ? <iframe title={`${app.name || "Untitled"} widget preview`} src={url} loading="lazy" referrerPolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-forms allow-popups" />
-        : <div className="widget-placeholder" role="status"><Loader2 size={20} className="spin" />Starting preview…</div>}
+      <PreviewFrame app={app} live={live} title={`${app.name || "Untitled"} widget preview`} />
     </div>
   </article>;
 }
