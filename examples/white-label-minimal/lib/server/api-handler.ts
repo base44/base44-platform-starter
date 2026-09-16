@@ -6,7 +6,7 @@ const bad = (message: string, status = 400): never => {
   throw new Base44Error(message, status);
 };
 
-export function createHandler(resolveClient: () => Promise<AppClient>) {
+export function createHandler(resolveClient: () => Promise<AppClient>, allowedActions?: readonly string[]) {
   return async function POST(request: Request) {
     let dispatched = false;
     try {
@@ -56,6 +56,7 @@ export function createHandler(resolveClient: () => Promise<AppClient>) {
         );
       }
       if (!p || typeof p !== "object" || Array.isArray(p)) bad("Expected a JSON object.");
+      if (allowedActions && !allowedActions.includes(String(p.action))) bad("Unsupported action.");
       const fields = (...allowed: string[]) => {
         if (Object.keys(p).some((k) => !["action", ...allowed].includes(k)))
           bad("Unexpected request field.");
@@ -91,6 +92,10 @@ export function createHandler(resolveClient: () => Promise<AppClient>) {
       let result;
       if (p.appId !== undefined) await client.authorize(id("appId"));
       switch (p.action) {
+        case "getBuilderConnection":
+          fields("appId");
+          result = await execute(client.getBuilderConnection, id("appId"));
+          break;
         case "listApps": {
           fields("skip");
           result = await execute(client.listApps, skip());

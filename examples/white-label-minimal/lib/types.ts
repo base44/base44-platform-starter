@@ -12,7 +12,7 @@ export type ToolCall = {
   id?: string | null;
   name?: string | null;
   status?: string | null;
-  waiting_on?: { kind?: string } | null;
+  waiting_on?: { kind?: string | null } | null;
   arguments_string?: string | null;
   results?: string | null;
 };
@@ -34,6 +34,7 @@ export type ToolInput = {
 export type AppPage = { apps: App[]; hasMore: boolean; nextSkip: number };
 
 export interface AppClient {
+  getBuilderConnection(appId: string): Promise<{ serverUrl: string; token: string }>;
   createApp(prompt: string): Promise<App>;
   getApp(appId: string): Promise<App>;
   getConversation(appId: string, skip: number): Promise<{ messages: Message[] }>;

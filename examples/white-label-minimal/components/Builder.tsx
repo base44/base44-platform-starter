@@ -6,7 +6,7 @@ import * as api from "../lib/chat/builder-api";
 import { Loader2, Eye, Upload, ExternalLink } from "lucide-react";
 import { mergeOptimisticMessages, type OptimisticMessage } from "../lib/chat/optimistic-messages";
 import BuilderChat from "./BuilderChat";
-import { useBuildPolling } from "./useBuildPolling";
+import { useBuilderSocket } from "./useBuilderSocket";
 
 export default function Builder({
   initialAppId,
@@ -27,7 +27,7 @@ export default function Builder({
   const [published, setPublished] = useState<string | null>(null);
   const [optimistic, setOptimistic] = useState<OptimisticMessage[]>([]);
   const lock = useRef(false);
-  const { app, messages, error: pollingError, loading, refresh, resume } = useBuildPolling(appId);
+  const { app, messages, error: socketError, loading, refresh, resume } = useBuilderSocket(appId);
   const displayedMessages = useMemo(
     () => mergeOptimisticMessages(messages, optimistic), [messages, optimistic],
   );
@@ -38,11 +38,11 @@ export default function Builder({
     m.tool_calls?.some((t) => t.status === "waiting_for_user_input"),
   );
   const processing = app?.status?.state === "processing";
-  // A prompt/answer invalidates the previous ready state before polling catches up.
+  // A prompt/answer invalidates the previous ready state before live state catches up.
   // Preview and deploy operations themselves should keep the card mounted.
   const submittingBuild = busy === "Sending prompt…" || busy === "Answering question…";
   const canDeliver = app?.id === appId && app?.status?.state === "ready" &&
-    !waiting && !pollingError && !submittingBuild && hasCompletedBuild(messages);
+    !waiting && !socketError && !submittingBuild && hasCompletedBuild(messages);
 
   async function send(prompt: string) {
     if (
@@ -51,7 +51,7 @@ export default function Builder({
       !prompt.trim() ||
       waiting ||
       processing ||
-      pollingError ||
+      socketError ||
       creationUncertain
     )
       return false;
@@ -132,9 +132,9 @@ export default function Builder({
           the conversation and send a follow-up prompt.
         </p>
       )}
-      {(error || pollingError) && (
+      {(error || socketError) && (
         <aside role="alert">
-          <p>{error || pollingError}</p>
+          <p>{error || socketError}</p>
           {appId && (
             <button
               className="secondary"
@@ -144,7 +144,7 @@ export default function Builder({
                 resume();
               }}
             >
-              Resume polling
+              Reconnect live updates
             </button>
           )}
         </aside>
@@ -190,8 +190,8 @@ export default function Builder({
         busy={!!busy}
         processing={processing}
         waiting={waiting}
-        disabled={loading || !!busy || waiting || processing || !!pollingError || creationUncertain}
-        questionsDisabled={!!busy || !!pollingError}
+        disabled={loading || !!busy || waiting || processing || !!socketError || creationUncertain}
+        questionsDisabled={!!busy || !!socketError}
         onSend={send}
         onAnswer={answer}
       >
@@ -215,7 +215,7 @@ export default function Builder({
                 <Eye size={14} /> Preview
               </button>
               <button
-                disabled={!!busy || waiting || !!pollingError || app?.status?.state !== "ready"}
+                disabled={!!busy || waiting || !!socketError || app?.status?.state !== "ready"}
                 aria-label="Deploy app"
                 onClick={() => void deploy()}
               >
@@ -239,11 +239,11 @@ export default function Builder({
 
           </section>
         )}
-        {(busy || waiting || processing || pollingError) && (
+        {(busy || waiting || processing || socketError) && (
           <div className="build-progress" role="status">
             {(busy || processing) && <Loader2 size={12} className="spin" />}
             {busy ||
-              (pollingError
+              (socketError
                 ? "Connection paused"
                 : waiting
                   ? "Waiting for your answer"
