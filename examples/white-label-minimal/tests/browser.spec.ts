@@ -205,6 +205,26 @@ test('rejected access preserves prompt and allows retry without uncertain creati
   await expect(page.getByText('Creation may have succeeded.', { exact: false })).toHaveCount(0);
 });
 
+test('rejected Base44 token reconnects before reloading apps', async ({ page }) => {
+  let connected = false;
+  let connections = 0;
+  await page.route('**/api/base44', route => route.fulfill(connected
+    ? { json: { apps: [], hasMore: false } }
+    : { status: 401, json: { error: 'Base44 returned 401. Reconnect your workspace.', outcome: 'unknown' } }));
+  await page.route('**/api/base44/connection', route => {
+    expect(route.request().postDataJSON()).toEqual({ action: 'connect' });
+    connections++;
+    connected = true;
+    return route.fulfill({ json: { linked: true } });
+  });
+  await page.goto('/');
+  await expect(page.getByRole('main').getByRole('alert')).toContainText('Reconnect your workspace.');
+  await page.getByRole('button', { name: 'Reconnect workspace', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Make room for your first idea' })).toBeVisible();
+  await expect(page.getByRole('main').getByRole('alert')).toHaveCount(0);
+  expect(connections).toBe(1);
+});
+
 test('My apps shows owned cards and opens the editor without marketplace features', async ({ page }) => {
   await page.route('**/api/base44', route => {
     const { action, appId } = route.request().postDataJSON();
