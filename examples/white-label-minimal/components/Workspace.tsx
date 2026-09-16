@@ -171,6 +171,7 @@ export default function Workspace({ name }: { name: string }) {
               <div className="apps-grid">
                 {apps.map((app) => (
                   <AppWidget key={app.id} app={app} live={liveApps.has(app.id)} removing={!!removing || loading}
+                    editing={editor.app?.id === app.id}
                     onEdit={() => openEditor(app)} onRemove={() => void removeApp(app)}
                     onExpand={() => setPreviewApp(app)} />
                 ))}

@@ -460,7 +460,7 @@ iframe {
 .app-preview iframe { flex: 1; min-height: 0; width: 100%; margin: 0; }
 .editor-heading button { flex-shrink: 0; white-space: nowrap; }
 
-.app-widget { min-width: 0; overflow: hidden; background: white; border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 1px 3px #10233e08; }
+.app-widget { position: relative; min-width: 0; overflow: hidden; background: white; border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 1px 3px #10233e08; }
 .widget-heading { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
 .widget-heading h2 { min-width: 0; margin: 0; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .widget-actions { display: flex; margin-left: auto; flex-shrink: 0; }
@@ -506,4 +506,17 @@ iframe {
   height: 3px;
   border-radius: 999px;
   background: var(--flare-bar);
+}
+/* the card of the app the editor has open, wearing the panel's stripe */
+.app-widget.is-editing::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: var(--flare-bar);
+  z-index: 1;
+}
+.app-widget.is-editing {
+  border-color: #c8d4e4;
+  box-shadow: 0 2px 10px #10233e14;
 }
