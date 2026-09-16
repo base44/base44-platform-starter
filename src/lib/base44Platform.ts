@@ -166,7 +166,7 @@ export async function createApp({
 
   // The platform silently drops fields it does not accept on create, and this one
   // failing is invisible — the build just ignores the instructions.
-  if (customInstructions && !app?.custom_instructions) {
+  if (customInstructions && !app?.has_custom_instructions) {
     console.error("[base44Platform] custom_instructions did not stick on the created app", app.id);
   }
 

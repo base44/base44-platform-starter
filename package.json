@@ -26,9 +26,11 @@
     "minimal:dev": "npm run dev --workspace @base44/white-label-minimal",
     "minimal:build": "npm run build --workspace @base44/white-label-minimal",
     "minimal:typecheck": "npm run typecheck --workspace @base44/white-label-minimal",
-    "minimal:test": "npm run test --workspace @base44/white-label-minimal"
+    "minimal:test": "npm run test --workspace @base44/white-label-minimal",
+    "platform-sdk:test": "tsx --test scripts/platform-sdk-integration.test.ts"
   },
   "dependencies": {
+    "@base44/sdk": "npm:@base44-preview/sdk@0.8.48-pr.283.2de4c8a",
     "@hello-pangea/dnd": "^18.0.1",
     "@prisma/client": "^6.19.3",
     "@radix-ui/react-checkbox": "^1.1.4",
