@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Loader2, Maximize2, Pencil, Trash2 } from "lucide-react";
 import PreviewFrame from "./PreviewFrame";
 import type { App } from "../lib/types";
@@ -12,11 +13,14 @@ export default function AppWidget({ app, live, removing, onEdit, onRemove, onExp
   onRemove: () => void;
   onExpand: () => void;
 }) {
+  const [previewStatus, setPreviewStatus] = useState(live ? "Starting live…" : "Last build");
   const building = app.status?.state === "processing";
+  const status = building ? "Generating…" : previewStatus;
   return <article className="app-widget" aria-label={app.name || "Untitled"}>
     <header className="widget-heading">
       <h2>{app.name || "Untitled"}</h2>
       {building && <Loader2 size={14} className="spin" aria-label="Building" />}
+      <span className="widget-build-status" data-live={status === "Live build"} role="status">{status}</span>
       <div className="widget-actions">
         <button className="icon-button" aria-label={`Edit ${app.name || "Untitled"}`} title="Edit app" onClick={onEdit}><Pencil size={15} /></button>
         <button className="icon-button" aria-label={`Open ${app.name || "Untitled"}`} title="Expand preview" onClick={onExpand}><Maximize2 size={15} /></button>
@@ -24,7 +28,12 @@ export default function AppWidget({ app, live, removing, onEdit, onRemove, onExp
       </div>
     </header>
     <div className="widget-preview">
-      <PreviewFrame app={app} live={live} title={`${app.name || "Untitled"} widget preview`} />
+      {building
+        ? <div className="widget-placeholder" role="status">
+            <Loader2 size={20} className="spin" aria-hidden="true" />
+            <span>Generating your app…</span>
+          </div>
+        : <PreviewFrame app={app} live={live} showControls={false} onStatusChange={setPreviewStatus} title={`${app.name || "Untitled"} widget preview`} />}
     </div>
   </article>;
 }
