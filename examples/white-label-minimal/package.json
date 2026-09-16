@@ -7,7 +7,7 @@
     "build": "npm run db:generate && next build",
     "start": "next start --hostname 127.0.0.1 --port 3001",
     "typecheck": "next typegen && tsc --noEmit",
-    "test": "tsx --conditions=react-server --test tests/server.test.ts tests/identity.test.ts && tsx --test tests/conversation.test.ts tests/questions.test.tsx",
+    "test": "tsx --conditions=react-server --test tests/server.test.ts tests/identity.test.ts && tsx --test tests/build-stream.test.ts tests/conversation.test.ts tests/questions.test.tsx",
     "test:browser": "playwright test",
     "db:generate": "prisma generate",
     "postinstall": "npm run db:generate"
@@ -15,14 +15,15 @@
   "dependencies": {
     "@assistant-ui/react": "^0.15.17",
     "@assistant-ui/react-markdown": "^0.14.13",
+    "@base44/sdk": "npm:@base44-preview/sdk@0.8.48-pr.286.7d59d14",
     "@prisma/client": "^6.19.3",
     "lucide-react": "^0.475.0",
     "next": "16.3.0",
     "next-auth": "^5.0.0-beta.32",
+    "prisma": "^6.19.3",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "server-only": "0.0.1",
-    "prisma": "^6.19.3"
+    "server-only": "0.0.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

@@ -207,6 +207,9 @@ export function createBase44Client(accessToken: string) {
   }
 
   return {
+    async getBuilderConnection() {
+      return { serverUrl: getBase44Config().host, token: accessToken };
+    },
     createApp,
     getApp,
     getConversation,
