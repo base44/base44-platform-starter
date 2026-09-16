@@ -1,6 +1,6 @@
 import { getSessionUser } from "../lib/server/auth";
 import GoogleSignInButton from "../components/GoogleSignInButton";
-import SunnyLogo from "@/components/SunnyLogo";
+import TinySunnyLogo from "../components/TinySunnyLogo";
 import Workspace from "../components/Workspace";
 
 export default async function Page() {
@@ -9,7 +9,7 @@ export default async function Page() {
     return (
       <main className="login-page">
         <div className="login-card">
-          <SunnyLogo className="sunny-logo" />
+          <TinySunnyLogo />
           <h1>
             A little idea.
             <br />
