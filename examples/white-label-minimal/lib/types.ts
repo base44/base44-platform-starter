@@ -15,6 +15,23 @@ export type ToolCall = {
   waiting_on?: { kind?: string | null } | null;
   arguments_string?: string | null;
   results?: string | null;
+  auto_approved?: boolean | null;
+  mutation_applied?: boolean | null;
+  display_projection?: {
+    file_paths?: string[];
+    content_empty?: boolean;
+    summary?: string;
+    writes_entities?: boolean;
+    entity_name?: string;
+    record_count?: number;
+  } | null;
+  user_input?: {
+    answers?: Array<{
+      question_index?: number;
+      selected_labels?: string[];
+      custom_text?: string;
+    }>;
+  } | null;
 };
 export type Message = {
   id: string;

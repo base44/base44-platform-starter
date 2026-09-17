@@ -126,7 +126,7 @@ export default function Question({
               ? "Unsupported question / tool details"
               : "Review proposed action"}
           </summary>
-          <pre>{tool.arguments_string || "No arguments provided."}</pre>
+          <p>This action needs input that this example cannot render.</p>
         </details>
       )}
       {waiting && !submitted && (

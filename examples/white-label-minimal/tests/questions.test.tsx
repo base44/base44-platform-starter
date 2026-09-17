@@ -15,9 +15,10 @@ test('input displays declared secret fields as password inputs', () => {
   assert.equal(parseQuestion(t).kind, 'input');
   const html = render(t); assert.match(html, /type="password"/); assert.match(html, /Weather provider key/);
 });
-test('approval shows arguments, approve, and reject', () => {
-  const html = render(tool('approval', { packages: [{ name: 'example' }] }));
+test('approval keeps unreviewed arguments out of the card', () => {
+  const html = render(tool('approval', { packages: [{ name: 'private-package' }] }));
   assert.match(html, /Review proposed action/); assert.match(html, />Approve</); assert.match(html, />Reject</);
+  assert.doesNotMatch(html, /private-package/);
 });
 test('unknown or malformed questions remain visible and cannot be blindly approved', () => {
   for (const t of [tool('future', {}), tool('input', { fields: [] }), { ...tool('choice', {}), arguments_string: '{bad' }]) {
