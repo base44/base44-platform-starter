@@ -133,7 +133,7 @@ export default function Workspace({ name }: { name: string }) {
       <div className="workspace-body">
         <main className="apps-page">
           <div className="page-heading">
-            <h1>My apps</h1>
+            <h1>Apps</h1>
           </div>
           <div className="apps-content">
             {error && (
