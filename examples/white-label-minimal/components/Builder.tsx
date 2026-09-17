@@ -3,7 +3,7 @@ import { hasCompletedBuild } from "../lib/chat/build-readiness";
 import type { App, ToolInput } from "../lib/types";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../lib/chat/builder-api";
-import { Loader2 } from "lucide-react";
+import { ArrowRight, Check, Loader2 } from "lucide-react";
 import { mergeOptimisticMessages, type OptimisticMessage } from "../lib/chat/optimistic-messages";
 import BuilderChat from "./BuilderChat";
 import { useBuildPolling } from "./useBuildPolling";
@@ -12,10 +12,12 @@ export default function Builder({
   initialAppId,
   onCreated,
   onUpdated,
+  onGoHome,
 }: {
   initialAppId?: string;
   onCreated?: (app: App) => void;
   onUpdated?: (app: App) => void;
+  onGoHome?: () => void;
 }) {
   const [appId, setAppId] = useState<string | null>(initialAppId || null);
   const [busy, setBusy] = useState("");
@@ -166,8 +168,15 @@ export default function Builder({
       >
         {canDeliver && (
           <section className="delivery" aria-label="App ready">
+            <p className="ready-badge">
+              <Check size={13} aria-hidden="true" /> Ready
+            </p>
             <strong>{app?.name || "Your app"}</strong>
-            <p>Ready — see it in the home page.</p>
+            {onGoHome && (
+              <button onClick={onGoHome}>
+                See it in the home page <ArrowRight size={14} />
+              </button>
+            )}
           </section>
         )}
         {(busy || waiting || processing || pollingError) && (

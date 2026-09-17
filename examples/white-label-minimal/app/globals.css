@@ -16,6 +16,8 @@
   --shadow-slab: -14px 0 34px -20px #10233e45;
   --radius-card: 14px;
   --radius-inset: 12px;
+  --ready-ink: #047857;
+  --ready-surface: #ecfdf5;
   --flare-warm: #e8492c;
   --flare-teal: #17a2bd;
   --flare-lime: #bad03a;
@@ -422,14 +424,10 @@ iframe {
 .composer textarea { flex: 1; width: 0; margin: 0; padding: 9px 10px; font-size: 14px; line-height: 20px; height: 40px; min-height: 40px; max-height: 112px; resize: none; border-radius: 4px; }
 .composer .send-button { flex-shrink: 0; height: 38px; width: 38px; padding: 0; border-radius: 4px; }
 .composer > small { width: 100%; }
-.delivery { margin: 16px 0 8px 34px; padding: 14px 16px; border: 1px solid var(--border); background: white; border-radius: 8px; }
-.delivery p { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
-.ready-heading strong { font-size: 13px; font-weight: 600; }
-.ready-heading { margin-bottom: 12px; }
-.delivery .actions { display: flex; flex-direction: column; gap: 8px; margin: 0; align-items: stretch; }
-.delivery button { font-size: 12px; padding: 9px 12px; border-radius: 4px; }
-.delivery .actions > button:nth-child(3) { background: transparent; border: 0; color: var(--muted); font-size: 11px; padding: 4px; }
-.delivery .app-thumbnail { aspect-ratio: 16 / 9; border-radius: 6px; overflow: hidden; }
+.delivery { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; margin: 16px 0 8px 34px; padding: 14px 16px; border: 1px solid var(--border); background: white; border-radius: 8px; }
+.delivery strong { font-size: 13px; font-weight: 600; }
+.delivery button { align-self: stretch; font-size: 12px; padding: 9px 12px; border-radius: 4px; }
+.ready-badge { display: inline-flex; align-items: center; gap: 5px; margin: 0; padding: 3px 8px 3px 6px; border-radius: 999px; background: var(--ready-surface); color: var(--ready-ink); font-size: 11px; font-weight: 500; line-height: 1; }
 .build-progress { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; margin: 12px 0 12px 34px; }
 .builder > details, .builder > aside { max-height: 35%; overflow: auto; flex-shrink: 0; margin: 12px; }
 .chat-welcome { display: flex; min-height: 100%; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 32px 0; }

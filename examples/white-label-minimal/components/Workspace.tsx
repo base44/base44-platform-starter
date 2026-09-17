@@ -263,6 +263,7 @@ export default function Workspace({ name }: { name: string }) {
               key={editor.version}
               initialAppId={editor.app?.id}
               onUpdated={updateApp}
+              onGoHome={backToApps}
               onCreated={(app) => {
                 setActiveName(app.name || "");
                 setStageApp(app);
