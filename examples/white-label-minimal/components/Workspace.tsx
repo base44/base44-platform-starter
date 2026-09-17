@@ -1,31 +1,33 @@
 "use client";
 import type { App } from "../lib/types";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
-import { Grid2X2, Loader2, LogOut, MessageSquare, Plus, X, Sparkles } from "lucide-react";
+import { ArrowLeft, Grid2X2, Loader2, LogOut, MessageSquare, Plus, X } from "lucide-react";
 import TinySunnyLogo from "./TinySunnyLogo";
 import * as api from "../lib/chat/builder-api";
 import Builder from "./Builder";
-import AppPreview from "./AppPreview";
 import AppWidget from "./AppWidget";
+import PreviewFrame from "./PreviewFrame";
 
 export default function Workspace({ name }: { name: string }) {
-  const [liveApps, setLiveApps] = useState<Set<string>>(() => new Set());
-  const activeAppId = useRef<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
   const editorPanel = useRef<HTMLElement>(null);
   const assistantButton = useRef<HTMLButtonElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
+  const backButton = useRef<HTMLButtonElement>(null);
   const [apps, setApps] = useState<App[]>([]);
-  const [previewApp, setPreviewApp] = useState<App | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [needsConnection, setNeedsConnection] = useState(false);
+  // What the stage shows. Kept apart from `editor` so an app created mid-chat
+  // can appear beside the conversation without remounting the Builder.
+  const [stageApp, setStageApp] = useState<App | null>(null);
   const [editor, setEditor] = useState<{ app: App | null; version: number }>({
     app: null,
     version: 0,
   });
+  const [inApp, setInApp] = useState(false);
   function closeAssistant() {
     setMobileEditorOpen(false);
     assistantButton.current?.focus();
@@ -41,17 +43,24 @@ export default function Workspace({ name }: { name: string }) {
       editorPanel.current?.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus();
   }, [editor.version, editor.app]);
   const updateApp = useCallback((app: App) => {
-    activeAppId.current = app.id;
     setActiveName(app.name || "");
     setApps((current) => current.map((item) => (item.id === app.id ? app : item)));
+    setStageApp((current) => (current?.id === app.id ? app : current));
     setEditor((current) => (current.app?.id === app.id ? { ...current, app } : current));
   }, []);
-  function openEditor(app: App | null = null) {
-    if (app) setLiveApps(current => new Set(current).add(app.id));
-    activeAppId.current = app?.id || null;
+  function openApp(app: App | null = null) {
     setActiveName(app?.name || "");
+    setStageApp(app);
     setEditor((current) => ({ app, version: current.version + 1 }));
+    setInApp(true);
     setMobileEditorOpen(true);
+  }
+  function backToApps() {
+    setInApp(false);
+    setMobileEditorOpen(false);
+    setStageApp(null);
+    setActiveName("");
+    setEditor({ app: null, version: 0 });
   }
   const load = useCallback(() => {
     return (async () => {
@@ -86,8 +95,7 @@ export default function Workspace({ name }: { name: string }) {
     try {
       await api.removeApp(app.id);
       setApps((current) => current.filter((item) => item.id !== app.id));
-      if (activeAppId.current === app.id) openEditor();
-      if (previewApp?.id === app.id) setPreviewApp(null);
+      if (stageApp?.id === app.id) backToApps();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not remove the app.");
     } finally {
@@ -111,7 +119,17 @@ export default function Workspace({ name }: { name: string }) {
       setLoading(false);
     }
   }
-  const editingExisting = !!editor.app;
+  // An unknown publication state groups with the published apps: a failed
+  // lookup must not file someone's live app under drafts.
+  const published = apps.filter((app) => app.published !== false);
+  const drafts = apps.filter((app) => app.published === false);
+  const groups: { label: string | null; list: App[] }[] =
+    published.length && drafts.length
+      ? [
+          { label: "Published", list: published },
+          { label: "In progress", list: drafts },
+        ]
+      : [{ label: null, list: published.length ? published : drafts }];
   return (
     <div className="workspace">
       <header className="topbar">
@@ -119,6 +137,9 @@ export default function Workspace({ name }: { name: string }) {
           <TinySunnyLogo />
         </Link>
         <div className="account">
+          <button className="secondary" onClick={() => openApp()} disabled={needsConnection}>
+            <Plus size={16} /> New app
+          </button>
           <span>{name}</span>
           <button
             className="icon-button"
@@ -129,113 +150,135 @@ export default function Workspace({ name }: { name: string }) {
           </button>
         </div>
       </header>
-      {previewApp && <AppPreview key={previewApp.id} app={previewApp} live={liveApps.has(previewApp.id)} onClose={() => setPreviewApp(null)} />}
-      <div className="workspace-body">
-        <main className="apps-page">
-          <div className="apps-content">
-            {error && (
-              <div role="alert" className="error">
-                <p>{error}</p>
-                <button className="secondary" onClick={() => load()}>
-                  Try again
-                </button>
-              </div>
-            )}
-            {needsConnection ? (
-              <div className="empty-state">
-                <MessageSquare size={28} />
-                <h2>Your ideas start here</h2>
-                <p>Connect your workspace to build your first app.</p>
-                <button disabled={loading} onClick={connect}>
-                  {loading ? "Connecting…" : "Connect workspace"}
-                </button>
-              </div>
-            ) : loading && !apps.length ? (
-              <div className="empty-state" role="status">
-                <Loader2 className="spin" />
-                <p>Loading your apps…</p>
-              </div>
-            ) : !error && !apps.length ? (
-              <div className="empty-state">
-                <Grid2X2 size={28} />
-                <h2>Make room for your first idea</h2>
-                <p>Tell the assistant what you want to build.</p>
-                <button onClick={() => openEditor()}>
-                  <Plus size={16} /> Create an app
-                </button>
-              </div>
-            ) : (
-              <div className="apps-grid">
-                {apps.map((app) => (
-                  <AppWidget key={app.id} app={app} live={liveApps.has(app.id)} removing={!!removing || loading}
-                    editing={editor.app?.id === app.id}
-                    onEdit={() => openEditor(app)} onRemove={() => void removeApp(app)}
-                    onExpand={() => setPreviewApp(app)} />
-                ))}
-              </div>
-            )}
-
-          </div>
-        </main>
-        <button
-          ref={assistantButton}
-          className="mobile-assistant"
-          onClick={() => setMobileEditorOpen(true)}
-          aria-expanded={mobileEditorOpen}
-          aria-controls="app-editor"
-        >
-          <MessageSquare size={18} /> Assistant
-        </button>
-        <section
-          ref={editorPanel}
-          id="app-editor"
-          className={`editor-panel ${mobileEditorOpen ? "is-open" : ""} ${
-            editingExisting ? "is-editing" : ""
-          }`}
-          aria-label="App editor"
-          onKeyDown={(e) => {
-            if (e.key === "Escape") closeAssistant();
-          }}
-        >
-          <header className="editor-heading">
-            <div>
-              {editingExisting ? (
+      {!inApp ? (
+        <div className="workspace-body">
+          <main className="apps-page">
+            <div className="apps-content">
+              {error && (
+                <div role="alert" className="error">
+                  <p>{error}</p>
+                  <button className="secondary" onClick={() => load()}>
+                    Try again
+                  </button>
+                </div>
+              )}
+              {needsConnection ? (
+                <div className="empty-state">
+                  <MessageSquare size={28} />
+                  <h2>Your ideas start here</h2>
+                  <p>Connect your workspace to build your first app.</p>
+                  <button disabled={loading} onClick={connect}>
+                    {loading ? "Connecting…" : "Connect workspace"}
+                  </button>
+                </div>
+              ) : loading && !apps.length ? (
+                <div className="empty-state" role="status">
+                  <Loader2 className="spin" />
+                  <p>Loading your apps…</p>
+                </div>
+              ) : !error && !apps.length ? (
+                <div className="empty-state">
+                  <Grid2X2 size={28} />
+                  <h2>Make room for your first idea</h2>
+                  <p>Tell the assistant what you want to build.</p>
+                  <button onClick={() => openApp()}>
+                    <Plus size={16} /> Create an app
+                  </button>
+                </div>
+              ) : (
+                groups.map((group) => (
+                  <Fragment key={group.label ?? "all"}>
+                    {group.label && <h2 className="apps-group">{group.label}</h2>}
+                    <div className="apps-grid">
+                      {group.list.map((app) => (
+                        <AppWidget
+                          key={app.id}
+                          app={app}
+                          removing={!!removing || loading}
+                          onEdit={() => openApp(app)}
+                          onRemove={() => void removeApp(app)}
+                        />
+                      ))}
+                    </div>
+                  </Fragment>
+                ))
+              )}
+            </div>
+          </main>
+        </div>
+      ) : (
+        <div className="workspace-body">
+          <main className="app-stage">
+            <header className="stage-heading">
+              <button ref={backButton} className="secondary" onClick={backToApps}>
+                <ArrowLeft size={16} /> All apps
+              </button>
+              <strong>{activeName || "New app"}</strong>
+            </header>
+            <div className="stage-body">
+              {stageApp ? (
+                <PreviewFrame
+                  key={stageApp.id}
+                  app={stageApp}
+                  live
+                  title={`${stageApp.name || "Untitled"} preview`}
+                />
+              ) : (
+                <div className="widget-placeholder">
+                  Describe what you want to build. The preview appears here once the app exists.
+                </div>
+              )}
+            </div>
+          </main>
+          <button
+            ref={assistantButton}
+            className="mobile-assistant"
+            onClick={() => setMobileEditorOpen(true)}
+            aria-expanded={mobileEditorOpen}
+            aria-controls="app-editor"
+          >
+            <MessageSquare size={18} /> Assistant
+          </button>
+          <section
+            ref={editorPanel}
+            id="app-editor"
+            className={`editor-panel ${mobileEditorOpen ? "is-open" : ""} is-editing`}
+            aria-label="App editor"
+            onKeyDown={(e) => {
+              if (e.key === "Escape") closeAssistant();
+            }}
+          >
+            <header className="editor-heading">
+              <div>
                 <span className="editing-badge">
                   <span className="editing-flare" aria-hidden="true" />
-                  Editing
+                  Assistant
                 </span>
-              ) : (
-                <Sparkles size={14} />
-              )}
-              <strong>{activeName || "Build an app"}</strong>
-            </div>
-            <div>
-              {apps.length > 0 && <button className="secondary" onClick={() => openEditor()} disabled={needsConnection}>
-                <Plus size={16} /> New app
-              </button>}
-            <button
-              ref={closeButton}
-              className="icon-button mobile-close"
-              aria-label="Close assistant"
-              onClick={closeAssistant}
-            >
-              <X size={20} />
-            </button>
-            </div>
-          </header>
-          <Builder
-            key={`${editor.app?.id || "new"}:${editor.version}`}
-            initialAppId={editor.app?.id}
-            onUpdated={updateApp}
-            onPreview={app => { setLiveApps(current => new Set(current).add(app.id)); setPreviewApp(app); }}
-            onCreated={(app) => {
-              setLiveApps(current => new Set(current).add(app.id));
-              activeAppId.current = app.id;
-              setApps((current) => [app, ...current]);
-            }}
-          />
-        </section>
-      </div>
+              </div>
+              <div>
+                <button
+                  ref={closeButton}
+                  className="icon-button mobile-close"
+                  aria-label="Close assistant"
+                  onClick={closeAssistant}
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </header>
+            <Builder
+              key={`${editor.app?.id || "new"}:${editor.version}`}
+              initialAppId={editor.app?.id}
+              onUpdated={updateApp}
+              onPreview={(app) => setStageApp(app)}
+              onCreated={(app) => {
+                setStageApp(app);
+                setApps((current) => [app, ...current]);
+              }}
+            />
+          </section>
+        </div>
+      )}
     </div>
   );
 }

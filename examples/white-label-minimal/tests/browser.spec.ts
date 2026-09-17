@@ -33,6 +33,14 @@ async function fixture(page: Page, tool?: ToolCall, failFirst = false) {
   await expect(page.getByText('Your app is taking shape.')).toBeVisible();
   return { submissions, counts: () => ({ previews, deployments, creates }) };
 }
+// The chat lives inside an app now, so a test that wants the composer opens
+// one first: the empty-state CTA when there are no apps, the topbar otherwise.
+async function openBuilder(page: Page) {
+  await page.goto('/');
+  const cta = page.getByRole('button', { name: 'Create an app', exact: true });
+  if (await cta.count()) await cta.click();
+  else await page.getByRole('button', { name: 'New app', exact: true }).click();
+}
 const question = (kind: string, args: object): ToolCall => ({ id: 'tool_1', name: 'Agent question', waiting_on: { kind }, arguments_string: JSON.stringify(args) });
 
 test('choice retry freezes original payload, prevents duplicates, then unlocks composer', async ({ page }) => {
@@ -165,7 +173,7 @@ test('slow conversation reads do not overlap later polling intervals', async ({ 
 test('rejected access preserves prompt and allows retry without uncertain creation warning', async ({ page }) => {
   await page.route('**/api/base44', route => route.fulfill({ status: 401, contentType: 'application/json',
     body: JSON.stringify({ error: 'Sign in to continue.', outcome: 'not_started' }) }));
-  await page.goto('/');
+  await openBuilder(page);
   await page.getByLabel('What would you like to build?').fill('Hello world');
   await page.getByRole('button', { name: 'Create app', exact: true }).click();
   await expect(page.locator('aside[role=alert]')).toContainText('Sign in to continue.');
@@ -219,7 +227,7 @@ test('My apps shows owned cards and opens the editor without marketplace feature
     const { action } = route.request().postDataJSON();
     return route.fulfill({ json: action === 'listApps' ? { apps: [], hasMore: false, nextSkip: 0 } : action === 'getConversation' ? { messages: [{ id: 'm1', role: 'assistant', content: '## Your app is ready\n- **Hello world**', tool_calls: [{ id: 't1', name: 'find_replace', status: 'success', arguments_string: JSON.stringify({ file_path: 'src/index.css', find: 'old', replace: 'new' }) }] }] } : { id: 'app_1', name: 'Hello World', status: { state: 'ready' } } });
   });
-  await page.goto('/');
+  await openBuilder(page);
   await page.getByLabel('What would you like to build?').fill('Hello world app');
   await page.getByRole('button', { name: 'Create app', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Your app is ready' })).toBeVisible();
@@ -249,7 +257,7 @@ test('assistant-ui preserves inline tools across polling and hides internal mess
     ] } });
     return route.fulfill({ json: { id: 'app_1', status: { state: 'ready' } } });
   });
-  await page.goto('/');
+  await openBuilder(page);
   await page.getByLabel('What would you like to build?').fill('Build a notes app');
   await page.getByLabel('What would you like to build?').press('Enter');
   await expect(page.getByText('Working on your app')).toBeVisible();
@@ -305,7 +313,7 @@ test('preview card waits for build completion and hides during follow-up submiss
     ] } });
     return route.fulfill({ json: { id: 'app_1', name: 'Scoreboard', status: { state } } });
   });
-  await page.goto('/');
+  await openBuilder(page);
   await page.getByLabel('What would you like to build?').fill('Build a scoreboard');
   await page.getByRole('button', { name: 'Create app', exact: true }).click();
   await expect(page.getByText('Your scoreboard is live.')).toBeVisible();
@@ -342,7 +350,7 @@ test('first prompt stays visible through creation and empty polls, then merges o
       ? [{ id: 'server-user', role: 'user', content: prompt }] : [] } });
     return route.fulfill({ json: { id: 'app_1', status: { state: 'processing' } } });
   });
-  await page.goto('/');
+  await openBuilder(page);
   await page.getByLabel('What would you like to build?').fill(prompt);
   await page.getByRole('button', { name: 'Create app', exact: true }).click();
   await expect(page.getByText(prompt, { exact: true })).toBeVisible();
@@ -366,7 +374,7 @@ test('failed creation removes the optimistic bubble and restores the draft', asy
     await new Promise<void>(resolve => { failCreate = resolve; });
     return route.fulfill({ status: 400, json: { error: 'Creation rejected' } });
   });
-  await page.goto('/');
+  await openBuilder(page);
   const input = page.getByLabel('What would you like to build?');
   await input.fill('Build a scoreboard');
   await page.getByRole('button', { name: 'Create app', exact: true }).click();
@@ -385,7 +393,7 @@ test('failed creation removes the optimistic bubble and restores the draft', asy
       ? { messages: [{ id: 'u1', role: 'user', content: 'say hello world' }, { id: 'a1', role: 'assistant', content: 'Hello world! What would you like to build?' }] }
       : { id: 'app_1', name: 'say hello world', status: { state: 'ready' } } });
   });
-  await page.goto('/');
+  await openBuilder(page);
   await page.getByLabel('What would you like to build?').fill('say hello world');
   await page.getByRole('button', { name: 'Create app', exact: true }).click();
   await expect(page.getByText('Hello world! What would you like to build?')).toBeVisible();

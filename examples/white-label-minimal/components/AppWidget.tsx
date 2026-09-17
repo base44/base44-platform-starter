@@ -1,40 +1,29 @@
 "use client";
 
-import { Loader2, Maximize2, Pencil, Trash2 } from "lucide-react";
-import PreviewFrame from "./PreviewFrame";
+import { Loader2, Pencil, Trash2 } from "lucide-react";
 import type { App } from "../lib/types";
 
-export default function AppWidget({ app, live, editing, removing, onEdit, onRemove, onExpand }: {
+// A card in the apps list. It carries no preview: a preview means a live or
+// static build, and those are only worth fetching once someone opens the app.
+export default function AppWidget({ app, removing, onEdit, onRemove }: {
   app: App;
-  live: boolean;
-  editing: boolean;
   removing: boolean;
   onEdit: () => void;
   onRemove: () => void;
-  onExpand: () => void;
 }) {
   const building = app.status?.state === "processing";
   const name = app.name || "Untitled";
-  return <article
-    className={`app-widget ${editing ? "is-editing" : ""}`}
-    aria-label={editing ? `${name}, open in the editor` : name}
-  >
-    <header className="widget-heading">
+  return <article className="app-widget" aria-label={name}>
+    <button className="widget-open" onClick={onEdit} aria-label={`Open ${name}`}>
       <h2>{name}</h2>
-      {building && <Loader2 size={14} className="spin" aria-label="Building" />}
+      {app.user_description && <p>{app.user_description}</p>}
+    </button>
+    <footer className="widget-heading">
+      {building && <span className="widget-building"><Loader2 size={13} className="spin" aria-hidden="true" /> Generating…</span>}
       <div className="widget-actions">
-        <button className="icon-button" aria-label={`Edit ${name}`} title="Edit app" onClick={onEdit}><Pencil size={15} /></button>
-        <button className="icon-button" aria-label={`Open ${name}`} title="Expand preview" onClick={onExpand}><Maximize2 size={15} /></button>
+        <button className="icon-button" aria-label={`Edit ${name}`} title="Open app" onClick={onEdit}><Pencil size={15} /></button>
         <button className="icon-button" aria-label={`Remove ${name} from My apps`} title="Remove from Tiny only" disabled={removing} onClick={onRemove}><Trash2 size={15} /></button>
       </div>
-    </header>
-    <div className="widget-preview">
-      {building
-        ? <div className="widget-placeholder" role="status">
-            <Loader2 size={20} className="spin" aria-hidden="true" />
-            <span>Generating your app…</span>
-          </div>
-        : <PreviewFrame app={app} live={live} showControls={false} title={`${name} widget preview`} />}
-    </div>
+    </footer>
   </article>;
 }

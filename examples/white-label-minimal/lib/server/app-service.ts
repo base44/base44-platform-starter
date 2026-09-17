@@ -21,7 +21,7 @@ export async function getAppClient(): Promise<AppClient> {
       return app;
     },
     async listApps(skip) {
-      return resolveAppPage(await apps.list(skip), skip, client.getApp);
+      return resolveAppPage(await apps.list(skip), skip, client.getApp, client.getPublishedUrl);
     },
   };
 }
