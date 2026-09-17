@@ -123,6 +123,10 @@ export function createBase44Client(accessToken: string) {
           waiting_on: t.waiting_on,
           arguments_string: t.arguments_string,
           results: typeof t.results === "string" ? t.results : undefined,
+          auto_approved: t.auto_approved,
+          mutation_applied: t.mutation_applied,
+          display_projection: t.display_projection,
+          user_input: t.user_input,
         })),
       };
     });

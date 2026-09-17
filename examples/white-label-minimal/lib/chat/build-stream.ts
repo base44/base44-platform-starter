@@ -71,16 +71,11 @@ export function watchBuild(
             ...state, app: { ...state.app, status: update.status ?? undefined },
           };
           state = { ...state, messages: applyMessageUpdate(state.messages, update) };
-          // Question forms are intentionally absent from socket payloads; read them through our backend.
-          const needsQuestion = update._last_msg?.tool_calls?.some(tool => tool.status === "waiting_for_user_input");
-          if (needsQuestion) await snapshot();
-          else {
+          publish();
+          if (update.status?.state === "ready") {
+            const app = await dependencies.readApp(appId, controller.signal);
+            state = { ...state, app };
             publish();
-            if (update.status?.state === "ready") {
-              const app = await dependencies.readApp(appId, controller.signal);
-              state = { ...state, app };
-              publish();
-            }
           }
         } else if (event.type === "directive") {
           await snapshot();

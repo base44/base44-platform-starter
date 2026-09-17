@@ -268,16 +268,16 @@ test('My apps shows owned cards and opens the editor without marketplace feature
  test('ordinary tool activity is collapsed and assistant messages render Markdown', async ({ page }) => {
   await page.route('**/api/base44', route => {
     const { action } = route.request().postDataJSON();
-    return route.fulfill({ json: action === 'listApps' ? { apps: [], hasMore: false, nextSkip: 0 } : action === 'getConversation' ? { messages: [{ id: 'm1', role: 'assistant', content: '## Your app is ready\n- **Hello world**', tool_calls: [{ id: 't1', name: 'find_replace', status: 'success', arguments_string: JSON.stringify({ file_path: 'src/index.css', find: 'old', replace: 'new' }) }] }] } : { id: 'aaaaaaaaaaaaaaaaaaaaaaaa', name: 'Hello World', status: { state: 'ready' } } });
+    return route.fulfill({ json: action === 'listApps' ? { apps: [], hasMore: false, nextSkip: 0 } : action === 'getConversation' ? { messages: [{ id: 'm1', role: 'assistant', content: '## Your app is ready\n- **Hello world**', tool_calls: [{ id: 't1', name: 'find_replace', status: 'success', display_projection: { file_paths: ['src/index.css'] } }] }] } : { id: 'aaaaaaaaaaaaaaaaaaaaaaaa', name: 'Hello World', status: { state: 'ready' } } });
   });
   await page.goto('/');
   await page.getByLabel('What would you like to build?').fill('Hello world app');
   await page.getByRole('button', { name: 'Create app', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Your app is ready' })).toBeVisible();
   await expect(page.getByText('Unsupported question / tool details')).toHaveCount(0);
-  await expect(page.locator('.tool-activity pre')).not.toBeVisible();
+  await expect(page.getByText('Editing src/index.css')).toBeVisible();
   await page.locator('.tool-activity summary').click();
-  await expect(page.locator('.tool-activity pre')).toContainText('"file_path": "src/index.css"');
+  await expect(page.getByText('Editing src/index.css')).toBeVisible();
   await page.screenshot({ path: 'test-results/chat-desktop.png', fullPage: true });
 });
 
@@ -294,7 +294,7 @@ test('assistant-ui preserves inline tools across live invalidation and hides int
     if (p.action === 'getConversation') return route.fulfill({ json: { messages: [
       { id: 'hidden', hidden: true, role: 'assistant', content: 'Internal instructions' },
       { id: 'm1', role: 'assistant', content: '**Working on your app**', tool_calls: [
-        { id: 't1', name: 'write_file', status: complete ? 'success' : 'running', arguments_string: '{"path":"app.tsx"}', results: complete ? 'File saved' : null },
+        { id: 't1', name: 'write_file', status: complete ? 'success' : 'running', display_projection: { file_paths: ['app.tsx'] }, results: complete ? 'Plan updated.' : null },
         { name: 'unknown_question', status: 'waiting_for_user_input', waiting_on: { kind: 'choice' }, arguments_string: '{' },
       ] },
     ] } });
@@ -313,7 +313,7 @@ test('assistant-ui preserves inline tools across live invalidation and hides int
   await expect(page.locator('.tool-activity')).toContainText('Working');
   complete = true;
   pushEvent(page, "directive", { type: "conversation_changed" });
-  await expect(page.locator('.tool-activity')).toContainText('File saved');
+  await expect(page.locator('.tool-activity')).toContainText('Plan updated.');
   await expect(page.locator('.tool-activity')).toHaveAttribute('open', '');
   expect(sent).toEqual([]);
   expect(errors).toEqual([]);

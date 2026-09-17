@@ -38,13 +38,13 @@ test('subscribes before loading history and streamed messages require no HTTP re
   f.stream.close();
 });
 
-test('question and invalidation events fetch existing backend projections without polling', async () => {
+test('question updates render from the socket while invalidations refresh through the backend', async () => {
   const f = fixture(); await turn();
   for (const event of [
     { type: 'update_model', data: { _last_msg: { id: 'm', tool_calls: [{ status: 'waiting_for_user_input' }] } } },
     { type: 'directive', data: { room: `/apps/${appId}`, type: 'conversation_changed' } },
   ]) await f.subscription().onEvent({ ...event, appId, seq: 'event' } as PlatformEvent);
-  assert.equal(f.reads(), 2);
+  assert.equal(f.reads(), 1);
   f.stream.close();
 });
 

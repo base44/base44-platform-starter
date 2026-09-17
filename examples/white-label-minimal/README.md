@@ -167,11 +167,13 @@ There are no periodic conversation or app reads. Invalidation events and complet
 HTTP mutations trigger reconciliation; ready-state updates refresh preview metadata.
 Queue/task events advance the cursor but have no separate UI in this minimal example.
 
-Question forms are not in the public socket payload. When a tool waits for input,
-the example reads its existing conversation projection through the partner backend
-and continues using the existing approval/choice/secret UI. HTTP mutations still
-use the partner backend. Those HTTP projections retain their current contract;
-this change does not introduce a new public question schema.
+Reviewed question and secret-form schemas arrive in the socket update that opens the
+tool card. The browser renders those schemas directly and posts any answer through
+the existing partner-backend mutation route. Tool cards use reviewed file paths,
+activity summaries, entity counts, package names, plan fields and media labels; they
+never render source, diffs, commands, execution output, secret values or raw results.
+The partner backend remains responsible for applying the same filtering policy to
+its existing HTTP history responses.
 
 When retained history expires or an event cannot be applied, delivery stops and
 **Reconnect live updates** starts a new session and snapshot. Snapshot recovery is
