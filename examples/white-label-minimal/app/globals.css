@@ -3,7 +3,7 @@
   --navy: #0e2e56;
   --border: #e2e5eb;
   --muted: #737b8b;
-  --band-height: 63px;
+  --band-height: 64px; /* the topbar's height; a near-match reads as error */
   /* three planes: chrome sits over the page, the chat panel sits under it */
   --surface-chrome: #ffffff;
   --surface-page: #f6f7f9;
@@ -14,7 +14,6 @@
   --shadow-card: 0 1px 2px #10233e0d;
   --shadow-card-active: 0 4px 14px #10233e1f;
   --shadow-slab: -14px 0 34px -20px #10233e45;
-  --radius-slab: 16px;
   --radius-card: 14px;
   --radius-inset: 12px;
   --flare-warm: #e8492c;
@@ -83,6 +82,7 @@ summary:focus-visible {
   color: var(--navy);
 }
 .tiny-sunny-pill {
+  transform: translateY(0.23em);
   padding: 5px 9px 6px;
   border: 1.5px solid #cfd8e6;
   border-radius: 999px;
@@ -267,8 +267,6 @@ h1 {
   min-width: 0;
   background: white;
   border-left: 0;
-  border-top-left-radius: var(--radius-slab);
-  overflow: hidden;
   /* over the sticky page heading, so the slab's shadow lands on the page */
   z-index: 3;
   display: flex;
