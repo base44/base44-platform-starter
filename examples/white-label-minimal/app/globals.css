@@ -133,9 +133,9 @@ summary:focus-visible {
 }
 .page-heading h1 {
   margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: -0.2px;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: normal;
 }
 h1 {
   font-size: 36px;
