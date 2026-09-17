@@ -61,6 +61,30 @@ export function createBase44Client(accessToken: string) {
     }
   }
 
+  // Whether a derived static preview URL actually serves a build. Cached
+  // because getApp is polled every two seconds while an app is building.
+  const probes = new Map<string, { ok: boolean; at: number }>();
+  const probeTtl = 60_000;
+  async function servesABuild(url: string) {
+    const cached = probes.get(url);
+    if (cached && Date.now() - cached.at < probeTtl) return cached.ok;
+    let ok = false;
+    try {
+      const response = await fetch(url, {
+        redirect: "follow",
+        headers: { Accept: "text/html" },
+        signal: AbortSignal.timeout(5_000),
+      });
+      // An app with no build yet answers with a JSON error, which an iframe
+      // would render to the user as raw JSON.
+      ok = response.ok && (response.headers.get("content-type") || "").includes("text/html");
+    } catch {
+      ok = false;
+    }
+    probes.set(url, { ok, at: Date.now() });
+    return ok;
+  }
+
   function staticPreviewUrl(slug: App["slug"]) {
     const domain = process.env.BASE44_STATIC_PREVIEW_DOMAIN;
     if (!domain || !slug || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(slug) ||
@@ -68,14 +92,18 @@ export function createBase44Client(accessToken: string) {
     return `https://preview--${slug}.${domain}`;
   }
 
-  function appSummary(value: App): App {
+  // The static preview URL is derived here rather than returned by Base44, so
+  // it can name a build that does not exist. Verify the guess before handing
+  // it to a browser that would point an iframe at it.
+  async function appSummary(value: App): Promise<App> {
     if (!value || typeof value.id !== "string")
       throw new Base44Error("Base44 returned an app without an ID.");
+    const derived = staticPreviewUrl(value.slug);
     return {
       id: value.id,
       name: value.name,
       slug: value.slug,
-      static_preview_url: staticPreviewUrl(value.slug),
+      static_preview_url: derived && (await servesABuild(derived)) ? derived : undefined,
       preview_screenshot_url: value.preview_screenshot_url,
       logo_url: value.logo_url,
       user_description: value.user_description,

@@ -93,6 +93,10 @@ function PreviewSession({ appId, live = false, title, staticUrl, screenshotUrl, 
   return <div className="preview-frame">
     {!loaded && (staticUrl ? <iframe key={`static-${attempt}`} title={title} src={staticUrl} loading="lazy" {...frameProps} />
       : screenshotUrl ? <img className="preview-fallback" src={screenshotUrl} alt={`${title} screenshot`} />
+      : live && !error ? <div className="widget-placeholder" role="status">
+          <span className="preview-spinner" aria-hidden="true" />
+          <span>Starting your preview…</span>
+        </div>
       : <div className="widget-placeholder">No built preview is available yet. Open the assistant to build this app.</div>)}
     {url && <iframe ref={frame} title={loaded ? title : `${title} (starting live)`} src={url} className={loaded ? "" : "preview-loading-frame"} aria-hidden={!loaded} tabIndex={loaded ? 0 : -1} {...frameProps}
       onLoad={() => { clearTimeout(loadTimeout.current); setLoaded(true); setError(""); }} onError={() => setError("Live preview could not load. Try refreshing.")} />}

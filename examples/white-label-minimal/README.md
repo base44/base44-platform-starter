@@ -131,4 +131,4 @@ build-status, runtime-auth, or heartbeat endpoints are used.
 
 `loadPreview(appId)` calls your authenticated backend and returns `{ url }`. Reject with an error carrying `status: 401` or `403` to stop automatic recovery on authorization failures. Keep platform credentials on the backend. Changing the app or live mode starts a new preview session; changing the callback does not reload the iframe.
 
-When copying the component, include the `preview-frame`, `preview-loading-frame`, `preview-fallback`, `preview-controls`, `widget-placeholder`, and `secondary` styles from `app/globals.css`, or provide equivalent styles and a sized parent container.
+When copying the component, include the `preview-frame`, `preview-loading-frame`, `preview-fallback`, `preview-controls`, `preview-spinner`, `widget-placeholder`, and `secondary` styles from `app/globals.css`, or provide equivalent styles and a sized parent container.

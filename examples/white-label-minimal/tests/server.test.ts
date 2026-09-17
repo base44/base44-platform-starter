@@ -159,11 +159,34 @@ test('remove requires ownership and never calls the upstream app deletion API', 
   assert.equal(calls.length, 0);
 });
 
- test('app summaries expose configurable static previews without starting a sandbox', async () => {
-  const calls = setup({ id: 'app_1', slug: 'my-app' });
+ test('a static preview is only offered once the derived URL serves a build', async () => {
+  // The URL is derived from the slug, not returned by Base44, so it can name a
+  // build that does not exist; the host then answers with a JSON error that an
+  // iframe would render as raw JSON. Hence the probe.
+  process.env.BASE44_ORG_ID = 'workspace_1';
+  process.env.BASE44_PLATFORM_HOST = 'https://platform.example';
   process.env.BASE44_STATIC_PREVIEW_DOMAIN = 'preview.example';
-  const response = await request({ action: 'getApp', appId: 'app_1' });
-  assert.equal((await response.json()).static_preview_url, 'https://preview--my-app.preview.example');
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].url, 'https://platform.example/api/apps/app_1');
+  const derived = 'https://preview--my-app.preview.example';
+
+  const serve = (body: string, contentType: string, status = 200) => {
+    const calls: string[] = [];
+    globalThis.fetch = async (url) => {
+      const href = String(url);
+      calls.push(href);
+      if (href.startsWith(derived)) return new Response(body, { status, headers: { 'content-type': contentType } });
+      return Response.json({ id: 'app_1', slug: 'my-app' });
+    };
+    return calls;
+  };
+
+  const built = serve('<!doctype html><title>App</title>', 'text/html');
+  assert.equal((await (await request({ action: 'getApp', appId: 'app_1' })).json()).static_preview_url, derived);
+  assert.ok(built.includes('https://platform.example/api/apps/app_1'));
+  assert.ok(built.some(url => url.startsWith(derived)), 'the derived URL is probed');
+
+  // A different slug, so the probe cache cannot answer for it.
+  globalThis.fetch = async (url) => String(url).includes('preview--other')
+    ? new Response('{"message":"Preview not available yet"}', { status: 404, headers: { 'content-type': 'application/json' } })
+    : Response.json({ id: 'app_2', slug: 'other' });
+  assert.equal((await (await request({ action: 'getApp', appId: 'app_2' })).json()).static_preview_url, undefined);
 });
