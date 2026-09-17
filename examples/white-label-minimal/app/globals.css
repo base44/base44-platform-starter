@@ -13,6 +13,10 @@
   --shadow-chrome: 0 1px 3px #10233e0f;
   --shadow-card: 0 1px 2px #10233e0d;
   --shadow-card-active: 0 4px 14px #10233e1f;
+  --shadow-slab: -14px 0 34px -20px #10233e45;
+  --radius-slab: 16px;
+  --radius-card: 14px;
+  --radius-inset: 12px;
   --flare-warm: #e8492c;
   --flare-teal: #17a2bd;
   --flare-lime: #bad03a;
@@ -262,7 +266,11 @@ h1 {
   flex-shrink: 0;
   min-width: 0;
   background: white;
-  border-left: 1px solid var(--border);
+  border-left: 0;
+  border-top-left-radius: var(--radius-slab);
+  overflow: hidden;
+  /* over the sticky page heading, so the slab's shadow lands on the page */
+  z-index: 3;
   display: flex;
   flex-direction: column;
 }
@@ -415,8 +423,8 @@ iframe {
 
 .workspace { height: 100dvh; overflow: hidden; }
 .editor-panel { min-height: 0; background: var(--surface-sunken); color: #1e1f21; --border: #ededed; --muted: #6d6e6f; }
-/* the panel reads as recessed: a shadow cast onto it from the page beside it */
-.editor-panel { box-shadow: inset 7px 0 14px -9px #10233e2e; }
+/* the slab casts onto the page it overlaps, rather than being cast upon */
+.editor-panel { box-shadow: var(--shadow-slab); }
 .editor-heading { background: var(--surface-chrome); border-bottom-color: var(--band-border); box-shadow: var(--shadow-chrome); }
 .editor-heading { flex-shrink: 0; padding: 12px 16px; min-height: var(--band-height); }
 .editor-heading strong { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -446,7 +454,7 @@ iframe {
 .tool-dot { width: 6px; height: 6px; border-radius: 50%; background: #929394; flex-shrink: 0; }
 .tool-activity > div { padding: 8px 12px; border-top: 1px solid var(--border); background: white; }
 .tool-activity pre { font-size: 11px; line-height: 1.5; }
-.composer { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 8px; flex-shrink: 0; border-top: 1px solid var(--border); background: white; padding: 12px; }
+.composer { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 8px; flex-shrink: 0; border: 1px solid var(--border); border-radius: var(--radius-inset); background: white; padding: 12px; margin: 0 14px 14px; box-shadow: var(--shadow-card); }
 .composer textarea { flex: 1; width: 0; margin: 0; padding: 9px 10px; font-size: 14px; line-height: 20px; height: 40px; min-height: 40px; max-height: 112px; resize: none; border-radius: 4px; }
 .composer .send-button { flex-shrink: 0; height: 38px; width: 38px; padding: 0; border-radius: 4px; }
 .composer > small { width: 100%; }
@@ -486,7 +494,7 @@ iframe {
 .app-preview iframe { flex: 1; min-height: 0; width: 100%; margin: 0; }
 .editor-heading button { flex-shrink: 0; white-space: nowrap; }
 
-.app-widget { position: relative; min-width: 0; overflow: hidden; background: white; border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow-card); }
+.app-widget { position: relative; min-width: 0; overflow: hidden; background: white; border: 1px solid var(--border); border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
 .widget-heading { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
 .widget-heading h2 { min-width: 0; margin: 0; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .widget-actions { display: flex; margin-left: auto; flex-shrink: 0; }
