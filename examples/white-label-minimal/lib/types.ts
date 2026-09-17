@@ -14,7 +14,11 @@ export type ToolCall = {
   status?: string | null;
   waiting_on?: { kind?: string | null } | null;
   arguments_string?: string | null;
-  results?: string | null;
+  results?: string | {
+    placeholder_url: string;
+    status: "pending" | "completed" | "failed";
+    image_url: string | null;
+  } | null;
   auto_approved?: boolean | null;
   mutation_applied?: boolean | null;
   display_projection?: {

@@ -12,16 +12,20 @@ export function applyMessageUpdate(messages: Message[], update: AppUpdate): Mess
 }
 
 export function resolveImage(messages: Message[], image: ImageReady): Message[] {
-  if (image.status !== "completed" || !image.image_url) return messages;
+  const resolvedUrl = image.status === "completed" ? image.image_url : null;
   const replace = (text: string | null | undefined) =>
-    text?.split(image.placeholder_url).join(image.image_url!) ?? text;
+    resolvedUrl ? text?.split(image.placeholder_url).join(resolvedUrl) ?? text : text;
   return messages.map(message => ({
     ...message,
     content: replace(message.content),
     tool_calls: message.tool_calls?.map(tool => ({
       ...tool,
       arguments_string: replace(tool.arguments_string),
-      results: replace(tool.results),
+      results: typeof tool.results === "string"
+        ? replace(tool.results)
+        : tool.results?.placeholder_url === image.placeholder_url
+          ? { ...tool.results, status: image.status, image_url: image.image_url ?? null }
+          : tool.results,
     })),
   }));
 }

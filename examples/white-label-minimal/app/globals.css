@@ -418,6 +418,13 @@ iframe {
 .tool-dot { width: 6px; height: 6px; border-radius: 50%; background: #929394; flex-shrink: 0; }
 .tool-activity > div { padding: 8px 12px; border-top: 1px solid var(--border); background: white; }
 .tool-activity pre { font-size: 11px; line-height: 1.5; }
+.tool-widget { display: grid; gap: 6px; }
+.tool-widget-heading { display: flex; align-items: center; gap: 6px; }
+.tool-widget small { display: block; }
+.tool-list { display: grid; gap: 4px; padding: 0; margin: 0; list-style: none; }
+.tool-list li { overflow-wrap: anywhere; }
+.tool-list code { font-size: 11px; }
+.tool-media img { width: 100%; max-height: 220px; object-fit: cover; border: 1px solid var(--border); border-radius: 4px; }
 .composer { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 8px; flex-shrink: 0; border: 1px solid var(--border); border-radius: var(--radius-inset); background: white; padding: 12px; margin: 0 14px 14px; box-shadow: var(--shadow-card); }
 .composer textarea { flex: 1; width: 0; margin: 0; padding: 9px 10px; font-size: 14px; line-height: 20px; height: 40px; min-height: 40px; max-height: 112px; resize: none; border-radius: 4px; }
 .composer .send-button { flex-shrink: 0; height: 38px; width: 38px; padding: 0; border-radius: 4px; }

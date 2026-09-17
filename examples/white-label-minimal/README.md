@@ -170,8 +170,9 @@ Queue/task events advance the cursor but have no separate UI in this minimal exa
 Reviewed question and secret-form schemas arrive in the socket update that opens the
 tool card. The browser renders those schemas directly and posts any answer through
 the existing partner-backend mutation route. Tool cards use reviewed file paths,
-activity summaries, entity counts, package names, plan fields and media labels; they
-never render source, diffs, commands, execution output, secret values or raw results.
+activity summaries, entity counts, package names, plan fields, and generated-media
+labels, state, and approved asset URLs; they never render source, diffs, commands,
+execution output, secret values or raw results.
 The partner backend remains responsible for applying the same filtering policy to
 its existing HTTP history responses.
 
