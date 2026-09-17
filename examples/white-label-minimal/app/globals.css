@@ -8,9 +8,9 @@
   --flare-lime: #bad03a;
   --flare-bar: linear-gradient(
     90deg,
-    var(--flare-warm) 33%,
-    var(--flare-teal) 33% 66%,
-    var(--flare-lime) 66%
+    var(--flare-warm),
+    var(--flare-lime) 55%,
+    var(--flare-teal)
   );
   font-family: Inter, Arial, sans-serif;
   color: #222b3b;
