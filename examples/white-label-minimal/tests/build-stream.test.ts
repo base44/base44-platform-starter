@@ -70,8 +70,9 @@ test('cleanup prevents an in-flight snapshot from publishing into another app', 
 });
 
 test('message replacement preserves omission/null and image completion resolves placeholders', () => {
-  const previous = [{ id: 'm', role: 'assistant', content: '/placeholder', tool_calls: [{ id: 'old' }] }];
+  const previous = [{ id: 'm', role: 'assistant', content: '/placeholder', tool_calls: [{ id: 'old', results: { placeholder_url: '/placeholder', status: 'pending' as const, image_url: null } }] }];
   assert.deepEqual(applyMessageUpdate(previous, { _last_msg: { id: 'm', content: null } }), [{ id: 'm', content: null }]);
   assert.equal(resolveImage(previous, { placeholder_url: '/placeholder', status: 'completed', image_url: '/image' })[0].content, '/image');
+  assert.deepEqual(resolveImage(previous, { placeholder_url: '/placeholder', status: 'completed', image_url: '/image' })[0].tool_calls?.[0].results, { placeholder_url: '/placeholder', status: 'completed', image_url: '/image' });
   assert.equal(previous[0].content, '/placeholder');
 });

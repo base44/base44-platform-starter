@@ -20,6 +20,10 @@ test('approval keeps unreviewed arguments out of the card', () => {
   assert.match(html, /Review proposed action/); assert.match(html, />Approve</); assert.match(html, />Reject</);
   assert.doesNotMatch(html, /private-package/);
 });
+test('package approval shows only the reviewed package names and operations', () => {
+  const html = render({ ...tool('approval', { packages: [{ name: 'zod', action: 'install', semver: 'private' }] }), name: 'install_npm_package' });
+  assert.match(html, /Install/); assert.match(html, /zod/); assert.doesNotMatch(html, /private/);
+});
 test('unknown or malformed questions remain visible and cannot be blindly approved', () => {
   for (const t of [tool('future', {}), tool('input', { fields: [] }), { ...tool('choice', {}), arguments_string: '{bad' }]) {
     assert.equal(parseQuestion(t).kind, 'unknown');
