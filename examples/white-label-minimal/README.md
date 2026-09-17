@@ -113,3 +113,22 @@ A load event only controls the visual transition; it does not verify app health.
 Edited widgets remain live for the page session instead of silently switching to a
 potentially stale static build. Recovery checks the source window and live origin of `preview:requestRefresh` messages, with at most three recovery attempts per preview session and no retries on authorization failures. This observed Base44 message is not a confirmed public contract, so manual refresh remains available. Recovery reloads the iframe using its last parent-supplied path and parameters; cross-origin navigation inside the app cannot be preserved without a supported bridge. No private
 build-status, runtime-auth, or heartbeat endpoints are used.
+
+### Reusing the preview component
+
+`components/Base44Preview.tsx` owns static/live rendering, loading, recovery, and manual refresh. It depends only on React. `PreviewFrame` adapts Tiny's app model and backend client to its props:
+
+```tsx
+<Base44Preview
+  appId={app.id}
+  title="App preview"
+  staticUrl={app.static_preview_url}
+  screenshotUrl={app.preview_screenshot_url}
+  live={editing}
+  loadPreview={getPreviewUrl}
+/>
+```
+
+`loadPreview(appId)` calls your authenticated backend and returns `{ url }`. Reject with an error carrying `status: 401` or `403` to stop automatic recovery on authorization failures. Keep platform credentials on the backend. Changing the app or live mode starts a new preview session; changing the callback does not reload the iframe.
+
+When copying the component, include the `preview-frame`, `preview-loading-frame`, `preview-fallback`, `preview-controls`, `widget-placeholder`, and `secondary` styles from `app/globals.css`, or provide equivalent styles and a sized parent container.
