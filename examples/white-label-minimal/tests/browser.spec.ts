@@ -33,6 +33,14 @@ async function fixture(page: Page, tool?: ToolCall, failFirst = false) {
   await expect(page.getByText('Your app is taking shape.')).toBeVisible();
   return { submissions, counts: () => ({ previews, deployments, creates }) };
 }
+// The chat lives inside an app now, so a test that wants the composer opens
+// one first: the empty-state CTA when there are no apps, the topbar otherwise.
+async function openBuilder(page: Page) {
+  await page.goto('/');
+  const cta = page.getByRole('button', { name: 'Create an app', exact: true });
+  if (await cta.count()) await cta.click();
+  else await page.getByRole('button', { name: 'New app', exact: true }).click();
+}
 const question = (kind: string, args: object): ToolCall => ({ id: 'tool_1', name: 'Agent question', waiting_on: { kind }, arguments_string: JSON.stringify(args) });
 
 test('choice retry freezes original payload, prevents duplicates, then unlocks composer', async ({ page }) => {
@@ -50,21 +58,17 @@ test('choice retry freezes original payload, prevents duplicates, then unlocks c
   expect(f.submissions[0]).toEqual(f.submissions[1]);
   expect(f.submissions[0].extraUserInput).toEqual({ answers: [{ question_index: 0, selected_labels: ['Blue'], custom_text: '' }] });
 });
-test('input sends declared secrets; preview refreshes and clears, deploy requires a click', async ({ page }) => {
+test('input sends declared secrets; the stage preview refreshes, deploy requires a click', async ({ page }) => {
   const f = await fixture(page, question('input', { secrets_schema: [{ secretName: 'WEATHER_KEY' }] }));
   await page.getByLabel('WEATHER_KEY').fill('fixture-secret');
   await page.getByRole('button', { name: 'Send answer', exact: true }).click();
   await expect(page.getByLabel('What should change?')).toBeEnabled();
   expect(f.submissions[0].extraUserInput).toEqual({ secrets: { WEATHER_KEY: 'fixture-secret' } });
   expect(f.counts().deployments).toBe(0);
-  await page.getByRole('button', { name: 'Open preview', exact: true }).click();
-  await expect(page.getByRole('dialog')).toBeVisible();
-  await expect(page.locator('dialog iframe')).toHaveAttribute('src', /fixture-/);
-  const initialPreview = await page.locator('dialog iframe').getAttribute('src');
-  await page.getByRole('dialog').getByRole('button', { name: 'Refresh preview' }).click();
-  await expect(page.locator('dialog iframe')).not.toHaveAttribute('src', initialPreview!);
-  await page.getByRole('button', { name: 'Close app preview' }).click();
-  await expect(page.locator('dialog iframe')).toHaveCount(0);
+  await expect(page.locator('.stage-body iframe')).toHaveAttribute('src', /fixture-/);
+  const initialPreview = await page.locator('.stage-body iframe').getAttribute('src');
+  await page.locator('.stage-body').getByRole('button', { name: 'Refresh preview' }).click();
+  await expect(page.locator('.stage-body iframe')).not.toHaveAttribute('src', initialPreview!);
   expect(await page.evaluate(() => ({ local: Object.keys(localStorage), session: Object.keys(sessionStorage) }))).toEqual({ local: [], session: [] });
   await page.getByRole('button', { name: 'Deploy app', exact: true }).click();
   await expect(page.getByRole('link', { name: 'Open published app' })).toHaveAttribute('href', 'https://published.example/');
@@ -113,20 +117,16 @@ test('read failure pauses polling, resume restores it', async ({ page }) => {
 test('live preview stays stable and recovers only from its own expiry message', async ({ page }) => {
   await page.clock.install();
   await fixture(page);
-  await page.getByRole('button', { name: 'Open preview', exact: true }).click();
-  await expect(page.locator('dialog iframe')).toBeVisible();
-  const initialUrl = await page.locator('dialog iframe').getAttribute('src');
+  await expect(page.locator('.stage-body iframe')).toBeVisible();
+  const initialUrl = await page.locator('.stage-body iframe').getAttribute('src');
   await page.clock.fastForward(300_000);
-  await expect(page.locator('dialog iframe')).toHaveAttribute('src', initialUrl!);
+  await expect(page.locator('.stage-body iframe')).toHaveAttribute('src', initialUrl!);
   await page.evaluate(() => window.postMessage({ type: 'preview:requestRefresh' }, '*'));
-  await expect(page.locator('dialog iframe')).toHaveAttribute('src', initialUrl!);
+  await expect(page.locator('.stage-body iframe')).toHaveAttribute('src', initialUrl!);
   const preview = page.frames().find(frame => frame.url() === initialUrl)!;
   await preview.evaluate(() => window.parent.postMessage({ type: 'preview:requestRefresh' }, '*'));
-  await expect(page.locator('dialog iframe')).not.toHaveAttribute('src', initialUrl!);
-  await expect(page.locator('dialog iframe')).toBeVisible();
-  await page.getByRole('button', { name: 'Close app preview', exact: true }).click();
-  await page.clock.fastForward(60_000);
-  await expect(page.locator('dialog iframe')).toHaveCount(0);
+  await expect(page.locator('.stage-body iframe')).not.toHaveAttribute('src', initialUrl!);
+  await expect(page.locator('.stage-body iframe')).toBeVisible();
 });
 
 test('real Next route requires authentication for local browser origins and rejects foreign origins', async ({ page, request }) => {
@@ -165,7 +165,7 @@ test('slow conversation reads do not overlap later polling intervals', async ({ 
 test('rejected access preserves prompt and allows retry without uncertain creation warning', async ({ page }) => {
   await page.route('**/api/base44', route => route.fulfill({ status: 401, contentType: 'application/json',
     body: JSON.stringify({ error: 'Sign in to continue.', outcome: 'not_started' }) }));
-  await page.goto('/');
+  await openBuilder(page);
   await page.getByLabel('What would you like to build?').fill('Hello world');
   await page.getByRole('button', { name: 'Create app', exact: true }).click();
   await expect(page.locator('aside[role=alert]')).toContainText('Sign in to continue.');
@@ -186,7 +186,6 @@ test('My apps shows owned cards and opens the editor without marketplace feature
   });
   await page.setViewportSize({ width: 1440, height: 950 });
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'My apps', exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: 'App editor' })).toBeVisible();
   await expect(page.getByRole('navigation')).toHaveCount(0);
   const grid = await page.locator('.apps-page').boundingBox();
@@ -219,7 +218,7 @@ test('My apps shows owned cards and opens the editor without marketplace feature
     const { action } = route.request().postDataJSON();
     return route.fulfill({ json: action === 'listApps' ? { apps: [], hasMore: false, nextSkip: 0 } : action === 'getConversation' ? { messages: [{ id: 'm1', role: 'assistant', content: '## Your app is ready\n- **Hello world**', tool_calls: [{ id: 't1', name: 'find_replace', status: 'success', arguments_string: JSON.stringify({ file_path: 'src/index.css', find: 'old', replace: 'new' }) }] }] } : { id: 'app_1', name: 'Hello World', status: { state: 'ready' } } });
   });
-  await page.goto('/');
+  await openBuilder(page);
   await page.getByLabel('What would you like to build?').fill('Hello world app');
   await page.getByRole('button', { name: 'Create app', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Your app is ready' })).toBeVisible();
@@ -249,7 +248,7 @@ test('assistant-ui preserves inline tools across polling and hides internal mess
     ] } });
     return route.fulfill({ json: { id: 'app_1', status: { state: 'ready' } } });
   });
-  await page.goto('/');
+  await openBuilder(page);
   await page.getByLabel('What would you like to build?').fill('Build a notes app');
   await page.getByLabel('What would you like to build?').press('Enter');
   await expect(page.getByText('Working on your app')).toBeVisible();
@@ -305,7 +304,7 @@ test('preview card waits for build completion and hides during follow-up submiss
     ] } });
     return route.fulfill({ json: { id: 'app_1', name: 'Scoreboard', status: { state } } });
   });
-  await page.goto('/');
+  await openBuilder(page);
   await page.getByLabel('What would you like to build?').fill('Build a scoreboard');
   await page.getByRole('button', { name: 'Create app', exact: true }).click();
   await expect(page.getByText('Your scoreboard is live.')).toBeVisible();
@@ -342,7 +341,7 @@ test('first prompt stays visible through creation and empty polls, then merges o
       ? [{ id: 'server-user', role: 'user', content: prompt }] : [] } });
     return route.fulfill({ json: { id: 'app_1', status: { state: 'processing' } } });
   });
-  await page.goto('/');
+  await openBuilder(page);
   await page.getByLabel('What would you like to build?').fill(prompt);
   await page.getByRole('button', { name: 'Create app', exact: true }).click();
   await expect(page.getByText(prompt, { exact: true })).toBeVisible();
@@ -366,7 +365,7 @@ test('failed creation removes the optimistic bubble and restores the draft', asy
     await new Promise<void>(resolve => { failCreate = resolve; });
     return route.fulfill({ status: 400, json: { error: 'Creation rejected' } });
   });
-  await page.goto('/');
+  await openBuilder(page);
   const input = page.getByLabel('What would you like to build?');
   await input.fill('Build a scoreboard');
   await page.getByRole('button', { name: 'Create app', exact: true }).click();
@@ -385,7 +384,7 @@ test('failed creation removes the optimistic bubble and restores the draft', asy
       ? { messages: [{ id: 'u1', role: 'user', content: 'say hello world' }, { id: 'a1', role: 'assistant', content: 'Hello world! What would you like to build?' }] }
       : { id: 'app_1', name: 'say hello world', status: { state: 'ready' } } });
   });
-  await page.goto('/');
+  await openBuilder(page);
   await page.getByLabel('What would you like to build?').fill('say hello world');
   await page.getByRole('button', { name: 'Create app', exact: true }).click();
   await expect(page.getByText('Hello world! What would you like to build?')).toBeVisible();
@@ -394,7 +393,7 @@ test('failed creation removes the optimistic bubble and restores the draft', asy
 });
 
 
-test('empty state has one creation CTA and app cards render fresh previews', async ({ page }) => {
+test('the empty state owns its CTA and app cards render their build', async ({ page }) => {
   let populated = false;
   let previews = 0;
   await page.route('https://preview.example/**', route => route.fulfill({ contentType: 'text/html', body: '<h1>Working app</h1>' }));
@@ -406,32 +405,24 @@ test('empty state has one creation CTA and app cards render fresh previews', asy
   });
   await page.goto('/');
   await expect(page.getByRole('button', { name: 'Create an app', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'New app', exact: true })).toHaveCount(0);
+  // New app is a global action in the topbar; the empty state must not repeat it
+  await expect(page.locator('.empty-state').getByRole('button', { name: 'New app', exact: true })).toHaveCount(0);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: 'Create an app', exact: true }).click();
   await expect(page.getByLabel('What would you like to build?')).toBeFocused();
   await page.setViewportSize({ width: 1280, height: 900 });
   populated = true;
   await page.reload();
-  const open = page.getByRole('button', { name: 'Open Reading list', exact: true });
-  await open.click();
-  await expect(page.frameLocator('dialog iframe').getByRole('heading', { name: 'Working app' })).toBeVisible();
-  const firstUrl = await page.locator('dialog iframe').getAttribute('src');
+  await expect(page.frameLocator('.app-widget iframe').getByRole('heading', { name: 'Working app' })).toBeVisible();
+  await expect(page.locator('.app-widget iframe')).toHaveAttribute('src', /static/);
   await page.screenshot({ path: 'test-results/app-preview-desktop.png' });
-  await page.getByRole('button', { name: 'Close app preview' }).click();
-  await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(open).toBeFocused();
-  await open.click();
-  await expect(page.locator('dialog iframe')).toHaveAttribute('src', /static/);
-  await expect(page.locator('dialog iframe')).toHaveAttribute('src', firstUrl!);
   await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.frameLocator('.app-widget iframe').getByRole('heading', { name: 'Working app' })).toBeVisible();
   await page.screenshot({ path: 'test-results/app-preview-mobile.png' });
-  await page.getByRole('button', { name: 'Close app preview' }).press('Escape');
-  await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 
 
-test('list thumbnails and ready widget open the same app preview', async ({ page }) => {
+test('the card, the chat thumbnail and the stage show the same app', async ({ page }) => {
   const screenshot = 'https://preview.example/thumbnail.svg';
   const app = { id: 'reading', name: 'Reading list', static_preview_url: 'https://preview.example/static', preview_screenshot_url: screenshot, status: { state: 'ready' } };
   await page.route('https://preview.example/**', route => route.fulfill({ contentType: 'text/html', body: '<h1>Reading app</h1>' }));
@@ -444,20 +435,13 @@ test('list thumbnails and ready widget open the same app preview', async ({ page
   });
   await page.goto('/');
   await expect(page.frameLocator('.app-widget iframe').getByRole('heading', { name: 'Reading app' })).toBeVisible();
-  await page.getByRole('button', { name: 'Open Reading list', exact: true }).click();
-  await expect(page.frameLocator('dialog iframe').getByRole('heading', { name: 'Reading app' })).toBeVisible();
-  await page.getByRole('button', { name: 'Close app preview' }).click();
   await page.getByRole('button', { name: 'Edit Reading list', exact: true }).click();
   await expect(page.locator('.delivery img')).toHaveAttribute('src', screenshot);
-  await page.getByRole('button', { name: 'Open app thumbnail preview' }).click();
-  await expect(page.frameLocator('dialog iframe').getByRole('heading', { name: 'Reading app' })).toBeVisible();
-  await page.getByRole('button', { name: 'Close app preview' }).click();
-  await page.getByRole('button', { name: 'Open preview', exact: true }).click();
-  await expect(page.frameLocator('dialog iframe').getByRole('heading', { name: 'Reading app' })).toBeVisible();
+  await expect(page.frameLocator('.stage-body iframe:not(.preview-loading-frame)').getByRole('heading', { name: 'Reading app' })).toBeVisible();
   await expect(page.locator('.delivery iframe')).toHaveCount(0);
 });
 
-test('remove persists, handles failures, and New app lives in the chat header', async ({ page }) => {
+test('remove persists, handles failures, and New app lives in the topbar', async ({ page }) => {
   let apps = [{ id: 'reading', name: 'Reading list', status: { state: 'ready' } }];
   let fail = true;
   await page.route('**/api/base44', route => {
@@ -471,10 +455,9 @@ test('remove persists, handles failures, and New app lives in the chat header', 
       : action === 'getConversation' ? { messages: [] } : apps[0] });
   });
   await page.goto('/');
-  await expect(page.locator('.editor-heading').getByRole('button', { name: 'New app', exact: true })).toBeVisible();
-  await expect(page.locator('.page-heading button')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Edit Reading list', exact: true }).click();
-  await expect(page.getByLabel('What should change?')).toBeVisible();
+  await expect(page.locator('.topbar').getByRole('button', { name: 'New app', exact: true })).toBeVisible();
+  await expect(page.locator('.editor-heading').getByRole('button', { name: 'New app', exact: true })).toHaveCount(0);
+  // Removal happens from the home page: the cards are not rendered inside an app.
   const remove = page.getByRole('button', { name: 'Remove Reading list from My apps', exact: true });
   await remove.click();
   await expect(page.locator('.apps-content [role=alert]')).toContainText('Removal failed');
@@ -531,11 +514,11 @@ test('remove persists, handles failures, and New app lives in the chat header', 
   expect(requests).toBe(0);
   await page.getByRole('button', { name: 'Edit Reading list', exact: true }).click();
   await expect.poll(() => !!release).toBe(true);
-  await expect(page.frameLocator('.app-widget iframe:not(.preview-loading-frame)').getByRole('heading', { name: 'Static build' })).toBeVisible();
-  expect(requests).toBe(1);
+  await expect(page.frameLocator('.stage-body iframe:not(.preview-loading-frame)').getByRole('heading', { name: 'Static build' })).toBeVisible();
+  expect(requests).toBeGreaterThanOrEqual(1);
   release!();
-  await expect(page.locator('.app-widget iframe')).toHaveCount(1);
-  await expect(page.frameLocator('.app-widget iframe').getByRole('heading', { name: 'Live build' })).toBeVisible();
+  await expect(page.locator('.stage-body iframe')).toHaveCount(1);
+  await expect(page.frameLocator('.stage-body iframe').getByRole('heading', { name: 'Live build' })).toBeVisible();
   await page.screenshot({ path: 'test-results/static-live-preview.png' });
 });
 

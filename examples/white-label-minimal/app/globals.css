@@ -440,30 +440,14 @@ iframe {
   .composer textarea, input:not([type="radio"]):not([type="checkbox"]) { font-size: 16px; }
 }
 
-.app-preview {
-  margin: auto;
-  width: min(1100px, calc(100vw - 32px));
-  max-width: none;
-  height: min(800px, calc(100dvh - 32px));
-  max-height: none;
-  padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  background: var(--surface, white);
-}
-.app-preview::backdrop { background: rgb(0 0 0 / 40%); }
-.app-preview[open] { display: flex; flex-direction: column; gap: 12px; }
-.app-preview > header { display: flex; align-items: center; justify-content: space-between; }
-.app-preview h2 { margin: 0; font-size: 16px; }
-.app-preview iframe { flex: 1; min-height: 0; width: 100%; margin: 0; }
 .editor-heading button { flex-shrink: 0; white-space: nowrap; }
 
 .app-widget { position: relative; min-width: 0; overflow: hidden; background: white; border: 1px solid var(--border); border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
 .widget-heading { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
 .widget-heading h2 { min-width: 0; margin: 0; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.widget-actions { display: flex; margin-left: auto; flex-shrink: 0; }
 .widget-preview { height: 400px; overflow: hidden; }
 .widget-preview iframe { display: block; width: 100%; height: 100%; margin: 0; border: 0; border-radius: 0; }
+.widget-actions { display: flex; margin-left: auto; flex-shrink: 0; }
 .widget-placeholder { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; padding: 24px; font-size: 13px; color: var(--muted); }
 @media (max-width: 600px) { .widget-actions button { min-width: 40px; min-height: 40px; } .widget-heading { padding: 8px; } .widget-preview { height: 420px; } }
 
@@ -473,7 +457,6 @@ iframe {
 .preview-fallback { flex: 1; min-height: 0; width: 100%; object-fit: contain; }
 .preview-controls { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; font-size: 11px; color: var(--muted); background: white; border-top: 1px solid var(--border); }
 .preview-controls button { flex-shrink: 0; padding: 5px 8px; font-size: 11px; }
-.app-preview > .preview-frame { flex: 1; min-height: 0; }
 
 .conversation-loading { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 160px; color: var(--muted); font-size: 14px; }
 
@@ -518,4 +501,36 @@ iframe {
 .app-widget.is-editing {
   border-color: #c8d4e4;
   box-shadow: var(--shadow-card-active);
+}
+
+.apps-group { margin: 0 0 14px; font-size: 12px; font-weight: 500; color: var(--muted); }
+.apps-grid + .apps-group { margin-top: 30px; }
+
+/* the drilled-in app: its own heading band beside the chat's, then the preview */
+.app-stage { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.stage-heading {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+  min-height: var(--band-height);
+  padding: 12px 32px;
+  border-bottom: 1px solid var(--band-border);
+  background: var(--surface-chrome);
+  box-shadow: var(--shadow-chrome);
+}
+.stage-heading strong { min-width: 0; font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stage-body { flex: 1; min-height: 0; padding: 24px 32px 32px; }
+.stage-body > .preview-frame,
+.stage-body > .widget-placeholder {
+  height: 100%;
+  overflow: hidden;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+@media (max-width: 600px) {
+  .stage-heading { padding: 12px 20px; }
+  .stage-body { padding: 16px 20px 20px; }
 }
