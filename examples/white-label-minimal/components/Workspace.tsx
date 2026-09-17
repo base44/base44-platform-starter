@@ -99,7 +99,8 @@ export default function Workspace({ name }: { name: string }) {
     try {
       await api.removeApp(app.id);
       setApps((current) => current.filter((item) => item.id !== app.id));
-      if (stageApp?.id === app.id) backToApps();
+      // No guard for "was the open app removed": the cards only exist on the
+      // home page, and stageApp is only set once you are inside an app.
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not remove the app.");
     } finally {
