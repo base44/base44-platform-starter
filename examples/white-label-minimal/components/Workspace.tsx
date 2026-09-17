@@ -1,6 +1,6 @@
 "use client";
 import type { App } from "../lib/types";
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
 import { ArrowLeft, Grid2X2, Loader2, LogOut, MessageSquare, Plus, Sparkles, X } from "lucide-react";
@@ -11,7 +11,6 @@ import AppWidget from "./AppWidget";
 import PreviewFrame from "./PreviewFrame";
 
 export default function Workspace({ name }: { name: string }) {
-  const [liveApps, setLiveApps] = useState<Set<string>>(() => new Set());
   const [removing, setRemoving] = useState<string | null>(null);
   const editorPanel = useRef<HTMLElement>(null);
   const assistantButton = useRef<HTMLButtonElement>(null);
@@ -52,7 +51,6 @@ export default function Workspace({ name }: { name: string }) {
     // is what lets the React Compiler keep the memoization.
   }, [setActiveName, setApps, setStageApp, setEditor]);
   function openApp(app: App | null = null) {
-    if (app) setLiveApps((current) => new Set(current).add(app.id));
     setActiveName(app?.name || "");
     setStageApp(app);
     setEditor((current) => ({ app, version: current.version + 1 }));
@@ -124,17 +122,6 @@ export default function Workspace({ name }: { name: string }) {
       setLoading(false);
     }
   }
-  // An unknown publication state groups with the published apps: a failed
-  // lookup must not file someone's live app under drafts.
-  const published = apps.filter((app) => app.published !== false);
-  const drafts = apps.filter((app) => app.published === false);
-  const groups: { label: string | null; list: App[] }[] =
-    published.length && drafts.length
-      ? [
-          { label: "Published", list: published },
-          { label: "In progress", list: drafts },
-        ]
-      : [{ label: null, list: published.length ? published : drafts }];
   return (
     <div className="workspace">
       <header className="topbar">
@@ -191,23 +178,17 @@ export default function Workspace({ name }: { name: string }) {
                   </button>
                 </div>
               ) : (
-                groups.map((group) => (
-                  <Fragment key={group.label ?? "all"}>
-                    {group.label && <h2 className="apps-group">{group.label}</h2>}
-                    <div className="apps-grid">
-                      {group.list.map((app) => (
-                        <AppWidget
-                          key={app.id}
-                          app={app}
-                          live={liveApps.has(app.id)}
-                          removing={!!removing || loading}
-                          onEdit={() => openApp(app)}
-                          onRemove={() => void removeApp(app)}
-                        />
-                      ))}
-                    </div>
-                  </Fragment>
-                ))
+                <div className="apps-grid">
+                  {apps.map((app) => (
+                    <AppWidget
+                      key={app.id}
+                      app={app}
+                      removing={!!removing || loading}
+                      onEdit={() => openApp(app)}
+                      onRemove={() => void removeApp(app)}
+                    />
+                  ))}
+                </div>
               )}
             </div>
           </main>
@@ -282,9 +263,7 @@ export default function Workspace({ name }: { name: string }) {
               key={editor.version}
               initialAppId={editor.app?.id}
               onUpdated={updateApp}
-              onPreview={(app) => setStageApp(app)}
               onCreated={(app) => {
-                setLiveApps((current) => new Set(current).add(app.id));
                 setActiveName(app.name || "");
                 setStageApp(app);
                 setApps((current) => [app, ...current]);

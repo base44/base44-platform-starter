@@ -58,7 +58,7 @@ test('choice retry freezes original payload, prevents duplicates, then unlocks c
   expect(f.submissions[0]).toEqual(f.submissions[1]);
   expect(f.submissions[0].extraUserInput).toEqual({ answers: [{ question_index: 0, selected_labels: ['Blue'], custom_text: '' }] });
 });
-test('input sends declared secrets; the stage preview refreshes, deploy requires a click', async ({ page }) => {
+test('input sends declared secrets, then the stage preview refreshes', async ({ page }) => {
   const f = await fixture(page, question('input', { secrets_schema: [{ secretName: 'WEATHER_KEY' }] }));
   await page.getByLabel('WEATHER_KEY').fill('fixture-secret');
   await page.getByRole('button', { name: 'Send answer', exact: true }).click();
@@ -70,10 +70,9 @@ test('input sends declared secrets; the stage preview refreshes, deploy requires
   await page.locator('.stage-body').getByRole('button', { name: 'Refresh preview' }).click();
   await expect(page.locator('.stage-body iframe')).not.toHaveAttribute('src', initialPreview!);
   expect(await page.evaluate(() => ({ local: Object.keys(localStorage), session: Object.keys(sessionStorage) }))).toEqual({ local: [], session: [] });
-  await page.getByRole('button', { name: 'Deploy app', exact: true }).click();
-  await expect(page.getByRole('link', { name: 'Open published app' })).toHaveAttribute('href', 'https://published.example/');
   expect(f.counts().creates).toBe(1);
-  expect(f.counts().deployments).toBe(1);
+  // Nothing in the UI deploys any more; the action itself is covered server-side.
+  expect(f.counts().deployments).toBe(0);
   expect(f.counts().previews).toBeGreaterThanOrEqual(2);
 });
 test('approval rejection is an answer and removes the waiting state', async ({ page }) => {
@@ -309,7 +308,7 @@ test('preview card waits for build completion and hides during follow-up submiss
   await page.getByRole('button', { name: 'Create app', exact: true }).click();
   await expect(page.getByText('Your scoreboard is live.')).toBeVisible();
   await expect(page.getByText('Building…', { exact: true })).toBeVisible();
-  const card = page.getByRole('region', { name: 'Preview and publish' });
+  const card = page.getByRole('region', { name: 'App ready' });
   await expect(card).toHaveCount(0);
 
   state = 'ready';
@@ -377,7 +376,7 @@ test('failed creation removes the optimistic bubble and restores the draft', asy
   await expect(page.locator('aside[role=alert]')).toBeVisible();
 });
 
- test('a greeting-only reply never offers preview or publish', async ({ page }) => {
+ test('a greeting-only reply never claims the app is ready', async ({ page }) => {
   await page.route('**/api/base44', route => {
     const { action } = route.request().postDataJSON();
     return route.fulfill({ json: action === 'listApps' ? { apps: [], hasMore: false } : action === 'getConversation'
@@ -388,7 +387,7 @@ test('failed creation removes the optimistic bubble and restores the draft', asy
   await page.getByLabel('What would you like to build?').fill('say hello world');
   await page.getByRole('button', { name: 'Create app', exact: true }).click();
   await expect(page.getByText('Hello world! What would you like to build?')).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Preview and publish' })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'App ready' })).toHaveCount(0);
   await expect(page.getByLabel('What should change?')).toBeEnabled();
 });
 
@@ -436,7 +435,6 @@ test('the card, the chat thumbnail and the stage show the same app', async ({ pa
   await page.goto('/');
   await expect(page.frameLocator('.app-widget iframe').getByRole('heading', { name: 'Reading app' })).toBeVisible();
   await page.getByRole('button', { name: 'Edit Reading list', exact: true }).click();
-  await expect(page.locator('.delivery img')).toHaveAttribute('src', screenshot);
   await expect(page.frameLocator('.stage-body iframe:not(.preview-loading-frame)').getByRole('heading', { name: 'Reading app' })).toBeVisible();
   await expect(page.locator('.delivery iframe')).toHaveCount(0);
 });

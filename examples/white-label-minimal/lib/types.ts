@@ -7,8 +7,6 @@ export type App = {
   logo_url?: string;
   user_description?: string;
   status?: { state?: string; error_source?: string };
-  /* true once the app has a published URL; undefined when the lookup failed */
-  published?: boolean;
 };
 export type ToolCall = {
   id?: string | null;

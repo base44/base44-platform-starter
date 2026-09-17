@@ -4,12 +4,11 @@ import { Loader2, Pencil, Trash2 } from "lucide-react";
 import PreviewFrame from "./PreviewFrame";
 import type { App } from "../lib/types";
 
-// A card in the apps list, running the app itself so it can be used from here.
-// `live` stays false until its app has been opened this session, so listing
-// apps never starts a sandbox for each one.
-export default function AppWidget({ app, live, removing, onEdit, onRemove }: {
+// A card in the apps list, showing the app's last static build. The live
+// preview belongs to the app you are editing, so listing apps starts no
+// sandboxes at all.
+export default function AppWidget({ app, removing, onEdit, onRemove }: {
   app: App;
-  live: boolean;
   removing: boolean;
   onEdit: () => void;
   onRemove: () => void;
@@ -31,7 +30,7 @@ export default function AppWidget({ app, live, removing, onEdit, onRemove }: {
             <Loader2 size={20} className="spin" aria-hidden="true" />
             <span>Generating your app…</span>
           </div>
-        : <PreviewFrame app={app} live={live} showControls={false} title={`${name} widget preview`} />}
+        : <PreviewFrame app={app} showControls={false} title={`${name} widget preview`} />}
     </div>
   </article>;
 }
