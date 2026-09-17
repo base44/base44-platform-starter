@@ -422,7 +422,8 @@ iframe {
 .composer textarea { flex: 1; width: 0; margin: 0; padding: 9px 10px; font-size: 14px; line-height: 20px; height: 40px; min-height: 40px; max-height: 112px; resize: none; border-radius: 4px; }
 .composer .send-button { flex-shrink: 0; height: 38px; width: 38px; padding: 0; border-radius: 4px; }
 .composer > small { width: 100%; }
-.delivery { margin: 16px 0 8px 34px; padding: 16px; border: 1px solid var(--border); background: white; border-radius: 8px; }
+.delivery { margin: 16px 0 8px 34px; padding: 14px 16px; border: 1px solid var(--border); background: white; border-radius: 8px; }
+.delivery p { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
 .ready-heading strong { font-size: 13px; font-weight: 600; }
 .ready-heading { margin-bottom: 12px; }
 .delivery .actions { display: flex; flex-direction: column; gap: 8px; margin: 0; align-items: stretch; }
@@ -506,8 +507,6 @@ iframe {
   box-shadow: var(--shadow-card-active);
 }
 
-.apps-group { margin: 0 0 14px; font-size: 12px; font-weight: 500; color: var(--muted); }
-.apps-grid + .apps-group { margin-top: 30px; }
 
 /* the drilled-in app: its own heading band beside the chat's, then the preview */
 .app-stage { flex: 1; min-width: 0; display: flex; flex-direction: column; }

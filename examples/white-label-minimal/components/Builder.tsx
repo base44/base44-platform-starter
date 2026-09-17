@@ -3,7 +3,7 @@ import { hasCompletedBuild } from "../lib/chat/build-readiness";
 import type { App, ToolInput } from "../lib/types";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../lib/chat/builder-api";
-import { Loader2, Eye, Upload, ExternalLink } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { mergeOptimisticMessages, type OptimisticMessage } from "../lib/chat/optimistic-messages";
 import BuilderChat from "./BuilderChat";
 import { useBuildPolling } from "./useBuildPolling";
@@ -12,9 +12,7 @@ export default function Builder({
   initialAppId,
   onCreated,
   onUpdated,
-  onPreview,
 }: {
-  onPreview: (app: App) => void;
   initialAppId?: string;
   onCreated?: (app: App) => void;
   onUpdated?: (app: App) => void;
@@ -24,7 +22,6 @@ export default function Builder({
   const [error, setError] = useState("");
   const [creationUncertain, setCreationUncertain] = useState(false);
   const [resumeId, setResumeId] = useState("");
-  const [published, setPublished] = useState<string | null>(null);
   const [optimistic, setOptimistic] = useState<OptimisticMessage[]>([]);
   const lock = useRef(false);
   const { app, messages, error: pollingError, loading, refresh, resume } = useBuildPolling(appId);
@@ -90,34 +87,6 @@ export default function Builder({
     setBusy("Answering question…");
     try {
       await api.submitToolCallInput(input);
-    } finally {
-      await refresh();
-      lock.current = false;
-      setBusy("");
-    }
-  }
-  async function publishedLink() {
-    if (!appId) return;
-    const result = await api.getPublishedUrl(appId);
-    setPublished(result.url);
-    if (!result.url) setError("No published URL is available yet.");
-  }
-  async function deploy() {
-    if (!appId || lock.current || !canDeliver) return;
-    lock.current = true;
-    setBusy("Deploying…");
-    setError("");
-    try {
-      await api.deployApp(appId);
-      await publishedLink();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Deployment failed.");
-      // Deployment is synchronous, but a disconnected response is inconclusive.
-      try {
-        await publishedLink();
-      } catch {
-        /* Keep the original operation error. */
-      }
     } finally {
       await refresh();
       lock.current = false;
@@ -196,47 +165,9 @@ export default function Builder({
         onAnswer={answer}
       >
         {canDeliver && (
-          <section className="delivery" aria-label="Preview and publish">
-            {(app?.preview_screenshot_url || app?.logo_url) && (
-              <button className="app-thumbnail" aria-label="Open app thumbnail preview" disabled={!!busy} onClick={() => app && onPreview(app)}>
-                <img src={app.preview_screenshot_url || app.logo_url} alt={`${app.name || "Your app"} thumbnail`} />
-              </button>
-            )}
-            <div className="ready-heading">
-              <strong>{app?.name || "Your app"}</strong>
-            </div>
-            <div className="actions">
-              <button
-                className="secondary"
-                aria-label="Open preview"
-                disabled={!!busy}
-                onClick={() => app && onPreview(app)}
-              >
-                <Eye size={14} /> Preview
-              </button>
-              <button
-                disabled={!!busy || waiting || !!pollingError || app?.status?.state !== "ready"}
-                aria-label="Deploy app"
-                onClick={() => void deploy()}
-              >
-                <Upload size={14} /> Publish
-              </button>
-              <button
-                className="secondary"
-                disabled={!!busy}
-                onClick={() =>
-                  void publishedLink().catch(() => setError("Could not read the published URL."))
-                }
-              >
-                <ExternalLink size={13} /> Check published URL
-              </button>
-              {published && (
-                <a href={published} target="_blank" rel="noreferrer">
-                  Open published app ↗
-                </a>
-              )}
-            </div>
-
+          <section className="delivery" aria-label="App ready">
+            <strong>{app?.name || "Your app"}</strong>
+            <p>Ready — see it in the home page.</p>
           </section>
         )}
         {(busy || waiting || processing || pollingError) && (
