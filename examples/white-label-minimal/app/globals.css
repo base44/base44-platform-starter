@@ -3,6 +3,15 @@
   --navy: #0e2e56;
   --border: #e2e5eb;
   --muted: #737b8b;
+  --flare-warm: #e8492c;
+  --flare-teal: #17a2bd;
+  --flare-lime: #bad03a;
+  --flare-bar: linear-gradient(
+    90deg,
+    var(--flare-warm) 33%,
+    var(--flare-teal) 33% 66%,
+    var(--flare-lime) 66%
+  );
   font-family: Inter, Arial, sans-serif;
   color: #222b3b;
   background: #f6f7f9;
@@ -53,10 +62,25 @@ summary:focus-visible {
   outline: 3px solid #90acd3;
   outline-offset: 3px;
 }
-.sunny-logo {
-  width: 106px;
-  height: 32px;
+.tiny-sunny-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
   color: var(--navy);
+}
+.tiny-sunny-pill {
+  padding: 5px 9px 6px;
+  border: 1.5px solid #cfd8e6;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.2px;
+}
+.tiny-sunny-mark {
+  display: block;
+  width: 108px;
+  height: 36px;
 }
 .topbar {
   height: 64px;
@@ -66,13 +90,6 @@ summary:focus-visible {
   padding: 0 26px;
   gap: 8px;
   background: white;
-}
-.tiny-label {
-  font-size: 11px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 2px 5px;
-  color: var(--muted);
 }
 .account {
   margin-left: auto;
@@ -194,10 +211,18 @@ h1 {
   text-align: center;
   box-shadow: 0 20px 60px #18304c0a;
 }
-.login-card .sunny-logo {
-  width: 128px;
-  height: 40px;
+.login-card .tiny-sunny-logo {
+  gap: 12px;
   margin-bottom: 30px;
+}
+.login-card .tiny-sunny-pill {
+  padding: 7px 12px 8px;
+  border-width: 2px;
+  font-size: 15px;
+}
+.login-card .tiny-sunny-mark {
+  width: 132px;
+  height: 44px;
 }
 .login-card h1 {
   font-size: 36px;
@@ -209,6 +234,7 @@ h1 {
   margin: 22px 0 30px;
 }
 .editor-panel {
+  position: relative;
   width: clamp(380px, 34vw, 520px);
   flex-shrink: 0;
   min-width: 0;
@@ -434,7 +460,7 @@ iframe {
 .app-preview iframe { flex: 1; min-height: 0; width: 100%; margin: 0; }
 .editor-heading button { flex-shrink: 0; white-space: nowrap; }
 
-.app-widget { min-width: 0; overflow: hidden; background: white; border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 1px 3px #10233e08; }
+.app-widget { position: relative; min-width: 0; overflow: hidden; background: white; border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 1px 3px #10233e08; }
 .widget-heading { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
 .widget-heading h2 { min-width: 0; margin: 0; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .widget-actions { display: flex; margin-left: auto; flex-shrink: 0; }
@@ -456,3 +482,45 @@ iframe {
 .widget-build-status { flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px; padding: 3px 6px; border-radius: 4px; background: #f1f5f9; color: var(--muted); font-size: 10px; white-space: nowrap; }
 .widget-build-status[data-live="true"] { background: #ecfdf5; color: #047857; }
 .widget-build-status[data-live="true"]::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+
+/* editing an app that already exists, in the logo's colours */
+.editor-panel.is-editing::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: var(--flare-bar);
+  z-index: 1;
+}
+.editing-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 4px 8px 4px 6px;
+  border-radius: 999px;
+  background: #e4f4f8;
+  color: #0c5c6b;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+}
+.editing-flare {
+  width: 14px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--flare-bar);
+}
+/* the card of the app the editor has open, wearing the panel's stripe */
+.app-widget.is-editing::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: var(--flare-bar);
+  z-index: 1;
+}
+.app-widget.is-editing {
+  border-color: #c8d4e4;
+  box-shadow: 0 2px 10px #10233e14;
+}

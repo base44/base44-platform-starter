@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
 import { Grid2X2, Loader2, LogOut, MessageSquare, Plus, X, Sparkles } from "lucide-react";
-import SunnyLogo from "@/components/SunnyLogo";
+import TinySunnyLogo from "./TinySunnyLogo";
 import * as api from "../lib/chat/builder-api";
 import Builder from "./Builder";
 import AppPreview from "./AppPreview";
@@ -111,13 +111,13 @@ export default function Workspace({ name }: { name: string }) {
       setLoading(false);
     }
   }
+  const editingExisting = !!editor.app;
   return (
     <div className="workspace">
       <header className="topbar">
         <Link href="/" aria-label="Tiny Sunny home">
-          <SunnyLogo className="sunny-logo" />
+          <TinySunnyLogo />
         </Link>
-        <span className="tiny-label">tiny</span>
         <div className="account">
           <span>{name}</span>
           <button
@@ -171,6 +171,7 @@ export default function Workspace({ name }: { name: string }) {
               <div className="apps-grid">
                 {apps.map((app) => (
                   <AppWidget key={app.id} app={app} live={liveApps.has(app.id)} removing={!!removing || loading}
+                    editing={editor.app?.id === app.id}
                     onEdit={() => openEditor(app)} onRemove={() => void removeApp(app)}
                     onExpand={() => setPreviewApp(app)} />
                 ))}
@@ -191,7 +192,9 @@ export default function Workspace({ name }: { name: string }) {
         <section
           ref={editorPanel}
           id="app-editor"
-          className={`editor-panel ${mobileEditorOpen ? "is-open" : ""}`}
+          className={`editor-panel ${mobileEditorOpen ? "is-open" : ""} ${
+            editingExisting ? "is-editing" : ""
+          }`}
           aria-label="App editor"
           onKeyDown={(e) => {
             if (e.key === "Escape") closeAssistant();
@@ -199,7 +202,14 @@ export default function Workspace({ name }: { name: string }) {
         >
           <header className="editor-heading">
             <div>
-              <Sparkles size={14} />
+              {editingExisting ? (
+                <span className="editing-badge">
+                  <span className="editing-flare" aria-hidden="true" />
+                  Editing
+                </span>
+              ) : (
+                <Sparkles size={14} />
+              )}
               <strong>{activeName || "Build an app"}</strong>
             </div>
             <div>
