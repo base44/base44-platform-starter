@@ -131,41 +131,11 @@ summary:focus-visible {
   min-width: 0;
   flex: 1;
 }
-.page-heading {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  min-height: var(--band-height);
-  padding: 12px 32px;
-  border-bottom: 1px solid var(--band-border);
-  background: var(--surface-chrome);
-  box-shadow: var(--shadow-chrome);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-}
-.page-heading h1 {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 500;
-  letter-spacing: normal;
-}
 h1 {
   font-size: 36px;
   font-weight: 500;
   letter-spacing: -1.1px;
   margin: 6px 0 10px;
-}
-.page-heading p {
-  font-size: 13px;
-  color: var(--muted);
-  margin: 0;
-}
-.page-heading .eyebrow {
-  font-size: 11px;
-  font-weight: 500;
-  margin-bottom: 7px;
 }
 .apps-content {
   padding: 32px;
@@ -400,9 +370,6 @@ iframe {
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .page-heading {
-    padding: 12px 20px;
-  }
   .apps-content {
     padding: 20px;
   }
@@ -417,7 +384,6 @@ iframe {
   }
 }
 
-.page-heading > button { flex-shrink: 0; white-space: nowrap; }
 
 .workspace { height: 100dvh; overflow: hidden; }
 .editor-panel { min-height: 0; background: var(--surface-sunken); color: #1e1f21; --border: #ededed; --muted: #6d6e6f; }

@@ -132,9 +132,6 @@ export default function Workspace({ name }: { name: string }) {
       {previewApp && <AppPreview key={previewApp.id} app={previewApp} live={liveApps.has(previewApp.id)} onClose={() => setPreviewApp(null)} />}
       <div className="workspace-body">
         <main className="apps-page">
-          <div className="page-heading">
-            <h1>Apps</h1>
-          </div>
           <div className="apps-content">
             {error && (
               <div role="alert" className="error">
