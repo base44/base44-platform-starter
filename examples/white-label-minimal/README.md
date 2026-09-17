@@ -6,14 +6,15 @@ chat with the builder, answer its questions, preview, and publish.
 This example uses the [service-user tenancy model](https://base44-docs-white-label-rewrite.mintlify.site/white-label/tenancy-and-credentials#service-users).
 Each builder gets a Base44 service user that owns their apps. Your backend provisions
 that identity using a workspace API key, then uses the service user's access token
-to create and manage apps. Both credentials stay on the server.
+to create and manage apps. The API key stays on the server. For this socket integration, the current service-user
+access token is sent to the signed-in browser after an app-ownership check.
 
 ## Run locally
 
 Use Node.js 24. From the repository root:
 
 ```sh
-npm install
+npm ci
 cp examples/white-label-minimal/.env.example examples/white-label-minimal/.env.local
 ```
 
@@ -67,12 +68,12 @@ on install and build; run `npm run db:generate` from the example after schema ed
 
 Google login and Base44 connection are separate. `/api/base44/connection`
 provisions a service principal using the workspace key. Builder requests use its
-stored token; they do not provision identities or send credentials to the browser.
+stored token; they do not provision identities during ordinary app operations.
 The API handler validates requests and checks app ownership before app operations.
 
 For the chat UI, copy `components/`, `lib/chat/builder-api.ts`, `lib/chat/conversation.ts`,
 and `lib/chat/assistant-messages.ts`. The chat uses assistant-ui's external-store runtime
-with Base44's polled conversation as its source of truth. `Question.tsx` handles
+with an initial conversation snapshot followed by SDK builder socket updates. `Question.tsx` handles
 approvals, choices, and secrets; retries preserve the original answer and request ID.
 Preview URLs stay in page memory and remain stable during normal use. A timed-out
 creation may still succeed, so the UI asks users to check before creating again.
@@ -132,3 +133,50 @@ build-status, runtime-auth, or heartbeat endpoints are used.
 `loadPreview(appId)` calls your authenticated backend and returns `{ url }`. Reject with an error carrying `status: 401` or `403` to stop automatic recovery on authorization failures. Keep platform credentials on the backend. Changing the app or live mode starts a new preview session; changing the callback does not reload the iframe.
 
 When copying the component, include the `preview-frame`, `preview-loading-frame`, `preview-fallback`, `preview-controls`, `widget-placeholder`, and `secondary` styles from `app/globals.css`, or provide equivalent styles and a sized parent container.
+## Live builder updates
+
+The example pins the preview of [SDK PR #286](https://github.com/base44/javascript-sdk/pull/286)
+under the `@base44/sdk` alias. Update that exact version when adopting a released SDK.
+
+```text
+Builder.tsx → useBuilderSocket.ts → lib/chat/build-stream.ts
+  → lib/chat/builder-connection.ts → @base44/sdk/platform/client
+```
+
+`builder-connection.ts` constructs the platform client and calls `client.builder.init`.
+Its `refreshToken` callback calls the same-origin `POST /api/base44/socket-token`
+endpoint on each reconnect. The endpoint requires a valid session, verifies the
+request origin and app ownership, refreshes the existing server credential if
+needed, and returns `{ serverUrl, token }` with `Cache-Control: no-store, private`.
+The browser keeps the token in memory and supplies it only through Socket.IO
+CONNECT `auth.token`. API keys and refresh tokens never go to the browser.
+
+**Temporary credential decision:** this uses the existing service-user access token,
+as requested, until the browser-specific token solution is available. This token
+can authorize HTTP operations too; the read-only socket does not narrow its powers.
+The app-ownership check protects token retrieval but does not make the token itself
+app-scoped. Replace this exchange when the dedicated browser credential lands.
+The backend must accept this credential at `/ws-whitelabel/socket.io/` and enable
+the workspace's white-label socket flag. The pending verifier in the backend PR
+still blocks deployed connections until integrated; there is no legacy-socket fallback.
+
+The client subscribes before fetching initial history. The SDK buffers ordered
+updates while that snapshot loads and resumes from applied cursors after transport
+reconnects. App/message replacements and image resolutions are applied directly.
+There are no periodic conversation or app reads. Invalidation events and completed
+HTTP mutations trigger reconciliation; ready-state updates refresh preview metadata.
+Queue/task events advance the cursor but have no separate UI in this minimal example.
+
+Reviewed question and secret-form schemas arrive in the socket update that opens the
+tool card. The browser renders those schemas directly and posts any answer through
+the existing partner-backend mutation route. Tool cards use reviewed file paths,
+activity summaries, entity counts, package names, plan fields and media labels; they
+never render source, diffs, commands, execution output, secret values or raw results.
+The partner backend remains responsible for applying the same filtering policy to
+its existing HTTP history responses.
+
+When retained history expires or an event cannot be applied, delivery stops and
+**Reconnect live updates** starts a new session and snapshot. Snapshot recovery is
+not an atomic history API; buffered events may briefly repeat newer snapshot state.
+Switching apps/unmounting cancels reads and closes the builder session. Production
+verification with the real token verifier remains a prerequisite for rollout.

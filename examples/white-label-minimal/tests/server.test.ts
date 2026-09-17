@@ -167,3 +167,19 @@ test('remove requires ownership and never calls the upstream app deletion API', 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, 'https://platform.example/api/apps/app_1');
 });
+
+test('builder connection returns the current token only after session and app authorization', async () => {
+  setup();
+  const request = (appId: string, origin = 'http://127.0.0.1:3001') => new Request('http://127.0.0.1:3001/api/base44/socket-token', {
+    method: 'POST', headers: { host: '127.0.0.1:3001', origin, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'getBuilderConnection', appId }),
+  });
+  const response = await POST(request('app_1'));
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('cache-control')!, /no-store/);
+  assert.equal((await response.json()).token, 'user-token-canary');
+  assert.equal((await POST(request('other_app'))).status, 404);
+  assert.equal((await POST(request('app_1', 'https://foreign.example'))).status, 403);
+  signedIn = false;
+  assert.equal((await POST(request('app_1'))).status, 401);
+});

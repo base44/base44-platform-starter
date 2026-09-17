@@ -1,13 +1,22 @@
 import { CircleAlert, Loader2, ChevronDown } from "lucide-react";
 import type { ToolCall } from "../lib/types";
 
+function activityLabel(tool: ToolCall) {
+  const activity = tool.display_projection;
+  if (activity?.file_paths?.length) {
+    const verb = tool.name === "delete_file" ? "Deleting" : "Editing";
+    return `${verb} ${activity.file_paths.join(", ")}`;
+  }
+  if (activity?.entity_name) {
+    const count = activity.record_count == null ? "" : `${activity.record_count} `;
+    return `${tool.name?.replaceAll("_", " ") || "Updating"} ${count}${activity.entity_name}`;
+  }
+  return activity?.summary || tool.name?.replaceAll("_", " ") || "Agent action";
+}
+
 export default function ToolActivity({ tool }: { tool: ToolCall }) {
   const pending = ["running", "pending"].includes(tool.status || "");
   const failed = ["error", "stopped"].includes(tool.status || "");
-  let argumentsText = tool.arguments_string || "";
-  try {
-    argumentsText = JSON.stringify(JSON.parse(argumentsText), null, 2);
-  } catch {}
   return (
     <details className="tool-activity">
       <summary>
@@ -18,24 +27,13 @@ export default function ToolActivity({ tool }: { tool: ToolCall }) {
         ) : (
           <span className="tool-dot" />
         )}
-        <span>{tool.name || "Agent action"}</span>
+        <span>{activityLabel(tool)}</span>
         <span className="sr-only">{pending ? "Working" : failed ? "Failed" : "Done"}</span>
         <ChevronDown size={12} className="tool-chevron" />
       </summary>
-      {argumentsText && (
-        <div>
-          <strong>Arguments</strong>
-          <pre>{argumentsText}</pre>
-        </div>
-      )}
       {tool.results && (
         <div>
-          <strong>Result</strong>
-          <pre>
-            {typeof tool.results === "string"
-              ? tool.results
-              : JSON.stringify(tool.results, null, 2)}
-          </pre>
+          <strong>{tool.results}</strong>
         </div>
       )}
     </details>
