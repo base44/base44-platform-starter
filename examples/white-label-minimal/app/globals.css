@@ -12,12 +12,6 @@
     var(--flare-lime) 55%,
     var(--flare-teal)
   );
-  --flare-chip: linear-gradient(
-    90deg,
-    var(--flare-warm) 33%,
-    var(--flare-teal) 33% 66%,
-    var(--flare-lime) 66%
-  );
   font-family: Inter, Arial, sans-serif;
   color: #222b3b;
   background: #f6f7f9;
@@ -515,7 +509,7 @@ iframe {
   width: 14px;
   height: 3px;
   border-radius: 999px;
-  background: var(--flare-chip);
+  background: var(--flare-bar);
 }
 /* the card of the app the editor has open, wearing the panel's stripe */
 .app-widget.is-editing::before {
