@@ -8,6 +8,12 @@
   --flare-lime: #bad03a;
   --flare-bar: linear-gradient(
     90deg,
+    var(--flare-warm),
+    var(--flare-lime) 55%,
+    var(--flare-teal)
+  );
+  --flare-chip: linear-gradient(
+    90deg,
     var(--flare-warm) 33%,
     var(--flare-teal) 33% 66%,
     var(--flare-lime) 66%
@@ -509,7 +515,7 @@ iframe {
   width: 14px;
   height: 3px;
   border-radius: 999px;
-  background: var(--flare-bar);
+  background: var(--flare-chip);
 }
 /* the card of the app the editor has open, wearing the panel's stripe */
 .app-widget.is-editing::before {
