@@ -477,9 +477,6 @@ iframe {
 
 .conversation-loading { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 160px; color: var(--muted); font-size: 14px; }
 
-.widget-build-status { flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px; padding: 3px 6px; border-radius: 4px; background: #f1f5f9; color: var(--muted); font-size: 10px; white-space: nowrap; }
-.widget-build-status[data-live="true"] { background: #ecfdf5; color: #047857; }
-.widget-build-status[data-live="true"]::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 
 /* editing an app that already exists, in the logo's colours */
 .editor-panel.is-editing::before {
