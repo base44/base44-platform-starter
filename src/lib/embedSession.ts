@@ -26,7 +26,7 @@
  * load, never stored, never logged, and never put in a link or a listing.
  */
 
-import { embedKey, orgId, platformHost } from "@/lib/base44Config";
+import { orgId, platformHost, svcKey } from "@/lib/base44Config";
 
 /** What the browser is told. `embedUrl` null means "load the app signed out". */
 export type EmbedSession = {
@@ -57,10 +57,20 @@ export class EmbedError extends Error {
   }
 }
 
-/** Both calls carry the workspace key and the workspace id, and nothing caller-supplied. */
+/**
+ * Both calls carry the workspace key and the workspace id, and nothing
+ * caller-supplied.
+ *
+ * The workspace key rather than the viewer's own token, because the caller here
+ * is the platform and not the person: every app belongs to some user's service
+ * principal, and a principal cannot administer another user's app — which is
+ * precisely the case the market needs. One credential covers built and installed
+ * alike, and it needs `app_users:provision` + `app_users:embed_token` on top of
+ * the `user_tokens:mint` the rest of the bridge uses.
+ */
 function headers() {
   return {
-    api_key: embedKey(),
+    api_key: svcKey(),
     "X-Active-Workspace-Id": orgId(),
     "Content-Type": "application/json",
   };
