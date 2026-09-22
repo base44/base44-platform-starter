@@ -1,29 +1,8 @@
 /**
- * Signing a viewer into an embedded app.
- *
- * A built app is a separate Base44 app on its own subdomain, so a frame of it has
- * always been anonymous: `User.me()` empty inside the app, everything it writes
- * attributed to nobody. The install token this shell already hands over
- * `postMessage` fixes the *other* half — whose Sunny data the app may read — and
- * leaves this one alone.
- *
- * Base44's embed token closes it. Two calls, in this order, both server-side:
- *
- *   1. provision the viewer as an app user of that app (idempotent — an already
- *      provisioned email comes back unchanged), because minting refuses an email
- *      the app has never seen;
- *   2. mint a one-time token, which comes back as `embed_url`: the app's own live
- *      URL carrying `?ott=`.
- *
- * Loading that URL in the frame is the whole client-side story. The app's server
- * redeems the token on the document request and answers with a redirect carrying
- * a session, so the app is signed in before its HTML is parsed — no SDK version,
- * no app code, nothing an app author has to know about.
- *
- * Three properties of the token dictate how callers may use it, and all three are
- * why this returns a URL rather than something cacheable: it is **single-use**,
- * it lives **60 seconds**, and it is a **credential** — so it is minted per frame
- * load, never stored, never logged, and never put in a link or a listing.
+ * Signing a viewer into an embedded app: provision them as an app user, then
+ * mint a one-time token, which comes back as the app's live URL with `?ott=`.
+ * The app's server redeems it on the document request and answers with a
+ * session, so nothing inside the built app changes.
  */
 
 import { orgId, platformHost, svcKey } from "@/lib/base44Config";
@@ -58,15 +37,9 @@ export class EmbedError extends Error {
 }
 
 /**
- * Both calls carry the workspace key and the workspace id, and nothing
+ * The workspace key, not the viewer's token: a user's service principal cannot
+ * administer another user's app, which is the market case. Nothing here is
  * caller-supplied.
- *
- * The workspace key rather than the viewer's own token, because the caller here
- * is the platform and not the person: every app belongs to some user's service
- * principal, and a principal cannot administer another user's app — which is
- * precisely the case the market needs. One credential covers built and installed
- * alike, and it needs `app_users:provision` + `app_users:embed_token` on top of
- * the `user_tokens:mint` the rest of the bridge uses.
  */
 function headers() {
   return {
@@ -86,26 +59,16 @@ async function post(path: string, body: unknown) {
   return { status: res.status, text: await res.text() };
 }
 
-/**
- * Provision, mint, and hand back the URL to frame.
- *
- * `appId` is validated rather than trusted: it reaches a path. `email` is the
- * signed-in viewer's, taken from the session by the route above — never from the
- * request body, which would make this an impersonation endpoint.
- */
+/** `email` is the session's, never the request body's — that would be impersonation. */
 export async function embedSessionFor(appId: string, email: string): Promise<EmbedSession> {
   if (!CLEAN_ID.test(appId)) throw new EmbedError("invalid app id", "invalid_request", 400);
 
-  // Idempotent by design upstream, so it runs on every frame load rather than
-  // only on the mint's 404. One extra call buys not having to cache who is
-  // provisioned where, which would be a second source of truth to go stale.
+  // Idempotent upstream, so it runs every time rather than only on the mint's 404.
   const provisioned = await post(`/api/apps/${appId}/users/provisions`, {
     email,
     role: "user",
   });
   if (provisioned.status >= 400) {
-    // A viewer we cannot provision cannot be minted for either, and the reason
-    // is worth seeing: a missing scope on the key reports itself here first.
     console.warn(`[embed] provision ${appId} → ${provisioned.status} ${provisioned.text.slice(0, 200)}`);
     return { embedUrl: null, expiresIn: null, reason: refusalFrom(provisioned) };
   }
@@ -118,8 +81,7 @@ export async function embedSessionFor(appId: string, email: string): Promise<Emb
 
   try {
     const body = JSON.parse(minted.text || "{}") as { embed_url?: string | null; expires_in?: number };
-    // Null for an app that has never been deployed — the mint succeeded, there is
-    // just no live host to redeem the token on.
+    // Null when the app has never been deployed: no live host to redeem on.
     return {
       embedUrl: body.embed_url ?? null,
       expiresIn: body.expires_in ?? null,
