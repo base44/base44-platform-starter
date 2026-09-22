@@ -126,16 +126,6 @@ const OPS: Record<string, Op> = {
     path: (p) => `/api/apps/${str(p.appId)}`,
     body: (p) => ({ name: str(p.name).trim() }),
   },
-  /**
-   * Not reachable from the browser (see `INTERNAL_OPS`): the deploy path calls it
-   * for you. New apps are created private, so this is for the ones that predate
-   * that — their next publish closes them.
-   */
-  makeAppPrivate: {
-    method: "PUT",
-    path: (p) => `/api/apps/${str(p.appId)}`,
-    body: () => ({ public_settings: "private_with_login" }),
-  },
   /** Moves apps into the folder. Returns an empty body on success. */
   fileAppsInFolder: {
     method: "POST",
@@ -208,9 +198,6 @@ const APP_SCOPED = [
   "submitToolCallInput",
 ];
 
-/** Steps of another action, never an action a caller may name. */
-const INTERNAL_OPS = ["makeAppPrivate"];
-
 const CLEAN_ID = /^[A-Za-z0-9_-]+$/;
 
 /**
@@ -232,29 +219,6 @@ function send(path: string, op: Op, body: string | undefined, accessToken: strin
     body,
     signal: AbortSignal.timeout(op.timeoutMs ?? DEFAULT_TIMEOUT_MS),
   });
-}
-
-/**
- * Turn a just-deployed app private, so its live host serves nobody without an
- * embed token. Reported rather than thrown: the deploy already succeeded, and a
- * caller that gets an error for a working deploy would retry it. `"public"` in
- * the response means the app is live and still open to anyone with the URL.
- */
-async function makePrivate(appId: string, accessToken: string): Promise<"private" | "public"> {
-  try {
-    const res = await send(
-      OPS.makeAppPrivate.path({ appId }),
-      OPS.makeAppPrivate,
-      JSON.stringify(OPS.makeAppPrivate.body!({ appId })),
-      accessToken,
-      { appId },
-    );
-    if (res.ok) return "private";
-    console.error(`[base44/platform] app ${appId} deployed but stayed public → ${res.status} ${(await res.text()).slice(0, 200)}`);
-  } catch (err) {
-    console.error(`[base44/platform] app ${appId} deployed but stayed public`, err);
-  }
-  return "public";
 }
 
 const reauthorize = () =>
@@ -318,14 +282,12 @@ export async function POST(req: NextRequest) {
     const action = str(rawAction);
     console.log(`[base44/platform] START action=${action} appId=${str(params.appId) || "-"}`);
 
-    const op = INTERNAL_OPS.includes(action) ? undefined : OPS[action];
+    const op = OPS[action];
     if (!op) {
       return jsonError(
         400,
         "invalid_request",
-        `Unknown action "${action}". Allowed: ${Object.keys(OPS)
-          .filter((a) => !INTERNAL_OPS.includes(a))
-          .join(", ")}`,
+        `Unknown action "${action}". Allowed: ${Object.keys(OPS).join(", ")}`,
       );
     }
 
@@ -416,16 +378,6 @@ export async function POST(req: NextRequest) {
         { error: `Upstream ${upstream.status}`, detail: text.slice(0, 500) },
         { status: upstream.status },
       );
-    }
-
-    if (action === "deployApp") {
-      const visibility = await makePrivate(str(params.appId), link.accessToken);
-      if (!text) return NextResponse.json({ ok: true, visibility });
-      try {
-        return NextResponse.json({ ...JSON.parse(text), visibility });
-      } catch {
-        return NextResponse.json({ ok: true, visibility });
-      }
     }
 
     if (!text) return NextResponse.json({ ok: true });
