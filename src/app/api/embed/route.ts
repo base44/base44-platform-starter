@@ -40,7 +40,6 @@ export async function POST(req: NextRequest) {
         expires_in: session.expiresIn,
         reason: session.reason,
       },
-      // The URL carries a live one-time token.
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (err) {

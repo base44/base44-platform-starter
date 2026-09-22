@@ -55,8 +55,6 @@ export default function MyTools() {
 
   const rebuildNonce = useAppRebuildNonce(selectedApp?.id ?? null);
   const selectedUrl = withNonce(baseUrl, rebuildNonce);
-  // Trade the plain URL for one that signs the viewer in. `src` is the plain URL
-  // again whenever that is not possible, so this page behaves as it always did.
   const { src: framedUrl } = useEmbedSrc(selectedApp?.id ?? null, selectedUrl, rebuildNonce);
   useAppFrameAuth(frameRef, selectedApp?.id ?? null, framedUrl);
 

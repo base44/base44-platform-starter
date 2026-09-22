@@ -36,8 +36,6 @@ const post = async (path, body) => {
 function EmbeddedApp({ listing, onBack }) {
   const frameRef = useRef(null);
   const [denied, setDenied] = useState(false);
-  // An installed app is somebody else's code, but the viewer is still the viewer:
-  // the embed token is minted with the platform's own key, so it works here too.
   const { src: framedUrl } = useEmbedSrc(listing.app_id, listing.app_url ?? null);
   useAppFrameAuth(frameRef, listing.app_id, framedUrl, (s) => setDenied(s === "denied"));
 

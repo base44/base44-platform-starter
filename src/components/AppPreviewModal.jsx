@@ -68,8 +68,6 @@ export default function AppPreviewModal({
   const frameRef = useRef(null);
   const rebuildNonce = useAppRebuildNonce(appId);
   const plainUrl = withNonce(url, rebuildNonce);
-  // A just-built app is usually not deployed yet, so this most often falls back
-  // to the sandbox URL — which is the honest answer, not a failure.
   const { src: framedUrl } = useEmbedSrc(appId, plainUrl, rebuildNonce);
 
   useAppFrameAuth(frameRef, appId, framedUrl);

@@ -63,7 +63,6 @@ async function post(path: string, body: unknown) {
 export async function embedSessionFor(appId: string, email: string): Promise<EmbedSession> {
   if (!CLEAN_ID.test(appId)) throw new EmbedError("invalid app id", "invalid_request", 400);
 
-  // Idempotent upstream, so it runs every time rather than only on the mint's 404.
   const provisioned = await post(`/api/apps/${appId}/users/provisions`, {
     email,
     role: "user",
@@ -81,7 +80,6 @@ export async function embedSessionFor(appId: string, email: string): Promise<Emb
 
   try {
     const body = JSON.parse(minted.text || "{}") as { embed_url?: string | null; expires_in?: number };
-    // Null when the app has never been deployed: no live host to redeem on.
     return {
       embedUrl: body.embed_url ?? null,
       expiresIn: body.expires_in ?? null,

@@ -23,11 +23,8 @@ export type EmbedFrameSrc = {
 };
 
 export function useEmbedSrc(appId: string | null, url: string | null, nonce = 0): EmbedFrameSrc {
-  // Keyed per frame load, so a changed app, URL or nonce falls back to the plain
-  // URL until its own token arrives.
   const key = `${appId}:${url}:${nonce}`;
   const [minted, setMinted] = useState<{ key: string; src: string | null; reason: EmbedFrameSrc["reason"] } | null>(null);
-  // StrictMode runs effects twice; a second pass would spend a second token.
   const mintedFor = useRef<string | null>(null);
 
   useEffect(() => {

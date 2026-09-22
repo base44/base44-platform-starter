@@ -157,9 +157,6 @@ function WidgetFrame({
       : platform.previewUrl(widget.app_slug);
   const rebuildNonce = useAppRebuildNonce(widget.app_id);
   const plainUrl = withNonce(baseUrl, rebuildNonce);
-  // Signed-in when it can be, the plain URL when it cannot. Both the frame and
-  // the handshake read the same value: the token lands on the app's live host,
-  // and the origin check has to agree with it.
   const { src: url } = useEmbedSrc(widget.app_id, plainUrl, rebuildNonce);
   useAppFrameAuth(frameRef, widget.app_id, url, (state) => setAuthDenied(state === "denied"));
 
