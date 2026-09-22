@@ -51,6 +51,25 @@ export const svcKey = () => required("BASE44_SVC_KEY");
 export const provisionKey = () => process.env.BASE44_PROVISION_KEY?.trim() || svcKey();
 
 /**
+ * The key used to sign a *viewer* into an embedded app: provision them as an app
+ * user, then mint a one-time embed token (`app_users:provision` +
+ * `app_users:embed_token`).
+ *
+ * A workspace key and not a user's own token, because the caller here is the
+ * platform rather than the person: every app in the folder belongs to some
+ * user's service principal, and a principal cannot administer another user's
+ * app — which is exactly the case the market needs (Bob opening Alice's app).
+ * One workspace-scoped credential covers built and installed alike.
+ *
+ * Defaults to `BASE44_SVC_KEY`, so a single-key deployment works once those two
+ * scopes are added to it. Both scopes are flagged `requires_app_targeting`
+ * upstream, so the key's app access must be **all apps** — under "selected",
+ * every newly built app would have to be added to the key before its first
+ * frame could sign in.
+ */
+export const embedKey = () => process.env.BASE44_EMBED_KEY?.trim() || svcKey();
+
+/**
  * The Base44 enterprise workspace every Sunny user is provisioned into. One
  * workspace, central membership, one place to deprovision. Used as `X-Active-Workspace-Id`
  * on every platform call, as `createApp`'s `organization_id`, and as a salt in

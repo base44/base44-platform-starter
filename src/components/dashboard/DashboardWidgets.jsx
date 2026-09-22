@@ -17,6 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import { Widget } from "@/lib/entityClient";
 import { useAppFrameAuth } from "@/lib/appFrameAuth";
+import { useEmbedSrc } from "@/lib/embedFrame";
 import { X, Loader2, LayoutGrid, Maximize, Pencil, PlugZap } from "lucide-react";
 import * as platform from "@/lib/base44Platform";
 import AppPreviewModal from "@/components/AppPreviewModal";
@@ -155,7 +156,11 @@ function WidgetFrame({
       ? platform.publishedUrl(widget.app_slug)
       : platform.previewUrl(widget.app_slug);
   const rebuildNonce = useAppRebuildNonce(widget.app_id);
-  const url = withNonce(baseUrl, rebuildNonce);
+  const plainUrl = withNonce(baseUrl, rebuildNonce);
+  // Signed-in when it can be, the plain URL when it cannot. Both the frame and
+  // the handshake read the same value: the token lands on the app's live host,
+  // and the origin check has to agree with it.
+  const { src: url } = useEmbedSrc(widget.app_id, plainUrl, rebuildNonce);
   useAppFrameAuth(frameRef, widget.app_id, url, (state) => setAuthDenied(state === "denied"));
 
   // Grow to fit whatever the app says it needs, unless this widget was sized by
@@ -302,7 +307,7 @@ function WidgetFrame({
               </div>
             )}
             <iframe
-              key={rebuildNonce}
+              key={url}
               ref={frameRef}
               src={url}
               title={widget.app_name}

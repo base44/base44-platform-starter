@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { X, AlertTriangle, Loader2 } from "lucide-react";
 import { useAppFrameAuth } from "@/lib/appFrameAuth";
+import { useEmbedSrc } from "@/lib/embedFrame";
 import { useAppRebuildNonce, withNonce } from "@/lib/appRefresh";
 
 /**
@@ -66,7 +67,10 @@ export default function AppPreviewModal({
   const [loaded, setLoaded] = useState(false);
   const frameRef = useRef(null);
   const rebuildNonce = useAppRebuildNonce(appId);
-  const framedUrl = withNonce(url, rebuildNonce);
+  const plainUrl = withNonce(url, rebuildNonce);
+  // A just-built app is usually not deployed yet, so this most often falls back
+  // to the sandbox URL — which is the honest answer, not a failure.
+  const { src: framedUrl } = useEmbedSrc(appId, plainUrl, rebuildNonce);
 
   useAppFrameAuth(frameRef, appId, framedUrl);
 
@@ -120,7 +124,7 @@ export default function AppPreviewModal({
         <div className="relative flex-1 bg-background">
           {framedUrl && (
             <iframe
-              key={rebuildNonce}
+              key={framedUrl}
               ref={frameRef}
               src={framedUrl}
               onLoad={() => setLoaded(true)}

@@ -12,6 +12,7 @@
  */
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useAppFrameAuth } from "@/lib/appFrameAuth";
+import { useEmbedSrc } from "@/lib/embedFrame";
 import { useAppRebuildNonce, useAppRemoved, withNonce } from "@/lib/appRefresh";
 import { listUsableApps } from "@/lib/usableApps";
 import PublishDialog from "@/components/market/PublishDialog";
@@ -54,7 +55,10 @@ export default function MyTools() {
 
   const rebuildNonce = useAppRebuildNonce(selectedApp?.id ?? null);
   const selectedUrl = withNonce(baseUrl, rebuildNonce);
-  useAppFrameAuth(frameRef, selectedApp?.id ?? null, selectedUrl);
+  // Trade the plain URL for one that signs the viewer in. `src` is the plain URL
+  // again whenever that is not possible, so this page behaves as it always did.
+  const { src: framedUrl } = useEmbedSrc(selectedApp?.id ?? null, selectedUrl, rebuildNonce);
+  useAppFrameAuth(frameRef, selectedApp?.id ?? null, framedUrl);
 
   useEffect(() => {
     (async () => {
@@ -119,9 +123,9 @@ export default function MyTools() {
         </div>
         {url ? (
           <iframe
-            key={rebuildNonce}
+            key={framedUrl}
             ref={frameRef}
-            src={url}
+            src={framedUrl}
             className="flex-1 w-full border-0"
             title={selectedApp.name}
           />
