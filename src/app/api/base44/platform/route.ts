@@ -101,7 +101,7 @@ const OPS: Record<string, Op> = {
       name: p.name || undefined,
       user_description: p.prompt,
       organization_id: orgId(),
-      public_settings: "public_without_login",
+      public_settings: "private_with_login",
       // Persisted on the app and applied by the builder on every turn. Set here
       // rather than after create because initial_message starts the first build
       // in this same call — a later update would miss it.
@@ -128,9 +128,8 @@ const OPS: Record<string, Op> = {
   },
   /**
    * Not reachable from the browser (see `INTERNAL_OPS`): the deploy path calls it
-   * for you. An app is created public because its only frame before a deploy is
-   * the sandbox preview, where an embed token cannot be redeemed; a deploy gives
-   * it a live host, and from then on `/api/embed` is the only way in.
+   * for you. New apps are created private, so this is for the ones that predate
+   * that — their next publish closes them.
    */
   makeAppPrivate: {
     method: "PUT",
