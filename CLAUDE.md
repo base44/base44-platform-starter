@@ -88,6 +88,7 @@ npm run rls:smoke        # boundary 1: the owner predicate, including the traps
 npm run auth:smoke       # boundary 1: session → actor
 npm run entities:smoke   # boundary 1: whitelisting, scoping, wire shape
 npm run base44:smoke     # boundaries 2–3: token containment, allow-list, session keying
+npm run embed:smoke      # the embed gate: authored-or-installed, and a refusal is an answer
 npm run sunny:smoke     # boundary 4: the public contract, action by action
 npm run webhook:register # boundary 5: register the endpoint, print the key to pin (deploy-time)
 npm run webhook:smoke    # boundary 5: the inbound signature, both key sources, negative controls
