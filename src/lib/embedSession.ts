@@ -49,9 +49,9 @@ function headers() {
   };
 }
 
-async function post(path: string, body: unknown) {
+async function send(method: "POST" | "DELETE", path: string, body: unknown) {
   const res = await fetch(`${platformHost()}${path}`, {
-    method: "POST",
+    method,
     headers: headers(),
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(15_000),
@@ -59,20 +59,30 @@ async function post(path: string, body: unknown) {
   return { status: res.status, text: await res.text() };
 }
 
+const post = (path: string, body: unknown) => send("POST", path, body);
+
 /** `email` is the session's, never the request body's — that would be impersonation. */
 export async function embedSessionFor(appId: string, email: string): Promise<EmbedSession> {
   if (!CLEAN_ID.test(appId)) throw new EmbedError("invalid app id", "invalid_request", 400);
 
-  const provisioned = await post(`/api/apps/${appId}/users/provisions`, {
-    email,
-    role: "user",
-  });
+  const provisions = `/api/apps/${appId}/users/provisions`;
+  const mint = `/api/apps/${appId}/embed-tokens`;
+
+  const provisioned = await post(provisions, { email, role: "user" });
   if (provisioned.status >= 400) {
     console.warn(`[embed] provision ${appId} → ${provisioned.status} ${provisioned.text.slice(0, 200)}`);
     return { embedUrl: null, expiresIn: null, reason: refusalFrom(provisioned) };
   }
 
-  const minted = await post(`/api/apps/${appId}/embed-tokens`, { email });
+  let minted = await post(mint, { email });
+
+  if (minted.status === 404 && provisioned.text.includes('"exists"')) {
+    console.warn(`[embed] ${appId}: provisioned but unknown to the mint; re-provisioning ${email}`);
+    await send("DELETE", provisions, { email });
+    const again = await post(provisions, { email, role: "user" });
+    if (again.status < 400) minted = await post(mint, { email });
+  }
+
   if (minted.status >= 400) {
     console.warn(`[embed] mint ${appId} → ${minted.status} ${minted.text.slice(0, 200)}`);
     return { embedUrl: null, expiresIn: null, reason: refusalFrom(minted) };
