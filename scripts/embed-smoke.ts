@@ -2,12 +2,11 @@
  * Contract test for `/api/embed`.
  *
  * The route hands out a URL that signs its holder into an app, so the gate is the
- * whole subject: any signed-in member may open any app this shell built, and
- * nothing else — the credential is workspace-scoped, so an app Base44 knows but
- * this shell did not build must be refused. Sections 1–2 fence that. Section 3
- * covers the shape the frame depends on — a refusal is a 200 with
- * `embed_url: null`, never an error, because a frame that cannot be signed in
- * still has to render.
+ * whole subject: the credential behind it is workspace-scoped, and without the
+ * authored-or-installed check it would mint into any app in the folder. Sections
+ * 1–2 fence that. Section 3 covers the shape the frame depends on — a refusal is
+ * a 200 with `embed_url: null`, never an error, because a frame that cannot be
+ * signed in still has to render.
  *
  * With `EMBED_SMOKE_APP_ID` set to a real, deployed app the last section also
  * asserts a live mint against Base44. Without it that section skips.
@@ -24,8 +23,6 @@ const OTHER = `${TAG}-other@example.com`;
 const INSTALLER = `${TAG}-installer@example.com`;
 const APP = `${TAG}-app`;
 const FOREIGN_APP = `${TAG}-foreignapp`;
-/** Exists in Base44's world but was never built here, so it has no ownership row. */
-const UNKNOWN_APP = `${TAG}-unknownapp`;
 const LIVE_APP = process.env.EMBED_SMOKE_APP_ID ?? "";
 
 const BASE_URL = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
@@ -108,21 +105,13 @@ async function main() {
   check("a non-string app_id is 400", (await embed({ app_id: 42 }, AUTHOR)).status === 400);
 
   // === 2. the gate =========================================================
-  console.log("\n2. any member, any app this shell built");
-  const stranger = await embed({ app_id: UNKNOWN_APP }, AUTHOR);
-  check("an app this shell did not build is 403", stranger.status === 403, JSON.stringify(stranger.body));
-  check("...and it names the reason", stranger.body.error === "unknown_app");
+  console.log("\n2. authored or installed, nothing else");
+  const stranger = await embed({ app_id: FOREIGN_APP }, AUTHOR);
+  check("an app you neither built nor installed is 403", stranger.status === 403, JSON.stringify(stranger.body));
+  check("...and it names the reason", stranger.body.error === "app_not_installed");
 
   const authored = await embed({ app_id: APP }, AUTHOR);
   const installed = await embed({ app_id: FOREIGN_APP }, INSTALLER);
-  const passerby = await embed({ app_id: FOREIGN_APP }, AUTHOR);
-  if (passerby.status !== 501) {
-    check(
-      "a member who neither built nor installed it is let through",
-      passerby.status === 200,
-      JSON.stringify(passerby.body),
-    );
-  }
   const bridgeOff = [authored.status, installed.status].includes(501);
   if (bridgeOff) {
     skip("the author is let through", "the Base44 bridge is not configured");

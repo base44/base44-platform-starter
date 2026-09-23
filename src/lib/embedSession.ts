@@ -77,16 +77,9 @@ export async function embedSessionFor(appId: string, email: string): Promise<Emb
   let minted = await post(mint, { email });
 
   /**
-   * Provisioning matches an access request of any status, so a viewer who once
-   * pressed "Request access" on the app's own URL has a *pending* row: provision
-   * answers `exists` and changes nothing, and the mint — which wants an approved
-   * one — answers `unknown_user`. Left alone that is permanent, and it is the
-   * likely order of events, since a private app is what sends someone to that
-   * page in the first place.
-   *
-   * Clearing the grant and writing it again is what breaks the tie. Only on this
-   * exact pair of answers, and only once: the viewer is already locked out, so
-   * there is nothing working to disturb.
+   * A pending "Request access" row makes provisioning a no-op that answers
+   * `exists`, while the mint wants an approved one and answers `unknown_user` —
+   * permanently. Clearing the grant and writing it again breaks the tie.
    */
   if (minted.status === 404 && provisioned.text.includes('"exists"')) {
     console.warn(`[embed] ${appId}: provisioned but unknown to the mint; re-provisioning ${email}`);

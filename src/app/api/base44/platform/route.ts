@@ -101,12 +101,8 @@ const OPS: Record<string, Op> = {
       name: p.name || undefined,
       user_description: p.prompt,
       organization_id: orgId(),
-      // Signed in, but self-serve: the embed token gives a frame its viewer, and
-      // this decides what the app's own URL does for someone who finds it. It
-      // cannot be `private_with_login`, whatever that would be worth — a private
-      // app offers a stranger one button, "Request access", and files the request
-      // against the app's owner, which here is a service principal at a
-      // non-routable address. Nobody reads it, so nobody can ever approve it.
+      // Not private: a private app's only offer to a stranger is "Request
+      // access", filed against an owner that is a service principal nobody reads.
       public_settings: "public_with_login",
       // Persisted on the app and applied by the builder on every turn. Set here
       // rather than after create because initial_message starts the first build
