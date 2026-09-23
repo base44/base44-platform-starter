@@ -101,8 +101,6 @@ const OPS: Record<string, Op> = {
       name: p.name || undefined,
       user_description: p.prompt,
       organization_id: orgId(),
-      // Not private: a private app's only offer to a stranger is "Request
-      // access", filed against an owner that is a service principal nobody reads.
       public_settings: "public_with_login",
       // Persisted on the app and applied by the builder on every turn. Set here
       // rather than after create because initial_message starts the first build

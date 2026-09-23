@@ -76,11 +76,6 @@ export async function embedSessionFor(appId: string, email: string): Promise<Emb
 
   let minted = await post(mint, { email });
 
-  /**
-   * A pending "Request access" row makes provisioning a no-op that answers
-   * `exists`, while the mint wants an approved one and answers `unknown_user` —
-   * permanently. Clearing the grant and writing it again breaks the tie.
-   */
   if (minted.status === 404 && provisioned.text.includes('"exists"')) {
     console.warn(`[embed] ${appId}: provisioned but unknown to the mint; re-provisioning ${email}`);
     await send("DELETE", provisions, { email });
