@@ -1,15 +1,23 @@
 /**
  * POST /api/embed — the URL to load an app's iframe from, with the viewer signed in.
  *
- * Gated on authored-or-installed, like `/api/sunny/token`: the credential behind
- * this route is workspace-scoped and could otherwise mint a session into any app
- * in the folder. Returns a URL, never the token. `embed_url: null` is a normal
- * answer — load the app signed out.
+ * Any signed-in member may open any app this shell built, and opening it is what
+ * creates their app user. That is looser than `/api/sunny/token`, deliberately:
+ * that token decides whose *boards* an app may read, where the install is the
+ * grant. This one decides who the app thinks is looking at it, and a member of
+ * Sunny looking at a Sunny app is answer enough.
+ *
+ * What it is not is a way into any app in the workspace. The credential behind
+ * this route is workspace-scoped, so the gate is an `AppOwnership` row: an app
+ * somebody built here. An app that exists in Base44 but not in this shell is
+ * refused.
+ *
+ * Returns a URL, never the token. `embed_url: null` is a normal answer — load
+ * the app signed out.
  */
 
 import { NextResponse, type NextRequest } from "next/server";
 
-import { hasInstall } from "@/lib/appInstall";
 import { errorResponse, jsonError } from "@/lib/apiResponse";
 import { requireSessionUser } from "@/lib/auth";
 import { MissingConfigError } from "@/lib/base44Config";
@@ -24,14 +32,8 @@ export async function POST(req: NextRequest) {
     const appId = typeof body.app_id === "string" ? body.app_id : "";
     if (!appId) return jsonError(400, "invalid_request", "app_id is required.");
 
-    const [installed, authored] = await Promise.all([
-      hasInstall(actor, appId),
-      prisma.appOwnership.findFirst({
-        where: { appId, createdBy: actor.email },
-        select: { id: true },
-      }),
-    ]);
-    if (!installed && !authored) return jsonError(403, "app_not_installed");
+    const built = await prisma.appOwnership.findFirst({ where: { appId }, select: { id: true } });
+    if (!built) return jsonError(403, "unknown_app");
 
     const session = await embedSessionFor(appId, actor.email);
     return NextResponse.json(
