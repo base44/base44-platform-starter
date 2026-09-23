@@ -4,6 +4,7 @@ import { Loader2, Search, Check, ArrowLeft, ShieldCheck, Sparkles, Store, Plus, 
 
 import { addAppToMyWidgets } from "@/lib/myWidgets";
 import { useAppFrameAuth } from "@/lib/appFrameAuth";
+import { useEmbedSrc } from "@/lib/embedFrame";
 import { listUsableApps } from "@/lib/usableApps";
 import { announceMarketChanged, useMarketChanges } from "@/lib/marketEvents";
 import { APP_REBUILT } from "@/lib/appRefresh";
@@ -35,7 +36,8 @@ const post = async (path, body) => {
 function EmbeddedApp({ listing, onBack }) {
   const frameRef = useRef(null);
   const [denied, setDenied] = useState(false);
-  useAppFrameAuth(frameRef, listing.app_id, listing.app_url, (s) => setDenied(s === "denied"));
+  const { src: framedUrl } = useEmbedSrc(listing.app_id, listing.app_url ?? null);
+  useAppFrameAuth(frameRef, listing.app_id, framedUrl, (s) => setDenied(s === "denied"));
 
   return (
     <div className="flex h-[calc(100vh-56px)] flex-col">
@@ -53,8 +55,9 @@ function EmbeddedApp({ listing, onBack }) {
       </div>
       {listing.app_url ? (
         <iframe
+          key={framedUrl}
           ref={frameRef}
-          src={listing.app_url}
+          src={framedUrl}
           title={listing.title}
           className="w-full flex-1 border-0"
           sandbox={APP_SANDBOX}

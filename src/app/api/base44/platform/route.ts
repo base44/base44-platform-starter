@@ -101,7 +101,7 @@ const OPS: Record<string, Op> = {
       name: p.name || undefined,
       user_description: p.prompt,
       organization_id: orgId(),
-      public_settings: "public_without_login",
+      public_settings: "private_with_login",
       // Persisted on the app and applied by the builder on every turn. Set here
       // rather than after create because initial_message starts the first build
       // in this same call — a later update would miss it.
