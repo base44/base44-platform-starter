@@ -85,7 +85,7 @@ async function main() {
     ],
   });
   await prisma.appInstall.create({
-    data: { appId: FOREIGN_APP, appName: "Someone else's", createdBy: INSTALLER, scopes: ["boards:read"] },
+    data: { appId: FOREIGN_APP, appName: "Someone else's", createdBy: INSTALLER },
   });
   await Promise.all([mintCookie(AUTHOR), mintCookie(OTHER), mintCookie(INSTALLER)]);
 
