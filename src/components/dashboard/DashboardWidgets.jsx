@@ -155,9 +155,10 @@ function WidgetFrame({
     : deployedAt
       ? platform.publishedUrl(widget.app_slug)
       : platform.previewUrl(widget.app_slug);
+  const target = widget.app_slug && !deployedAt ? "latest_preview" : null;
   const rebuildNonce = useAppRebuildNonce(widget.app_id);
   const plainUrl = withNonce(baseUrl, rebuildNonce);
-  const { src: url } = useEmbedSrc(widget.app_id, plainUrl, rebuildNonce);
+  const { src: url } = useEmbedSrc(widget.app_id, plainUrl, rebuildNonce, target);
   useAppFrameAuth(frameRef, widget.app_id, url, (state) => setAuthDenied(state === "denied"));
 
   // Grow to fit whatever the app says it needs, unless this widget was sized by
@@ -269,7 +270,7 @@ function WidgetFrame({
           )}
           {url && (
             <button
-              onClick={() => onExpand({ title: widget.app_name, url, appId: widget.app_id })}
+              onClick={() => onExpand({ title: widget.app_name, url: baseUrl, appId: widget.app_id, target })}
               title="Open in a bigger view"
               aria-label={`Open ${widget.app_name} in a bigger view`}
               className="w-9 h-9 sm:w-7 sm:h-7 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
@@ -466,6 +467,7 @@ export default function DashboardWidgets({
         title={expanded?.title}
         url={expanded?.url}
         appId={expanded?.appId}
+        target={expanded?.target ?? null}
         onClose={() => setExpanded(null)}
       />
     </div>

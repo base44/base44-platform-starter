@@ -13,16 +13,20 @@ import { hasInstall } from "@/lib/appInstall";
 import { errorResponse, jsonError } from "@/lib/apiResponse";
 import { requireSessionUser } from "@/lib/auth";
 import { MissingConfigError } from "@/lib/base44Config";
-import { EmbedError, embedSessionFor } from "@/lib/embedSession";
+import { EMBED_TARGETS, EmbedError, embedSessionFor, type EmbedTarget } from "@/lib/embedSession";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(req: NextRequest) {
   try {
     const actor = await requireSessionUser();
 
-    const body = (await req.json().catch(() => ({}))) as { app_id?: unknown };
+    const body = (await req.json().catch(() => ({}))) as { app_id?: unknown; target?: unknown };
     const appId = typeof body.app_id === "string" ? body.app_id : "";
     if (!appId) return jsonError(400, "invalid_request", "app_id is required.");
+    const target = body.target ?? null;
+    if (target !== null && !EMBED_TARGETS.includes(target as EmbedTarget)) {
+      return jsonError(400, "invalid_request", `target must be one of ${EMBED_TARGETS.join(", ")}.`);
+    }
 
     const [installed, authored] = await Promise.all([
       hasInstall(actor, appId),
@@ -33,7 +37,7 @@ export async function POST(req: NextRequest) {
     ]);
     if (!installed && !authored) return jsonError(403, "app_not_installed");
 
-    const session = await embedSessionFor(appId, actor.email);
+    const session = await embedSessionFor(appId, actor.email, target as EmbedTarget | null);
     return NextResponse.json(
       {
         embed_url: session.embedUrl,

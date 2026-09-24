@@ -1007,6 +1007,7 @@ export default function AppBuilderSidebar({
             title={activeApp?.name}
             url={previewModalUrl}
             appId={activeAppId}
+            target="live_preview"
             error={previewError}
             onClose={closePreview}
             onRetry={openPreview}

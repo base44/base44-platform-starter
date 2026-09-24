@@ -55,7 +55,7 @@ export default function MyTools() {
 
   const rebuildNonce = useAppRebuildNonce(selectedApp?.id ?? null);
   const selectedUrl = withNonce(baseUrl, rebuildNonce);
-  const { src: framedUrl } = useEmbedSrc(selectedApp?.id ?? null, selectedUrl, rebuildNonce);
+  const { src: framedUrl } = useEmbedSrc(selectedApp?.id ?? null, selectedUrl, rebuildNonce, selectedApp?.target ?? null);
   useAppFrameAuth(frameRef, selectedApp?.id ?? null, framedUrl);
 
   useEffect(() => {
