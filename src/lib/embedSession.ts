@@ -1,8 +1,8 @@
 /**
  * Signing a viewer into an embedded app: provision them as an app user, then
- * mint a one-time token, which comes back as the app's live URL with `?ott=`.
- * The app's server redeems it on the document request and answers with a
- * session, so nothing inside the built app changes.
+ * mint a one-time token, which comes back as the framed surface's URL with
+ * `?ott=`. The app's server redeems it on the document request and answers with
+ * a session, so nothing inside the built app changes.
  */
 
 import { orgId, platformHost, svcKey } from "@/lib/base44Config";
@@ -15,8 +15,16 @@ export type EmbedSession = {
   reason: EmbedRefusal | null;
 };
 
+/**
+ * Which surface to sign the viewer into. Omitted means the published app; the
+ * two previews are the static build of main and the running sandbox.
+ */
+export type EmbedTarget = "latest_preview" | "live_preview";
+
+export const EMBED_TARGETS: readonly EmbedTarget[] = ["latest_preview", "live_preview"];
+
 export type EmbedRefusal =
-  /** The app has never been deployed: redemption runs on the live host only. */
+  /** The published app was asked for, and the app is not published. */
   | "not_deployed"
   /** The platform never mints for an app's owner, editors or service identities. */
   | "privileged_user"
@@ -62,11 +70,18 @@ async function send(method: "POST" | "DELETE", path: string, body: unknown) {
 const post = (path: string, body: unknown) => send("POST", path, body);
 
 /** `email` is the session's, never the request body's — that would be impersonation. */
-export async function embedSessionFor(appId: string, email: string): Promise<EmbedSession> {
+export async function embedSessionFor(
+  appId: string,
+  email: string,
+  target: EmbedTarget | null = null,
+): Promise<EmbedSession> {
   if (!CLEAN_ID.test(appId)) throw new EmbedError("invalid app id", "invalid_request", 400);
 
   const provisions = `/api/apps/${appId}/users/provisions`;
   const mint = `/api/apps/${appId}/embed-tokens`;
+  // Absent for the published app rather than "live_site": that is the mint's
+  // default, and an older mint refuses a field it does not know.
+  const mintBody = target ? { email, target } : { email };
 
   const provisioned = await post(provisions, { email, role: "user" });
   if (provisioned.status >= 400) {
@@ -74,13 +89,13 @@ export async function embedSessionFor(appId: string, email: string): Promise<Emb
     return { embedUrl: null, expiresIn: null, reason: refusalFrom(provisioned) };
   }
 
-  let minted = await post(mint, { email });
+  let minted = await post(mint, mintBody);
 
   if (minted.status === 404 && provisioned.text.includes('"exists"')) {
     console.warn(`[embed] ${appId}: provisioned but unknown to the mint; re-provisioning ${email}`);
     await send("DELETE", provisions, { email });
     const again = await post(provisions, { email, role: "user" });
-    if (again.status < 400) minted = await post(mint, { email });
+    if (again.status < 400) minted = await post(mint, mintBody);
   }
 
   if (minted.status >= 400) {
@@ -102,5 +117,6 @@ export async function embedSessionFor(appId: string, email: string): Promise<Emb
 
 function refusalFrom({ status, text }: { status: number; text: string }): EmbedRefusal {
   if (status === 403 && text.includes("privileged_user")) return "privileged_user";
+  if (status === 400 && text.includes("app_not_deployed")) return "not_deployed";
   return "refused";
 }

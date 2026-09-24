@@ -9,6 +9,7 @@
  */
 
 import * as platform from "@/lib/base44Platform";
+import type { EmbedTarget } from "@/lib/embedSession";
 
 export type UsableApp = {
   id: string;
@@ -16,6 +17,8 @@ export type UsableApp = {
   /** null for market apps — see the note above. */
   slug: string | null;
   url: string | null;
+  /** The surface `url` points at, when it is a preview. */
+  target: EmbedTarget | null;
   screenshot: string | null;
   /** One line under the name: the build prompt, or the author. */
   subtitle: string;
@@ -40,11 +43,12 @@ type Base44App = {
  * answers with an error payload while it starts, which a frame renders as raw JSON. So
  * the sandbox is the never-deployed fallback, matching the My apps page and the widgets.
  */
-function builtUrl(app: Base44App): string | null {
-  if (!app.slug) return null;
-  return app.last_deployed_at
-    ? platform.publishedUrl(app.slug) || platform.previewUrl(app.slug)
-    : platform.previewUrl(app.slug);
+function builtUrl(app: Base44App): Pick<UsableApp, "url" | "target"> {
+  if (!app.slug) return { url: null, target: null };
+  const published = app.last_deployed_at ? platform.publishedUrl(app.slug) : null;
+  return published
+    ? { url: published, target: null }
+    : { url: platform.previewUrl(app.slug), target: "latest_preview" };
 }
 
 async function marketInstalls(): Promise<UsableApp[]> {
@@ -63,6 +67,7 @@ async function marketInstalls(): Promise<UsableApp[]> {
       name: l.title,
       slug: null,
       url: l.app_url,
+      target: null,
       screenshot: l.screenshot_url ?? null,
       subtitle: `by ${l.author}`,
       source: "market" as const,
@@ -75,7 +80,7 @@ async function builtApps(): Promise<UsableApp[]> {
     id: app.id,
     name: app.name || "Untitled",
     slug: app.slug ?? null,
-    url: builtUrl(app),
+    ...builtUrl(app),
     screenshot: app.preview_screenshot_url || app.logo_url || null,
     subtitle: app.user_description || app.description || "Built by you",
     source: "built" as const,

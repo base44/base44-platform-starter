@@ -3,15 +3,17 @@
  *
  * The token is single-use and lives 60 seconds, so it is minted here — at the
  * frame — and not in `usableApps`. Pass the result to both the iframe and
- * `useAppFrameAuth`: a minted URL is on the app's live host, and the handshake
- * checks the frame's origin against what was loaded.
+ * `useAppFrameAuth`: a minted URL is on the host of the surface it was minted
+ * for, and the handshake checks the frame's origin against what was loaded.
+ * `target` names that surface when `url` is a preview; omit it for the
+ * published app.
  */
 
 "use client";
 
 import { useEffect, useRef, useState } from "react";
 
-import type { EmbedRefusal } from "@/lib/embedSession";
+import type { EmbedRefusal, EmbedTarget } from "@/lib/embedSession";
 
 export type EmbedFrameSrc = {
   /** The URL to load. Never null when `url` was not null. */
@@ -22,8 +24,13 @@ export type EmbedFrameSrc = {
   reason: EmbedRefusal | "error" | null;
 };
 
-export function useEmbedSrc(appId: string | null, url: string | null, nonce = 0): EmbedFrameSrc {
-  const key = `${appId}:${url}:${nonce}`;
+export function useEmbedSrc(
+  appId: string | null,
+  url: string | null,
+  nonce = 0,
+  target: EmbedTarget | null = null,
+): EmbedFrameSrc {
+  const key = `${appId}:${url}:${nonce}:${target}`;
   const [minted, setMinted] = useState<{ key: string; src: string | null; reason: EmbedFrameSrc["reason"] } | null>(null);
   const mintedFor = useRef<string | null>(null);
 
@@ -38,7 +45,7 @@ export function useEmbedSrc(appId: string | null, url: string | null, nonce = 0)
         const res = await fetch("/api/embed", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ app_id: appId }),
+          body: JSON.stringify(target ? { app_id: appId, target } : { app_id: appId }),
         });
         const body = (await res.json().catch(() => null)) as {
           embed_url?: string | null;
@@ -58,7 +65,7 @@ export function useEmbedSrc(appId: string | null, url: string | null, nonce = 0)
     return () => {
       cancelled = true;
     };
-  }, [appId, url, nonce, key]);
+  }, [appId, url, nonce, target, key]);
 
   const fresh = minted?.key === key ? minted : null;
   return {

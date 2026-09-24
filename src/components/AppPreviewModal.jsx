@@ -58,6 +58,7 @@ export default function AppPreviewModal({
   title,
   url,
   appId = null,
+  target = null,
   error = null,
   onClose,
   onRetry,
@@ -68,7 +69,7 @@ export default function AppPreviewModal({
   const frameRef = useRef(null);
   const rebuildNonce = useAppRebuildNonce(appId);
   const plainUrl = withNonce(url, rebuildNonce);
-  const { src: framedUrl } = useEmbedSrc(appId, plainUrl, rebuildNonce);
+  const { src: framedUrl } = useEmbedSrc(appId, plainUrl, rebuildNonce, target);
 
   useAppFrameAuth(frameRef, appId, framedUrl);
 

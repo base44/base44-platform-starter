@@ -103,6 +103,7 @@ async function main() {
   check("anonymous is 401", (await embed({ app_id: APP })).status === 401);
   check("a missing app_id is 400", (await embed({}, AUTHOR)).status === 400);
   check("a non-string app_id is 400", (await embed({ app_id: 42 }, AUTHOR)).status === 400);
+  check("an unknown target is 400", (await embed({ app_id: APP, target: "platform" }, AUTHOR)).status === 400);
 
   // === 2. the gate =========================================================
   console.log("\n2. authored or installed, nothing else");
