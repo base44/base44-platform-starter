@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Loader2, Pencil, Plus, Store, Trash2 } from "lucide-react";
+import Link from "next/link";
 import * as platform from "@/lib/base44Platform";
 import { AppOwnership } from "@/lib/entityClient";
 import { useAppFrameAuth } from "@/lib/appFrameAuth";
@@ -9,6 +10,7 @@ import { useEmbedSrc } from "@/lib/embedFrame";
 import { useAppRebuildNonce, useAppRemoved, withNonce } from "@/lib/appRefresh";
 import { useAuth } from "@/lib/AuthContext";
 import { useMarketChanges } from "@/lib/marketEvents";
+import { marketPublishState } from "@/lib/marketPublishState";
 import AppBuilderSidebar from "@/components/AppBuilderSidebar";
 import PublishDialog from "@/components/market/PublishDialog";
 
@@ -73,10 +75,12 @@ function LivePreview({ app }) {
   </div>;
 }
 
-function StaticPreview({ app }) {
+function StaticPreview({ app, listing }) {
   const frameRef = useRef(null);
   const rebuildNonce = useAppRebuildNonce(app.id);
-  const published = app.last_deployed_at ? platform.publishedUrl(app.slug) : null;
+  const published = listing?.status === "published" && app.last_deployed_at
+    ? listing.app_url || platform.publishedUrl(app.slug)
+    : null;
   const url = published || platform.previewUrl(app.slug);
   const { src } = useEmbedSrc(app.id, withNonce(url, rebuildNonce), rebuildNonce, published ? null : "latest_preview");
   useAppFrameAuth(frameRef, app.id, src);
@@ -97,7 +101,7 @@ export default function MyTools() {
   const [builderAppId, setBuilderAppId] = useState(null);
   const [builderRequest, setBuilderRequest] = useState(0);
   const [publishing, setPublishing] = useState(null);
-  const [published, setPublished] = useState(new Set());
+  const [listings, setListings] = useState({});
   const [removing, setRemoving] = useState(null);
 
   const loadApps = useCallback(async () => {
@@ -133,8 +137,8 @@ export default function MyTools() {
       body: JSON.stringify({ action: "mine" }),
     })
       .then((response) => response.ok ? response.json() : { listings: [] })
-      .then(({ listings = [] }) => setPublished(new Set(
-        listings.filter((item) => item.status === "published").map((item) => item.app_id),
+      .then(({ listings = [] }) => setListings(Object.fromEntries(
+        listings.map((item) => [item.app_id, item]),
       )))
       .catch(() => {});
   }, []);
@@ -210,21 +214,29 @@ export default function MyTools() {
             </div>
           : <div className="sunny-apps-grid">{apps.map((app) => {
               const name = app.name || "Untitled";
+              const listing = listings[app.id];
+              const marketState = marketPublishState(app, listing);
+              const building = app.status?.state === "processing";
               return <article key={app.id} className="sunny-apps-card" aria-label={name}>
                 <header>
                   <h2>{name}</h2>
-                  {app.status?.state === "processing" && <Loader2 className="animate-spin" size={14} />}
+                  {building && <Loader2 className="animate-spin" size={14} />}
                   <div className="sunny-apps-card-actions">
                     <button aria-label={`Edit ${name}`} title="Open app" onClick={() => openApp(app)}><Pencil size={15} /></button>
                     <button aria-label={`Remove ${name} from My apps`} title="Remove from My apps only" disabled={Boolean(removing)} onClick={() => void removeApp(app)}><Trash2 size={15} /></button>
-                    <button aria-label={`Publish ${name}`} title="Publish to Sunny Market" onClick={() => setPublishing(app)}><Store size={15} className={published.has(app.id) ? "text-primary" : ""} /></button>
                   </div>
                 </header>
                 <button className="sunny-apps-card-preview" onClick={() => openApp(app)} aria-label={`Open ${name}`}>
-                  {app.status?.state === "processing"
+                  {building
                     ? <span><Loader2 className="animate-spin" size={20} /> Generating your app…</span>
-                    : <StaticPreview app={app} />}
+                    : <StaticPreview app={app} listing={listing} />}
                 </button>
+                <footer className="sunny-apps-card-footer">
+                  <span>{marketState === "live" ? "Published and up to date" : marketState === "needs_publish" ? "Changes are in preview until published" : "Preview only"}</span>
+                  {marketState === "live"
+                    ? <Link href="/market"><Store size={14} /> Live in app market</Link>
+                    : <button disabled={building || !app.slug} onClick={() => setPublishing(app)}><Store size={14} /> Publish to market</button>}
+                </footer>
               </article>;
             })}</div>}
       </main>}
@@ -240,10 +252,12 @@ export default function MyTools() {
         onActiveAppChange={onActiveAppChange}
         onAppCreated={onAppCreated}
         onGoHome={backToApps}
+        marketListing={listings[selected?.id]}
       />
     </div>
-    {publishing && <PublishDialog app={publishing} onClose={() => setPublishing(null)} onDone={() => {
-      setPublished((current) => new Set(current).add(publishing.id));
+    {publishing && <PublishDialog app={publishing} onClose={() => setPublishing(null)} onDone={(fresh) => {
+      setApps((current) => current.map((item) => item.id === fresh.id ? { ...item, ...fresh } : item));
+      refreshPublished();
       setPublishing(null);
     }} />}
   </div>;

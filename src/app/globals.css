@@ -251,6 +251,33 @@
   pointer-events: none;
 }
 .sunny-apps-card-preview img { width: 100%; height: 100%; object-fit: cover; }
+.sunny-apps-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 58px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--apps-border);
+  color: var(--apps-muted);
+  font-size: 11px;
+}
+.sunny-apps-card-footer > span { min-width: 0; }
+.sunny-apps-card-footer > button, .sunny-apps-card-footer > a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  flex-shrink: 0;
+  padding: 7px 9px;
+  border-radius: 7px;
+  background: #0e2e56;
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+}
+.sunny-apps-card-footer > button:disabled { opacity: .45; cursor: not-allowed; }
+.sunny-apps-card-footer > a { background: #e8f7ee; color: #176534; }
 .sunny-apps-stage { display: flex; flex-direction: column; }
 .sunny-apps-stage > header {
   display: flex;
@@ -389,7 +416,17 @@
 }
 .sunny-apps-ready > span { padding: 4px 8px; border-radius: 99px; background: #ecfdf5; color: #047857; font-size: 11px; }
 .sunny-apps-ready strong { font-size: 13px; }
-.sunny-apps-ready button { width: 100%; padding: 9px 12px; border-radius: 4px; background: #0e2e56; color: white; }
+.sunny-apps-ready button, .sunny-apps-ready a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 4px;
+  background: #0e2e56;
+  color: white;
+}
 .sunny-apps-backdrop { display: none; }
 .sunny-apps-mobile-toggle, .sunny-apps-mobile-close { display: none; }
 @media (max-width: 760px) {

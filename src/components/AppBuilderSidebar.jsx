@@ -36,6 +36,8 @@ import { suggestAppName } from "@/lib/appName";
 import { buildCustomInstructions } from "@/lib/builderInstructions";
 import { addAppToMyWidgets } from "@/lib/myWidgets";
 import { announceAppRebuilt } from "@/lib/appRefresh";
+import { useMarketChanges } from "@/lib/marketEvents";
+import { marketPublishState } from "@/lib/marketPublishState";
 import { Widget as WidgetEntity } from "@/lib/entityClient";
 import AppPreviewModal from "@/components/AppPreviewModal";
 import { Textarea } from "@/components/ui/textarea";
@@ -54,6 +56,7 @@ import {
   LayoutGrid,
   Sparkles,
   Hammer,
+  Store,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
@@ -190,6 +193,7 @@ export default function AppBuilderSidebar({
   onActiveAppChange,
   onAppCreated,
   onGoHome,
+  marketListing,
 }) {
   // App build state
   const [apps, setApps] = useState([]);
@@ -283,7 +287,20 @@ export default function AppBuilderSidebar({
   const cameFromWidgetPicker = origin === "home-widget";
   const cameFromMarket = origin === "market";
   const [marketApp, setMarketApp] = useState(null);
-  const [listedInMarket, setListedInMarket] = useState(false);
+  const [ownListings, setOwnListings] = useState({});
+  const refreshMarketListings = useCallback(() => {
+    fetch("/api/marketplace", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "mine" }),
+    }).then((response) => response.ok ? response.json() : { listings: [] })
+      .then(({ listings = [] }) => setOwnListings(Object.fromEntries(listings.map((item) => [item.app_id, item]))))
+      .catch(() => {});
+  }, []);
+  useEffect(() => { if (open && !embedded) refreshMarketListings(); }, [open, embedded, refreshMarketListings]);
+  useMarketChanges(refreshMarketListings);
+  const activeMarketListing = embedded ? marketListing : ownListings[activeAppId];
+  const marketState = activeApp ? marketPublishState(activeApp, activeMarketListing, editedSinceDeploy) : "unlisted";
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -476,28 +493,9 @@ export default function AppBuilderSidebar({
     }
   };
 
-  /**
-   * Deploy, then ask for the listing. Deploying first is not optional: a listing
-   * snapshots the app's deployed URL, and installers load that build rather than the
-   * author's preview sandbox.
-   */
-  const addToMarket = async () => {
-    if (!activeAppId || isSavingToMyTools) return;
-    setPendingSave("market");
-    try {
-      await platform.deployApp(activeAppId);
-      // getApp directly, not refresh(): the dialog needs `last_deployed_at` and the
-      // slug from *this* moment, and refresh() commits to state without returning.
-      const fresh = await platform.getApp(activeAppId);
-      await refresh(activeAppId);
-      announceAppRebuilt(activeAppId);
-      setMarketApp({ ...fresh, id: activeAppId });
-    } catch (err) {
-      if (platform.isNotLinkedError(err)) setLinked(false);
-      setError(err.message);
-    } finally {
-      setPendingSave(null);
-    }
+  const addToMarket = () => {
+    if (!activeAppId || isSavingToMyTools || isBuilding) return;
+    setMarketApp(activeApp);
   };
 
   const handleRenamed = useCallback((id, name) => {
@@ -990,7 +988,7 @@ export default function AppBuilderSidebar({
                         offerMarket={cameFromMarket}
                         onAddToMarket={addToMarket}
                         isAddingToMarket={pendingSave === "market"}
-                        isAddedToMarket={listedInMarket}
+                        isAddedToMarket={marketState === "live"}
                         offerMyWidgets={cameFromWidgetPicker}
                         onAddToMyWidgets={addToMyWidgets}
                         isAddingToMyWidgets={pendingSave === "widgets"}
@@ -1012,6 +1010,9 @@ export default function AppBuilderSidebar({
                     <section className="sunny-apps-ready" aria-label="App ready">
                       <span>✓ Ready</span>
                       <strong>{activeApp?.name || "Your app"}</strong>
+                      {marketState === "live"
+                        ? <Link href="/market"><Store size={14} /> Live in app market</Link>
+                        : <button onClick={addToMarket}><Store size={14} /> Publish to market</button>}
                       <button onClick={onGoHome}>See it in all apps →</button>
                     </section>
                   )}
@@ -1076,9 +1077,12 @@ export default function AppBuilderSidebar({
             <PublishDialog
               app={marketApp}
               onClose={() => setMarketApp(null)}
-              onDone={() => {
+              onDone={(fresh) => {
                 setMarketApp(null);
-                setListedInMarket(true);
+                setEditedAppId(null);
+                setActiveApp((current) => current?.id === fresh.id ? { ...current, ...fresh } : current);
+                refreshMarketListings();
+                void refresh(fresh.id);
               }}
             />
           )}

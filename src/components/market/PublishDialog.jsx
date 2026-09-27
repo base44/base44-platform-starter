@@ -9,41 +9,24 @@ import { announceMarketChanged } from "@/lib/marketEvents";
 /**
  * Offer an app to everyone else. The embed URL is snapshotted here because an
  * installer's Base44 principal cannot resolve it later — which is also why the app has
- * to be deployed, not just previewed. An undeployed app therefore never reaches the
- * listing form: it gets the deploy gate below instead.
+ * to be deployed, not just previewed. Each market publish deploys the current
+ * build before updating the listing snapshot.
  */
 export default function PublishDialog({ app, onClose, onDone }) {
   const [title, setTitle] = useState(app.name || "Untitled");
   const [tagline, setTagline] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  // Local, not `app`: deploying from the gate has to move the dialog on without
-  // the caller re-fetching the app for us.
-  const [deployedAt, setDeployedAt] = useState(app.last_deployed_at ?? null);
-  const [slug, setSlug] = useState(app.slug ?? null);
-
-  const deploy = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      await platform.deployApp(app.id);
-      // The slug and the deploy stamp both come from after the deploy; the listing
-      // URL is built from them.
-      const fresh = await platform.getApp(app.id);
-      setSlug(fresh.slug ?? slug);
-      setDeployedAt(fresh.last_deployed_at ?? new Date().toISOString());
-      announceAppRebuilt(app.id);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const submit = async () => {
     setBusy(true);
     setError(null);
     try {
+      await platform.deployApp(app.id);
+      const fresh = await platform.getApp(app.id);
+      announceAppRebuilt(app.id);
+      const slug = fresh.slug || app.slug;
+      if (!slug) throw new Error("The deployed app has no URL yet. Try again in a moment.");
       const res = await fetch("/api/marketplace", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -54,13 +37,13 @@ export default function PublishDialog({ app, onClose, onDone }) {
           tagline,
           app_slug: slug,
           app_url: platform.publishedUrl(slug),
-          screenshot_url: app.preview_screenshot_url || app.social_image_url || null,
+          screenshot_url: fresh.preview_screenshot_url || fresh.social_image_url || app.preview_screenshot_url || null,
         }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || `Publish failed (${res.status})`);
       announceMarketChanged();
-      onDone();
+      onDone(fresh);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -76,36 +59,12 @@ export default function PublishDialog({ app, onClose, onDone }) {
     </div>
   );
 
-  if (!deployedAt) {
-    return shell(
-      <>
-        <h2 className="font-display text-lg text-foreground">Publish the app first</h2>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Installers load the deployed build, not your preview sandbox. Publish it and it can go
-          in the market.
-        </p>
-
-        {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
-
-        <div className="mt-5 flex justify-end gap-2">
-          <button onClick={onClose} disabled={busy} className="rounded-md border border-border px-3 py-1.5 text-sm disabled:opacity-40">
-            Cancel
-          </button>
-          <button onClick={deploy} disabled={busy}
-            className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-40">
-            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Rocket className="h-3.5 w-3.5" />}
-            {busy ? "Publishing…" : "Publish app"}
-          </button>
-        </div>
-      </>,
-    );
-  }
-
   return shell(
     <>
       <h2 className="font-display text-lg text-foreground">Publish to the market</h2>
       <p className="mt-1 text-xs text-muted-foreground">
-        Anyone in Sunny will be able to install it. They run the same deployment you do, on
+        This publishes your latest changes, then makes the app available in Sunny Market.
+        Anyone in Sunny can install it. They run the same deployment you do, on
         their own boards — you never see their data and they never see yours.
       </p>
 
@@ -126,10 +85,11 @@ export default function PublishDialog({ app, onClose, onDone }) {
       {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
 
       <div className="mt-5 flex justify-end gap-2">
-        <button onClick={onClose} className="rounded-md border border-border px-3 py-1.5 text-sm">Cancel</button>
+        <button onClick={onClose} disabled={busy} className="rounded-md border border-border px-3 py-1.5 text-sm disabled:opacity-40">Cancel</button>
         <button disabled={busy || !title.trim()} onClick={submit}
-          className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-40">
-          {busy ? "Publishing…" : "Publish"}
+          className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-40">
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Rocket className="h-3.5 w-3.5" />}
+          {busy ? "Publishing…" : "Publish to market"}
         </button>
       </div>
     </>,

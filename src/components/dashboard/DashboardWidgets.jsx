@@ -113,7 +113,6 @@ function WidgetFrame({
   onRemove,
   onUpdate,
   onExpand,
-  deployedAt,
   metaReady,
   canEdit,
   highlight,
@@ -140,22 +139,12 @@ function WidgetFrame({
       window.removeEventListener("mouseup", h.onUp);
     };
   }, []);
-  // Embed the sandbox preview — it renders whether or not the app is deployed and
-  // loads without a token (apps are public_without_login); the viewer token is what
-  // lets it read data. A widget stays inside the shell: "open larger" is a modal
-  // over this same URL, never a tab or a route.
-  // Points at the deployed build: served statically, never asleep. The sandbox
-  // preview boots on demand and answers with an error payload while it starts —
-  // which a frame renders as raw JSON — so it is only the never-deployed fallback.
-  // A slug means "addressable by convention", which an installed app is not: it is
-  // pinned with no slug and carries its listing's snapshot URL. Deriving a host from an
-  // app id here is how you get Base44 answering "App not found" inside the frame.
-  const baseUrl = !widget.app_slug
-    ? widget.preview_url || null
-    : deployedAt
-      ? platform.publishedUrl(widget.app_slug)
-      : platform.previewUrl(widget.app_slug);
-  const target = widget.app_slug && !deployedAt ? "latest_preview" : null;
+  // Built widgets always show the author's latest preview. Installed market
+  // widgets have no slug and retain the listing's published URL snapshot.
+  const baseUrl = widget.app_slug
+    ? platform.previewUrl(widget.app_slug)
+    : widget.preview_url || null;
+  const target = widget.app_slug ? "latest_preview" : null;
   const rebuildNonce = useAppRebuildNonce(widget.app_id);
   const plainUrl = withNonce(baseUrl, rebuildNonce);
   const { src: url } = useEmbedSrc(widget.app_id, plainUrl, rebuildNonce, target);
@@ -373,9 +362,7 @@ export default function DashboardWidgets({
 }) {
   // One modal for the list rather than one per card: only ever one is open.
   const [expanded, setExpanded] = useState(null);
-  // app id -> last_deployed_at, one list call for every card. Null = not yet known.
-  //
-  // Doubles as the authorship check: `listAppsForUser` returns the apps this user
+  // Authorship check: `listAppsForUser` returns the apps this user
   // built (all of the folder, for an admin), so a key here means the pencil is
   // theirs to offer. An installed app is pinned by its installer and never appears.
   const [appMeta, setAppMeta] = useState(null);
@@ -388,7 +375,7 @@ export default function DashboardWidgets({
         .then((apps) => {
           if (cancelled) return;
           const map = {};
-          for (const a of apps || []) map[a.id] = a.last_deployed_at ?? null;
+          for (const a of apps || []) map[a.id] = true;
           setAppMeta(map);
         })
         // Never spin forever: an empty map falls back to the sandbox preview.
@@ -397,7 +384,7 @@ export default function DashboardWidgets({
         });
 
     load();
-    // A deploy flips an app from sandbox-only to deployed, so re-read.
+    // Re-read when an app is created or rebuilt.
     const onRebuilt = () => load();
     window.addEventListener(APP_REBUILT, onRebuilt);
     return () => {
@@ -453,7 +440,6 @@ export default function DashboardWidgets({
               onRemove={onRemove}
               onUpdate={handleUpdate}
               onExpand={setExpanded}
-              deployedAt={appMeta ? (appMeta[w.app_id] ?? null) : null}
               metaReady={appMeta !== null}
               canEdit={Boolean(appMeta && Object.hasOwn(appMeta, w.app_id))}
               highlight={w.id === highlightId}
