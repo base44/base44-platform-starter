@@ -13,7 +13,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useAppFrameAuth } from "@/lib/appFrameAuth";
 import { useEmbedSrc } from "@/lib/embedFrame";
-import { useAppRebuildNonce, useAppRemoved, withNonce } from "@/lib/appRefresh";
+import { useAppRebuildNonce, useAppRemoved, useAppsChanged, withNonce } from "@/lib/appRefresh";
 import { listUsableApps } from "@/lib/usableApps";
 import PublishDialog from "@/components/market/PublishDialog";
 import AppNameField from "@/components/AppNameField";
@@ -94,6 +94,13 @@ export default function MyTools() {
   useAppRemoved((appId) => {
     setApps((prev) => prev.filter((a) => a.id !== appId));
     setSelectedApp((prev) => (prev?.id === appId ? null : prev));
+  });
+
+  // Then read the list again: a restored app only reappears this way.
+  useAppsChanged(() => {
+    listUsableApps()
+      .then((list) => setApps(list.filter((a) => a.source === "built")))
+      .catch(() => {});
   });
 
   if (selectedApp) {

@@ -39,7 +39,10 @@
  *     accept and can end with the endpoint paused, losing the events we do want.
  *   * **400** — the signature did not verify. Deliberately not 2xx: a real
  *     mismatch should be visible to whoever is looking at delivery logs, and the
- *     retry costs nothing while a key rotation settles.
+ *     retry costs nothing while a newly pinned key is deployed.
+ *   * **500** before verifying — `BASE44_WEBHOOK_PUBLIC_KEYS` is missing or
+ *     malformed. The event is fine; this deployment is not, so it stays on the
+ *     retry ladder until the key is deployed.
  *   * **500** — we accepted it and then failed to store it. Retrying is exactly
  *     right; the row we already wrote makes the retry idempotent.
  *
@@ -62,7 +65,7 @@ import {
   type CloudEvent,
   projectEvent,
 } from "@/lib/base44WebhookEvents";
-import { verifyWebhook } from "@/lib/base44WebhookSignature";
+import { type VerificationResult, verifyWebhook } from "@/lib/base44WebhookSignature";
 import { prisma } from "@/lib/prisma";
 
 // node:crypto for Ed25519 verification, so this cannot run on the edge runtime.
@@ -77,7 +80,15 @@ function workspaceFromSource(source: string): string | null {
 export async function POST(request: Request) {
   const rawBody = await request.text();
 
-  const verified = await verifyWebhook(request.headers, rawBody);
+  let verified: VerificationResult;
+  try {
+    verified = verifyWebhook(request.headers, rawBody);
+  } catch (err) {
+    // No pinned key, or a malformed one: this deployment's fault, not the
+    // sender's, so 500 keeps the event on Base44's retry ladder until it is fixed.
+    console.error("[base44-webhook] cannot verify:", err instanceof Error ? err.message : err);
+    return NextResponse.json({ error: "receiver_misconfigured" }, { status: 500 });
+  }
   if (!verified.ok) {
     console.warn("[base44-webhook] rejected:", verified.reason);
     return NextResponse.json({ error: "invalid_signature" }, { status: 400 });

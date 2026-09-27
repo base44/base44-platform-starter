@@ -4,7 +4,7 @@
  *   npm run webhook:smoke
  *
  * Unlike the other smoke suites this one needs no dev server and no database:
- * it mints its own Ed25519 keypair, stubs the key-set fetch, and drives
+ * it mints its own Ed25519 keypair, pins its public half, and drives
  * `verifyWebhook` directly. So it is safe to run anywhere, and it is the check
  * worth running after touching anything in src/lib/base44WebhookSignature.ts.
  *
@@ -14,18 +14,15 @@
  * an unknown key and a stale timestamp are each refused, and refused for the
  * stated reason.
  *
- * Both key sources are covered, and the fetch counter is what proves the pinned
- * one: a pinned deployment that quietly still reached the network would pass
- * every correctness assertion while keeping the runtime dependency pinning
- * exists to remove.
+ * `fetch` is replaced with one that fails the suite: verification is local by
+ * design, and a verifier that quietly reached the network would pass every
+ * correctness assertion while bringing back a request-path dependency.
  */
 
 import crypto from "node:crypto";
 
-import { orgId, platformHost } from "../src/lib/base44Config";
-import { resetKeySetCache, verifyWebhook } from "../src/lib/base44WebhookSignature";
-
-const KEYS_URL = `${platformHost()}/api/workspace/public/outbound-webhooks/${orgId()}/keys`;
+import { MissingConfigError, orgId } from "../src/lib/base44Config";
+import { verifyWebhook } from "../src/lib/base44WebhookSignature";
 
 type Signer = { privateKey: crypto.KeyObject; wire: string };
 
@@ -40,24 +37,12 @@ function mint(): Signer {
 const known = mint();
 const stranger = mint();
 
-let published: Signer[] = [known];
-let fetches = 0;
+process.env.BASE44_WEBHOOK_PUBLIC_KEYS = known.wire;
 
-globalThis.fetch = (async (url: string | URL) => {
+let fetches = 0;
+globalThis.fetch = (async () => {
   fetches += 1;
-  if (String(url) !== KEYS_URL) throw new Error(`unexpected fetch: ${url}`);
-  return {
-    ok: true,
-    status: 200,
-    json: async () => ({
-      signature_scheme: "v1a",
-      keys: published.map((signer, i) => ({
-        kid: `whk_${i + 1}`,
-        public_key: signer.wire,
-        algorithm: "ed25519_v1",
-      })),
-    }),
-  };
+  throw new Error("verification made a network call");
 }) as unknown as typeof fetch;
 
 const BODY = JSON.stringify({
@@ -92,20 +77,31 @@ function signedHeaders(
 
 let failed = 0;
 
-async function expect(name: string, want: true | string, headers: Headers, body = BODY) {
-  const result = await verifyWebhook(headers, body);
+function expect(name: string, want: true | string, headers: Headers, body = BODY) {
+  const result = verifyWebhook(headers, body);
   const got = result.ok ? "ok" : result.reason;
   const pass = want === true ? result.ok : got === want;
   if (!pass) failed += 1;
   console.log(`${pass ? "  ok  " : " FAIL "} ${name} -> ${got}`);
 }
 
-async function main() {
+function throws(name: string, run: () => unknown, match: (err: unknown) => boolean = () => true) {
+  let pass = false;
+  try {
+    run();
+  } catch (err) {
+    pass = match(err);
+  }
+  if (!pass) failed += 1;
+  console.log(`${pass ? "  ok  " : " FAIL "} ${name}`);
+}
+
+function main() {
   console.log("boundary 5: inbound webhook signature\n");
 
-  await expect("a genuine signature verifies", true, signedHeaders());
+  expect("a genuine signature verifies", true, signedHeaders());
 
-  await expect(
+  expect(
     "a tampered body is refused",
     "signature_mismatch",
     signedHeaders(),
@@ -116,98 +112,69 @@ async function main() {
   // relabel a captured delivery so it reads as a new event to de-duplication.
   const relabelled = new Headers(signedHeaders({ id: "evt_captured" }));
   relabelled.set("webhook-id", "evt_replayed");
-  await expect("a relabelled replay is refused", "signature_mismatch", relabelled);
+  expect("a relabelled replay is refused", "signature_mismatch", relabelled);
 
-  await expect(
-    "a signature from an unpublished key is refused",
+  expect(
+    "a signature from an unpinned key is refused",
     "signature_mismatch",
     signedHeaders({ signers: [stranger] }),
   );
 
-  await expect(
+  expect(
     "a stale timestamp is refused even though it verifies",
     "timestamp_outside_tolerance",
     signedHeaders({ ts: Math.floor(Date.now() / 1000) - 400 }),
   );
 
-  await expect(
+  expect(
     "missing headers are refused",
     "missing_headers",
     new Headers({ "webhook-id": "evt_smoke" }),
   );
 
-  await expect(
+  expect(
     "an unknown signature scheme is refused",
     "no_signature_entries",
     signedHeaders({ scheme: "v1" }),
   );
 
-  await expect(
+  expect(
     "a rotation header with two entries verifies on the known key",
     true,
     signedHeaders({ signers: [stranger, known] }),
   );
 
-  // Rotation must not strand a receiver holding a cached key set: `v1a` carries
-  // no key id, so a rotated key is indistinguishable from a forgery until the
-  // set is refetched once.
-  resetKeySetCache();
-  await verifyWebhook(signedHeaders(), BODY);
-  published = [stranger];
-  const before = fetches;
-  await expect(
-    "a key rotated after the cache was filled verifies after one refetch",
-    true,
-    signedHeaders({ signers: [stranger] }),
-  );
-  if (fetches - before !== 1) {
-    failed += 1;
-    console.log(` FAIL expected exactly one refetch, saw ${fetches - before}`);
-  }
-
-  // --- pinned keys: the same verifier, with no network at all ---------------
-  resetKeySetCache();
-  process.env.BASE44_WEBHOOK_PUBLIC_KEYS = known.wire;
-  let pinnedFetches = fetches;
-  await expect("a pinned key verifies a genuine signature", true, signedHeaders());
-  if (fetches !== pinnedFetches) {
-    failed += 1;
-    console.log(" FAIL pinned verification still fetched the key set");
-  }
-
-  // The refetch-on-mismatch path must NOT run when pinned: there is no newer
-  // answer, and reaching for one would restore the dependency.
-  pinnedFetches = fetches;
-  await expect(
-    "a pinned key refuses a signature it does not cover",
-    "signature_mismatch",
-    signedHeaders({ signers: [stranger] }),
-  );
-  if (fetches !== pinnedFetches) {
-    failed += 1;
-    console.log(" FAIL a pinned mismatch refetched the key set");
-  }
-
-  // Two pinned keys is how a rotation is survived without a redeploy mid-window.
+  // Two pinned keys is how a rotation is survived: both are valid inside
+  // Base44's overlap window, and either may be the one a delivery is signed with.
   process.env.BASE44_WEBHOOK_PUBLIC_KEYS = `${stranger.wire} ${known.wire}`;
-  await expect("both keys of a pinned rotation verify", true, signedHeaders());
+  expect("both keys of a pinned rotation verify", true, signedHeaders());
+  expect("the incoming key of a rotation verifies too", true, signedHeaders({ signers: [stranger] }));
 
   // A key truncated by a copy-paste must fail loudly. Silently verifying
   // nothing would look exactly like every event being forged.
   process.env.BASE44_WEBHOOK_PUBLIC_KEYS = known.wire.slice(0, -8);
-  let threw = false;
-  try {
-    await verifyWebhook(signedHeaders(), BODY);
-  } catch {
-    threw = true;
-  }
-  console.log(`${threw ? "  ok  " : " FAIL "} a truncated pinned key throws rather than verifying nothing`);
-  if (!threw) failed += 1;
+  throws("a truncated pinned key throws rather than verifying nothing", () =>
+    verifyWebhook(signedHeaders(), BODY),
+  );
 
+  // No key at all is a deployment that cannot verify anything: the route turns
+  // this into a 500, so Base44 keeps the event until the key is deployed.
   delete process.env.BASE44_WEBHOOK_PUBLIC_KEYS;
+  throws(
+    "no pinned key throws MissingConfigError",
+    () => verifyWebhook(signedHeaders(), BODY),
+    (err) => err instanceof MissingConfigError && err.variable === "BASE44_WEBHOOK_PUBLIC_KEYS",
+  );
+
+  if (fetches !== 0) {
+    failed += 1;
+    console.log(` FAIL verification made ${fetches} network call(s)`);
+  } else {
+    console.log("  ok   no check made a network call");
+  }
 
   console.log(failed === 0 ? "\nall checks passed" : `\n${failed} check(s) FAILED`);
   process.exit(failed === 0 ? 0 : 1);
 }
 
-void main();
+main();

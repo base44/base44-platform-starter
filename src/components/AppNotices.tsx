@@ -25,15 +25,17 @@
  *
  * The rows are already gone by the time a notice exists — this does not perform
  * the removal, it reports one. `widgets-updated` makes the dashboard re-read
- * (the pin it was rendering no longer exists) and `APP_REMOVED` lets the apps
- * list drop the card, and close it if that app is the one on screen.
+ * (the pin it was rendering no longer exists), `APP_REMOVED` closes the app if
+ * it is the one on screen, and `APPS_CHANGED` makes every open app list — the
+ * builder drawer and My apps — read the list again, which is also the only way
+ * a restored app comes back into view.
  */
 
 import { useEffect } from "react";
 import { useSession } from "next-auth/react";
 
 import { useToast } from "@/components/ui/toast";
-import { announceAppRemoved } from "@/lib/appRefresh";
+import { announceAppRemoved, announceAppsChanged } from "@/lib/appRefresh";
 
 type Notice = { app_id: string; app_name: string | null; kind: "deleted" | "restored" };
 
@@ -84,6 +86,7 @@ export default function AppNotices() {
       }
       // The dashboard's pins are rows, so it has to re-read to see one go.
       window.dispatchEvent(new CustomEvent("widgets-updated"));
+      announceAppsChanged();
     };
 
     void claim();

@@ -10,6 +10,10 @@
  * src/lib/base44AppMirror.ts. The removal already happened server-side; this is
  * how a page that is *already open* stops showing it, rather than waiting for a
  * reload.
+ *
+ * **Changed.** Any deletion or restore the shell was told about. The list a page
+ * holds is a copy of `listAppsForUser`, so the one correct response is to read
+ * it again — a restored app can only reappear that way.
  */
 import { useEffect, useRef, useState } from "react";
 
@@ -71,5 +75,27 @@ export function useAppRemoved(onRemoved: (appId: string) => void): void {
     };
     window.addEventListener(APP_REMOVED, fire);
     return () => window.removeEventListener(APP_REMOVED, fire);
+  }, []);
+}
+
+/** The set of apps a user has changed server-side; any open list is stale. */
+export const APPS_CHANGED = "base44-apps-changed";
+
+export function announceAppsChanged(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(APPS_CHANGED));
+}
+
+/** Calls `onChanged()` whenever the user's apps change server-side. Ref-held like `useAppRemoved`. */
+export function useAppsChanged(onChanged: () => void): void {
+  const latest = useRef(onChanged);
+  useEffect(() => {
+    latest.current = onChanged;
+  }, [onChanged]);
+
+  useEffect(() => {
+    const fire = () => latest.current();
+    window.addEventListener(APPS_CHANGED, fire);
+    return () => window.removeEventListener(APPS_CHANGED, fire);
   }, []);
 }
