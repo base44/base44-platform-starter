@@ -182,7 +182,7 @@ export default function AppShell({ children }) {
   return (
     <div
       className={`min-h-screen flex flex-col bg-background transition-all duration-300 ${
-        builderOpen ? "md:mr-[380px]" : ""
+        builderOpen && pathname !== "/apps" ? "md:mr-[380px]" : ""
       }`}
     >
       <nav className="bg-card border-b border-border shadow-sm sticky top-0 z-30">
@@ -213,7 +213,7 @@ export default function AppShell({ children }) {
             </div>
 
             <div className="hidden md:flex items-center gap-3 ml-auto justify-end flex-1">
-              {!builderOpen && (
+              {pathname !== "/apps" && !builderOpen && (
                 <button
                   onClick={() => openAssistant()}
                   className="flex items-center gap-2 text-sm font-medium bg-primary text-primary-foreground px-3.5 py-1.5 rounded-md hover:bg-primary/90 transition-colors shadow-sm"
@@ -226,13 +226,13 @@ export default function AppShell({ children }) {
             </div>
 
             <div className="md:hidden ml-auto flex items-center gap-2">
-              <button
+              {pathname !== "/apps" && <button
                 onClick={() => openAssistant()}
                 aria-label="Open the Assistant"
                 className="flex items-center justify-center min-w-[40px] min-h-[40px] text-xs font-medium bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors"
               >
                 <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />
-              </button>
+              </button>}
               <AccountMenu />
               <button
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -274,7 +274,7 @@ export default function AppShell({ children }) {
 
       <main className="flex-1 overflow-y-auto overflow-x-hidden">{children}</main>
 
-      {builderLoaded && (
+      {builderLoaded && pathname !== "/apps" && (
         <AppBuilderSidebar
           open={builderOpen}
           onClose={() => setBuilderOpenPersisted(false)}

@@ -1,241 +1,250 @@
-/**
- * "My apps" — the apps this user built, embedded full-height.
- *
- * Authorship is the line: everything here is the user's own code, so everything here
- * can be renamed, edited in the builder and published. Apps installed from the market
- * are somebody else's code the user was granted the right to run, and they live in the
- * market under Installed. The route stays `/apps`: `?app=` deep links point at it.
- *
- * The source is the Base44 folder, filtered against local `AppOwnership` rows. The
- * frames load without a token — built apps are `public_without_login` — and then ask
- * for one to read data.
- */
-import React, { useState, useEffect, useRef, useCallback } from "react";
+"use client";
+
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowLeft, Loader2, Pencil, Plus, Store, Trash2 } from "lucide-react";
+import * as platform from "@/lib/base44Platform";
+import { AppOwnership } from "@/lib/entityClient";
 import { useAppFrameAuth } from "@/lib/appFrameAuth";
 import { useEmbedSrc } from "@/lib/embedFrame";
 import { useAppRebuildNonce, useAppRemoved, withNonce } from "@/lib/appRefresh";
-import { listUsableApps } from "@/lib/usableApps";
-import PublishDialog from "@/components/market/PublishDialog";
-import AppNameField from "@/components/AppNameField";
+import { useAuth } from "@/lib/AuthContext";
 import { useMarketChanges } from "@/lib/marketEvents";
-import { Loader2, ArrowLeft, ExternalLink, Pencil, Store } from "lucide-react";
+import AppBuilderSidebar from "@/components/AppBuilderSidebar";
+import PublishDialog from "@/components/market/PublishDialog";
+
+function previewUrl(result) {
+  const raw = result?.preview_url || result?.url;
+  if (!raw) return null;
+  try {
+    const url = new URL(raw.includes("://") ? raw : `https://${raw}`);
+    if (url.protocol !== "https:" || url.username || url.password) return null;
+    if (result.preview_token) url.searchParams.set("_preview_token", result.preview_token);
+    url.searchParams.set("server_url", url.origin);
+    url.searchParams.set("hide_badge", "true");
+    url.searchParams.set("analytics-enable", "false");
+    return url.href;
+  } catch {
+    return null;
+  }
+}
+
+function LivePreview({ app }) {
+  const [url, setUrl] = useState(null);
+  const [error, setError] = useState("");
+  const [version, setVersion] = useState(0);
+  const frameRef = useRef(null);
+  const rebuildNonce = useAppRebuildNonce(app.id);
+  const { src: framedUrl } = useEmbedSrc(app.id, url, rebuildNonce + version, "live_preview");
+  useAppFrameAuth(frameRef, app.id, framedUrl);
+
+  useEffect(() => {
+    let cancelled = false;
+    setUrl(null);
+    setError("");
+    (async () => {
+      for (let attempt = 0; attempt < 20 && !cancelled; attempt++) {
+        try {
+          const found = previewUrl(await platform.getPreviewUrl(app.id));
+          if (found) {
+            if (!cancelled) setUrl(found);
+            return;
+          }
+        } catch (err) {
+          if (attempt === 19 && !cancelled) setError(err.message);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+      if (!cancelled) setError((current) => current || "The live preview is not ready yet.");
+    })();
+    return () => { cancelled = true; };
+  }, [app.id, app.last_git_commit_hash, app.status?.state, version]);
+
+  return <div className="sunny-apps-live" aria-label={`${app.name || "Untitled"} preview`}>
+    {url
+      ? <iframe ref={frameRef} key={framedUrl} src={framedUrl} title={`${app.name || "Untitled"} preview`} allow="fullscreen" />
+      : <div className="sunny-apps-placeholder" role="status">
+          {!error && <Loader2 className="animate-spin" size={20} />}
+          {error || "Starting your preview…"}
+        </div>}
+    <div className="sunny-apps-preview-controls">
+      <span>{url ? "Live preview" : error || "Starting live preview…"}</span>
+      <button onClick={() => setVersion((value) => value + 1)}>Refresh preview</button>
+    </div>
+  </div>;
+}
+
+function StaticPreview({ app }) {
+  const frameRef = useRef(null);
+  const rebuildNonce = useAppRebuildNonce(app.id);
+  const published = app.last_deployed_at ? platform.publishedUrl(app.slug) : null;
+  const url = published || platform.previewUrl(app.slug);
+  const { src } = useEmbedSrc(app.id, withNonce(url, rebuildNonce), rebuildNonce, published ? null : "latest_preview");
+  useAppFrameAuth(frameRef, app.id, src);
+  if (!url) return app.preview_screenshot_url || app.logo_url
+    ? <img src={app.preview_screenshot_url || app.logo_url} alt="" />
+    : <span>No built preview is available yet. Open the assistant to build this app.</span>;
+  return <iframe ref={frameRef} src={src} title={`${app.name || "Untitled"} widget preview`} tabIndex={-1} />;
+}
 
 export default function MyTools() {
+  const { b44Linked } = useAuth();
   const [apps, setApps] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [selectedApp, setSelectedApp] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [inApp, setInApp] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const [builderAppId, setBuilderAppId] = useState(null);
+  const [builderRequest, setBuilderRequest] = useState(0);
   const [publishing, setPublishing] = useState(null);
+  const [published, setPublished] = useState(new Set());
+  const [removing, setRemoving] = useState(null);
 
-  /** Which of these are already listed, so a card can say "In market". */
-  const refreshPublished = useCallback(async () => {
+  const loadApps = useCallback(async () => {
+    setLoading(true);
     try {
-      const res = await fetch("/api/marketplace", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "mine" }),
-      });
-      if (!res.ok) return;
-      const { listings = [] } = await res.json();
-      setPublished(new Set(listings.filter((l) => l.status === "published").map((l) => l.app_id)));
-    } catch {
-      // A card that does not know it is listed still works; it just offers Publish.
+      const list = await platform.listAppsForUser({ limit: 50 });
+      setApps(list);
+      setError("");
+      const requested = new URLSearchParams(window.location.search).get("app");
+      const match = requested && list.find((app) => app.id === requested);
+      if (match) {
+        setSelected(match);
+        setBuilderAppId(match.id);
+        setBuilderRequest((value) => value + 1);
+        setInApp(true);
+        setMobileOpen(true);
+      }
+    } catch (err) {
+      setError(err.message || "Could not load your apps.");
+    } finally {
+      setLoading(false);
     }
   }, []);
 
-  // Publishing can happen from the builder panel or the market page, not only here.
+  useEffect(() => {
+    if (b44Linked === true) void loadApps();
+    if (b44Linked === false) setLoading(false);
+  }, [b44Linked, loadApps]);
+  const refreshPublished = useCallback(() => {
+    fetch("/api/marketplace", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "mine" }),
+    })
+      .then((response) => response.ok ? response.json() : { listings: [] })
+      .then(({ listings = [] }) => setPublished(new Set(
+        listings.filter((item) => item.status === "published").map((item) => item.app_id),
+      )))
+      .catch(() => {});
+  }, []);
+  useEffect(() => { refreshPublished(); }, [refreshPublished]);
   useMarketChanges(refreshPublished);
 
-  const [published, setPublished] = useState(new Set());
-  const frameRef = useRef(null);
-
-  // Same handshake the dashboard widgets use: the frame has no session, so it asks
-  // this page for a token scoped to whoever is signed in.
-  const baseUrl = selectedApp?.url ?? null;
-
-  const rebuildNonce = useAppRebuildNonce(selectedApp?.id ?? null);
-  const selectedUrl = withNonce(baseUrl, rebuildNonce);
-  const { src: framedUrl } = useEmbedSrc(selectedApp?.id ?? null, selectedUrl, rebuildNonce, selectedApp?.target ?? null);
-  useAppFrameAuth(frameRef, selectedApp?.id ?? null, framedUrl);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        // Built only. `listUsableApps()` also carries installed apps, for Home's
-        // widget picker — this page is the authoring view, not the launcher.
-        const list = (await listUsableApps()).filter((a) => a.source === "built");
-        setApps(list);
-
-        void refreshPublished();
-        // Auto-select app from ?app= query param
-        const appId = new URLSearchParams(window.location.search).get("app");
-        if (appId) {
-          const match = list.find((a) => a.id === appId);
-          if (match) setSelectedApp(match);
-        }
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setIsLoading(false);
-      }
-    })();
-    // refreshPublished is a stable useCallback, so this still runs once.
-  }, [refreshPublished]);
-
-  const handleRenamed = useCallback((id, name) => {
-    setApps((prev) => prev.map((a) => (a.id === id ? { ...a, name } : a)));
-    setSelectedApp((prev) => (prev?.id === id ? { ...prev, name } : prev));
+  const backToApps = useCallback(() => {
+    setInApp(false);
+    setMobileOpen(false);
+    setSelected(null);
+    setBuilderAppId(null);
+    setBuilderRequest((value) => value + 1);
   }, []);
-
-  // Base44 deleted it and the shell has already dropped its rows, so the list
-  // here is stale rather than authoritative. Closing it matters as much as
-  // removing the card: an open frame on a deleted app just fails, with nothing
-  // on screen to say why.
   useAppRemoved((appId) => {
-    setApps((prev) => prev.filter((a) => a.id !== appId));
-    setSelectedApp((prev) => (prev?.id === appId ? null : prev));
+    setApps((current) => current.filter((app) => app.id !== appId));
+    if (selected?.id === appId) backToApps();
   });
-
-  if (selectedApp) {
-    const url = selectedUrl;
-    return (
-      <div className="flex flex-col h-[calc(100vh-56px)]">
-        <div className="bg-card border-b border-border px-6 py-3 flex items-center gap-4 flex-shrink-0">
-          <button
-            onClick={() => setSelectedApp(null)}
-            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" /> Back
-          </button>
-          <AppNameField app={selectedApp} onRenamed={handleRenamed} className="max-w-xs" />
-          {url && (
-            <a
-              href={url}
-              target="_blank"
-              rel="noreferrer"
-              className="ml-auto flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Open <ExternalLink className="w-3 h-3" />
-            </a>
-          )}
-        </div>
-        {url ? (
-          <iframe
-            key={framedUrl}
-            ref={frameRef}
-            src={framedUrl}
-            className="flex-1 w-full border-0"
-            title={selectedApp.name}
-          />
-        ) : (
-          <div className="flex-1 flex items-center justify-center">
-            <p className="text-sm text-muted-foreground">No preview URL yet — deploy it first.</p>
-          </div>
-        )}
-      </div>
-    );
+  const openApp = useCallback((app = null) => {
+    setSelected(app);
+    setBuilderAppId(app?.id || null);
+    setBuilderRequest((value) => value + 1);
+    setInApp(true);
+    setMobileOpen(true);
+  }, []);
+  const onActiveAppChange = useCallback((app) => {
+    if (app) {
+      setSelected(app);
+      setApps((current) => current.map((item) => item.id === app.id ? { ...item, ...app } : item));
+    }
+  }, []);
+  const onAppCreated = useCallback((app) => {
+    setSelected(app);
+    setApps((current) => [app, ...current.filter((item) => item.id !== app.id)]);
+  }, []);
+  async function removeApp(app) {
+    if (removing) return;
+    setRemoving(app.id);
+    setError("");
+    try {
+      const rows = await AppOwnership.filter({ app_id: app.id });
+      for (const row of rows) await AppOwnership.delete(row.id);
+      setApps((current) => current.filter((item) => item.id !== app.id));
+    } catch (err) {
+      setError(err.message || "Could not remove the app from My apps.");
+    } finally {
+      setRemoving(null);
+    }
   }
 
-  return (
-    <div className="min-h-screen bg-background">
-      {publishing && (
-        <PublishDialog
-          app={publishing}
-          onClose={() => setPublishing(null)}
-          onDone={() => {
-            setPublished((p) => new Set(p).add(publishing.id));
-            setPublishing(null);
-          }}
-        />
-      )}
-      <div className="border-b border-border">
-        <div className="max-w-7xl mx-auto px-6 py-8 md:py-10">
-          <p className="text-xs font-medium text-muted-foreground mb-1">Workspace</p>
-          <h1 className="font-display text-3xl md:text-4xl text-foreground">My apps</h1>
-          <p className="text-muted-foreground text-sm mt-2">
-            Apps you built. Open one to use it, or publish it so anyone in Sunny can install it.
-          </p>
-        </div>
-      </div>
-
-      <div className="max-w-7xl mx-auto px-6 py-8">
-        {isLoading ? (
-          <div className="flex items-center justify-center py-24">
-            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-          </div>
-        ) : error ? (
-          <div className="py-24 text-center">
-            <p className="text-sm text-destructive">{error}</p>
-          </div>
-        ) : apps.length === 0 ? (
-          <div className="py-24 text-center">
-            <p className="text-sm text-muted-foreground">
-              You have not built an app yet. Build one with the Assistant — or install
-              somebody else&apos;s from the market.
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
-            {apps.map((app) => (
-              <div
-                key={app.id}
-                className="group text-left rounded-lg border border-border bg-card overflow-hidden shadow-sm hover:border-primary/40 hover:shadow-md transition-all"
-              >
-                <button onClick={() => setSelectedApp(app)} className="w-full block">
-                  <div className="aspect-[4/3] bg-muted overflow-hidden relative flex items-center justify-center">
-                    {app.screenshot ? (
-                      <img src={app.screenshot} alt={app.name} className="w-full h-full object-cover" />
-                    ) : (
-                      <span className="text-5xl font-display text-muted-foreground/20 select-none">
-                        {(app.name || "?")[0].toUpperCase()}
-                      </span>
-                    )}
-                  </div>
-                </button>
-                <div className="p-3 flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium text-foreground truncate">{app.name}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5 truncate">{app.subtitle}</p>
-                  </div>
-                  {/* Labelled: a storefront glyph does not say "offer this to people". */}
-                  <div className="flex flex-shrink-0 items-center gap-1">
-                    <button
-                      onClick={() => setPublishing(app.app)}
-                      className={`flex items-center gap-1 rounded px-1.5 py-1 text-[11px] font-medium transition-colors hover:bg-secondary ${
-                        published.has(app.id)
-                          ? "text-primary"
-                          : "text-muted-foreground hover:text-foreground"
-                      }`}
-                      title={
-                        published.has(app.id)
-                          ? "In the market — republish to update it"
-                          : "Offer this app to everyone in Sunny"
-                      }
-                    >
-                      <Store className="w-3.5 h-3.5" />
-                      {published.has(app.id) ? "In market" : "Publish"}
-                    </button>
-                    <button
-                      onClick={() => {
-                        setSelectedApp(app);
-                        window.dispatchEvent(
-                          new CustomEvent("open-assistant", {
-                            detail: { mode: "build", appId: app.id },
-                          }),
-                        );
-                      }}
-                      className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-                      title="Edit in builder"
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+  return <div className="sunny-apps">
+    <div className="sunny-apps-toolbar">
+      <strong>My apps</strong>
+      <button onClick={() => openApp()}><Plus size={16} /> New app</button>
     </div>
-  );
+    <div className="sunny-apps-body">
+      {inApp ? <main className="sunny-apps-stage">
+        <header>
+          <button className="sunny-apps-secondary" onClick={backToApps}><ArrowLeft size={16} /> All apps</button>
+          <strong>{selected?.name || "New app"}</strong>
+        </header>
+        <div className="sunny-apps-stage-content">
+          {selected
+            ? <LivePreview key={selected.id} app={selected} />
+            : <div className="sunny-apps-placeholder">Describe what you want to build. The preview appears here once the app exists.</div>}
+        </div>
+      </main> : <main className="sunny-apps-list">
+        {error && <div role="alert" className="sunny-apps-error">{error} <button onClick={loadApps}>Try again</button></div>}
+        {loading ? <div className="sunny-apps-placeholder"><Loader2 className="animate-spin" size={20} /> Loading your apps…</div>
+          : apps.length === 0 ? <div className="sunny-apps-placeholder">
+              <h2>Make room for your first idea</h2>
+              <p>Tell the assistant what you want to build.</p>
+              <button onClick={() => openApp()}><Plus size={16} /> Create an app</button>
+            </div>
+          : <div className="sunny-apps-grid">{apps.map((app) => {
+              const name = app.name || "Untitled";
+              return <article key={app.id} className="sunny-apps-card" aria-label={name}>
+                <header>
+                  <h2>{name}</h2>
+                  {app.status?.state === "processing" && <Loader2 className="animate-spin" size={14} />}
+                  <div className="sunny-apps-card-actions">
+                    <button aria-label={`Edit ${name}`} title="Open app" onClick={() => openApp(app)}><Pencil size={15} /></button>
+                    <button aria-label={`Remove ${name} from My apps`} title="Remove from My apps only" disabled={Boolean(removing)} onClick={() => void removeApp(app)}><Trash2 size={15} /></button>
+                    <button aria-label={`Publish ${name}`} title="Publish to Sunny Market" onClick={() => setPublishing(app)}><Store size={15} className={published.has(app.id) ? "text-primary" : ""} /></button>
+                  </div>
+                </header>
+                <button className="sunny-apps-card-preview" onClick={() => openApp(app)} aria-label={`Open ${name}`}>
+                  {app.status?.state === "processing"
+                    ? <span><Loader2 className="animate-spin" size={20} /> Generating your app…</span>
+                    : <StaticPreview app={app} />}
+                </button>
+              </article>;
+            })}</div>}
+      </main>}
+      <button className="sunny-apps-mobile-toggle" onClick={() => setMobileOpen(true)}>Assistant</button>
+      <AppBuilderSidebar
+        embedded
+        mobileExpanded={mobileOpen}
+        open
+        onClose={() => setMobileOpen(false)}
+        initialMode="build"
+        initialAppId={builderAppId}
+        requestId={builderRequest}
+        onActiveAppChange={onActiveAppChange}
+        onAppCreated={onAppCreated}
+        onGoHome={backToApps}
+      />
+    </div>
+    {publishing && <PublishDialog app={publishing} onClose={() => setPublishing(null)} onDone={() => {
+      setPublished((current) => new Set(current).add(publishing.id));
+      setPublishing(null);
+    }} />}
+  </div>;
 }
