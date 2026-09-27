@@ -332,7 +332,7 @@ its own, so the apps list would eventually self-correct — but a pinned widget 
 stored URL and is in no list. Without the event it sits on the dashboard indefinitely, showing an app
 that is not there.
 
-Register once per environment, and it prints the public key to pin:
+Register once per environment, and it prints the public key the receiver verifies against:
 
 ```bash
 npm run webhook:register -- --url https://your-shell.example.com
@@ -342,11 +342,11 @@ npm run webhook:register -- --url https://your-shell.example.com
 makes Base44 write an outbox row at all, so an unselected event costs nothing rather than arriving and
 being discarded.
 
-Verification material comes from one of two places, and `BASE44_WEBHOOK_PUBLIC_KEYS` picks. **Pinned**
-— paste the `whpk_` keys — and verification makes no network call, so a receiver that cannot reach
-Base44 still works; the cost is applying a key rotation yourself, inside Base44's dual-sign overlap.
-**Unset** and it fetches the published set, which handles rotation on its own. The pinned value is a
-public key, not a secret: it verifies signatures and cannot make them.
+Set the printed `BASE44_WEBHOOK_PUBLIC_KEYS` line in the receiver's env. It is required: the receiver
+verifies against those keys and nothing else, locally, with no network call. Registering is what
+mints the workspace's first key, so on a first run the probe cannot verify yet — deploy the key, then
+finish with `npm run webhook:register -- --activate <endpoint id>`. The value is a public key, not a
+secret: it verifies signatures and cannot make them.
 
 ```bash
 npm run webhook:smoke              # the signature, case by case — no server, no database

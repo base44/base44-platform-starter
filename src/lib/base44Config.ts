@@ -77,21 +77,24 @@ export const platformHost = () => required("BASE44_PLATFORM_HOST").replace(/\/+$
 export const appsFolderId = () => required("BASE44_APPS_FOLDER_ID");
 
 /**
- * The workspace's Ed25519 public keys, pinned in env instead of fetched.
+ * The workspace's Ed25519 public keys, which verify inbound webhooks.
  *
- * `whpk_`-prefixed, whitespace- or comma-separated, copied once out of the
- * published key set (`npm run webhook:register` prints them). Unset means fetch
- * — see src/lib/base44WebhookSignature.ts for what each mode costs.
+ * `whpk_`-prefixed, whitespace- or comma-separated, printed by
+ * `npm run webhook:register`. Required by the receiver: it verifies against
+ * these and nothing else — see src/lib/base44WebhookSignature.ts.
  *
  * **The one BASE44_* value that is not a secret.** It is a public key: it
  * verifies signatures and cannot produce them, so leaking it buys nothing. It
  * stays server-side anyway because nothing in the browser verifies webhooks.
  */
-export const webhookPublicKeys = (): string[] =>
-  (process.env.BASE44_WEBHOOK_PUBLIC_KEYS ?? "")
+export const webhookPublicKeys = (): string[] => {
+  const keys = (process.env.BASE44_WEBHOOK_PUBLIC_KEYS ?? "")
     .split(/[\s,]+/)
     .map((key) => key.trim())
     .filter((key) => key.length > 0);
+  if (keys.length === 0) throw new MissingConfigError("BASE44_WEBHOOK_PUBLIC_KEYS");
+  return keys;
+};
 
 /**
  * The `b44k_` key that registers this deployment's webhook endpoint. Needs

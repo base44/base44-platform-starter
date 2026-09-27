@@ -35,7 +35,7 @@ import { useAuth } from "@/lib/AuthContext";
 import { suggestAppName } from "@/lib/appName";
 import { buildCustomInstructions } from "@/lib/builderInstructions";
 import { addAppToMyWidgets } from "@/lib/myWidgets";
-import { announceAppRebuilt } from "@/lib/appRefresh";
+import { announceAppRebuilt, useAppRemoved, useAppsChanged } from "@/lib/appRefresh";
 import { Widget as WidgetEntity } from "@/lib/entityClient";
 import AppPreviewModal from "@/components/AppPreviewModal";
 import { Textarea } from "@/components/ui/textarea";
@@ -344,16 +344,39 @@ export default function AppBuilderSidebar({
     setLinked(b44Linked);
   }, [b44Linked]);
 
-  // Load apps whenever we enter build mode and are linked
-  useEffect(() => {
-    if (linked !== true) return;
-    setIsLoadingApps(true);
+  // Load apps whenever we enter build mode and are linked, and again whenever
+  // Base44 tells the shell an app was deleted or restored. Only the newest
+  // request may commit, so a slow first load cannot overwrite a fresher list.
+  const appsReqRef = useRef(0);
+  const loadApps = useCallback(({ quiet = false } = {}) => {
+    const req = ++appsReqRef.current;
+    // A refetch behind a list already on screen swaps it in place, no skeleton.
+    if (!quiet) setIsLoadingApps(true);
     platform
       .listAppsForUser({ limit: 25 })
-      .then((list) => setApps(list))
+      .then((list) => {
+        if (req === appsReqRef.current) setApps(list);
+      })
       .catch(() => {})
-      .finally(() => setIsLoadingApps(false));
-  }, [linked]);
+      .finally(() => {
+        if (req === appsReqRef.current) setIsLoadingApps(false);
+      });
+  }, []);
+
+  useEffect(() => {
+    if (linked === true) loadApps();
+  }, [linked, loadApps]);
+
+  useAppsChanged(() => {
+    if (linked === true) loadApps({ quiet: true });
+  });
+
+  // Dropped at once rather than on the refetch, and closed if it is the app on
+  // screen: its chat and preview point at an app that is no longer there.
+  useAppRemoved((appId) => {
+    setApps((prev) => prev.filter((a) => a.id !== appId));
+    if (shownAppIdRef.current === appId) backToList();
+  });
 
   // Poll for build updates
   const refresh = useCallback(async (appId) => {
