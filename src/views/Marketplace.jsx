@@ -199,7 +199,7 @@ function ListingCard({ listing, busy, onInstall, onOpen, onUnpublish, onPin, onU
   const canDelist = listing.is_author && listing.status === "published";
 
   const thumbnail = listing.screenshot_url ? (
-    <img src={listing.screenshot_url} alt="" className="h-full w-full object-cover" />
+    <img src={listing.screenshot_url} alt="" className="h-full w-full object-contain" />
   ) : (
     <span className="select-none font-display text-4xl text-muted-foreground/20">
       {listing.title[0].toUpperCase()}
@@ -207,39 +207,41 @@ function ListingCard({ listing, busy, onInstall, onOpen, onUnpublish, onPin, onU
   );
 
   return (
-    <div className="group flex flex-col overflow-hidden rounded-lg border border-border bg-card shadow-sm transition-all hover:border-primary/40 hover:shadow-md">
-      <div className="flex aspect-[16/9] items-center justify-center overflow-hidden border-b border-border bg-muted">
-        {thumbnail}
-      </div>
-
-      <div className="flex-1 p-3.5">
-        <div className="flex items-start justify-between gap-2">
-          <p className="text-sm font-medium text-foreground">{listing.title}</p>
-          <div className="flex flex-shrink-0 items-center gap-1">
-            {listing.is_author && (
-              <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] text-muted-foreground">Yours</span>
-            )}
-            {listing.status === "delisted" && (
-              <span
-                title="Off the market. Republish it from My apps."
-                className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground"
-              >
-                Delisted
-              </span>
-            )}
-            {listing.installed && (
-              <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] text-primary">
-                <Check className="h-2.5 w-2.5" /> Installed
-              </span>
-            )}
-          </div>
+    <article className="sunny-apps-card flex flex-col" aria-label={listing.title}>
+      <header>
+        <h2 title={listing.title}>{listing.title}</h2>
+        <div className="ml-auto flex flex-shrink-0 items-center gap-1">
+          {listing.is_author && (
+            <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] text-muted-foreground">Yours</span>
+          )}
+          {listing.status === "delisted" && (
+            <span
+              title="Off the market. Republish it from My apps."
+              className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground"
+            >
+              Delisted
+            </span>
+          )}
+          {listing.installed && (
+            <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] text-primary">
+              <Check className="h-2.5 w-2.5" /> Installed
+            </span>
+          )}
         </div>
-        {listing.tagline && <p className="mt-1 text-xs text-muted-foreground">{listing.tagline}</p>}
-        <p className="mt-2 text-[11px] text-muted-foreground">
-          {listing.is_author ? "Built by you" : `by ${listing.author}`}
-          {listing.install_count > 0 &&
-            ` · ${listing.install_count} install${listing.install_count === 1 ? "" : "s"}`}
-        </p>
+      </header>
+
+      <div className="sunny-apps-card-preview flex-col overflow-hidden">
+        <div className="flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden bg-muted">
+          {thumbnail}
+        </div>
+        <div className="w-full flex-shrink-0 border-t border-border bg-card px-3.5 py-2.5 text-left">
+          {listing.tagline && <p className="truncate text-xs text-muted-foreground">{listing.tagline}</p>}
+          <p className="text-[11px] text-muted-foreground">
+            {listing.is_author ? "Built by you" : `by ${listing.author}`}
+            {listing.install_count > 0 &&
+              ` · ${listing.install_count} install${listing.install_count === 1 ? "" : "s"}`}
+          </p>
+        </div>
       </div>
 
       {/*
@@ -248,7 +250,7 @@ function ListingCard({ listing, busy, onInstall, onOpen, onUnpublish, onPin, onU
         your own you can pull from the market. An app you have not installed offers the
         one thing you can do with it.
       */}
-      <div className="flex gap-2 border-t border-border p-2.5">
+      <footer className="flex min-h-[58px] items-center gap-2 border-t border-border p-2.5">
         {canOpen ? (
           <>
             <button
@@ -300,8 +302,8 @@ function ListingCard({ listing, busy, onInstall, onOpen, onUnpublish, onPin, onU
             Install
           </button>
         )}
-      </div>
-    </div>
+      </footer>
+    </article>
   );
 }
 
@@ -519,7 +521,7 @@ export default function Marketplace() {
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="sunny-apps-grid">
             {listings.map((l) => (
               <ListingCard
                 key={l.app_id}
