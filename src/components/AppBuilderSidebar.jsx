@@ -1,7 +1,7 @@
 /**
  * The App Builder — the whole Base44 integration, as a user sees it.
  *
- * A slide-over with two views: a list of the apps this user has built, and a chat
+ * A docked panel with two views: a list of the apps this user has built, and a chat
  * that drives one build. Everything it does goes through `src/lib/base44Platform.ts`
  * to the server proxy; nothing here holds a Base44 credential.
  *
@@ -185,11 +185,13 @@ export default function AppBuilderSidebar({
   origin,
   requestId,
   embedded = false,
+  workspacePage = false,
   mobileExpanded = false,
   onActiveAppChange,
   onAppCreated,
   onGoHome,
   onCreateNewApp,
+  onBackToList,
   marketListing,
 }) {
   // App build state
@@ -595,6 +597,7 @@ export default function AppBuilderSidebar({
     setError(null);
     setDismissedReadyFor(null);
     setSavedAs(null);
+    onBackToList?.();
   };
 
   const closePreview = () => {
@@ -803,7 +806,7 @@ export default function AppBuilderSidebar({
               </div>
               <div className="flex items-center gap-1 flex-shrink-0">
                 <button
-                  onClick={embedded ? onCreateNewApp : startNewApp}
+                  onClick={() => { startNewApp(); onCreateNewApp?.(); }}
                   className="sunny-apps-new-app"
                 >
                   <Plus className="w-3.5 h-3.5" /> Create new app
@@ -963,22 +966,21 @@ export default function AppBuilderSidebar({
                       <AppReadyWidget
                         appName={activeApp?.name}
                         onPreview={openPreview}
-                        hidePreview={embedded}
+                        hidePreview={embedded || workspacePage}
                         isLoadingPreview={isLoadingPreview}
                         onSaveToMyTools={saveToMyTools}
                         isSaving={pendingSave === "my-tools"}
                         isSaved={savedToMyTools}
-                        offerMarket={embedded || cameFromMarket}
+                        offerMarket={embedded || workspacePage || cameFromMarket}
                         onAddToMarket={addToMarket}
                         isAddingToMarket={pendingSave === "market"}
                         isAddedToMarket={marketState === "live"}
-                        offerMyWidgets={!embedded && cameFromWidgetPicker}
+                        offerMyWidgets={!embedded && !workspacePage && cameFromWidgetPicker}
                         onAddToMyWidgets={addToMyWidgets}
                         isAddingToMyWidgets={pendingSave === "widgets"}
                         isAddedToMyWidgets={addedToMyWidgets || alreadyPinned}
                         myToolsHref={activeAppId ? `/apps?app=${activeAppId}` : null}
-                        onNavigate={embedded ? undefined : onClose}
-                        onAllApps={embedded ? onGoHome : undefined}
+                        onAllApps={embedded || workspacePage ? onGoHome : undefined}
                         onKeepEditing={() => {
                           // Dismissed for this turn only: the next finished turn
                           // produces a new assistant message, so a fresh card.
