@@ -193,6 +193,7 @@ export default function AppBuilderSidebar({
   onActiveAppChange,
   onAppCreated,
   onGoHome,
+  onCreateNewApp,
   marketListing,
 }) {
   // App build state
@@ -797,6 +798,12 @@ export default function AppBuilderSidebar({
                 )}
               </div>
               <div className="flex items-center gap-1 flex-shrink-0">
+                {embedded && <button
+                  onClick={onCreateNewApp}
+                  className="sunny-apps-new-app"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Create new app
+                </button>}
                 {buildView === "chat" && activeApp && !embedded && (
                   <>
                     <button

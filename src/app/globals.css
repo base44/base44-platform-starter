@@ -169,29 +169,20 @@
   color: #222b3b;
   background: #f6f7f9;
 }
-.sunny-apps-toolbar {
-  height: 64px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 0 32px;
-  border-bottom: 1px solid var(--apps-border);
-  background: white;
-}
-.sunny-apps-toolbar strong { font-size: 14px; font-weight: 600; }
-.sunny-apps-toolbar button {
-  margin-left: auto;
+.sunny-apps-new-app {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 13px;
+  gap: 6px;
+  padding: 7px 9px;
   border: 1px solid var(--apps-border);
   border-radius: 6px;
   color: #0e2e56;
-  font-size: 13px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
   background: white;
 }
+.sunny-apps-new-app:hover { background: #edf0f5; }
 .sunny-apps-body { display: flex; flex: 1; min-height: 0; }
 .sunny-apps-list, .sunny-apps-stage { flex: 1; min-width: 0; }
 .sunny-apps-list { overflow: auto; padding: 32px; }
@@ -431,7 +422,7 @@
 .sunny-apps-backdrop { display: none; }
 .sunny-apps-mobile-toggle, .sunny-apps-mobile-close { display: none; }
 @media (max-width: 760px) {
-  .sunny-apps-toolbar, .sunny-apps-stage > header { padding-left: 20px; padding-right: 20px; }
+  .sunny-apps-stage > header { padding-left: 20px; padding-right: 20px; }
   .sunny-apps-list, .sunny-apps-stage-content { padding: 20px; }
   .sunny-apps-mobile-toggle {
     position: fixed;

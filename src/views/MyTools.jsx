@@ -136,10 +136,6 @@ export default function MyTools() {
   }
 
   return <div className="sunny-apps">
-    <div className="sunny-apps-toolbar">
-      <strong>My apps</strong>
-      <button onClick={() => openApp()}><Plus size={16} /> New app</button>
-    </div>
     <div className="sunny-apps-body">
       {inApp ? <main className="sunny-apps-stage">
         <header>
@@ -199,6 +195,7 @@ export default function MyTools() {
         onActiveAppChange={onActiveAppChange}
         onAppCreated={onAppCreated}
         onGoHome={backToApps}
+        onCreateNewApp={() => openApp()}
         marketListing={listings[selected?.id]}
       />
     </div>
