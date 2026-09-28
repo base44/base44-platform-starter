@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Loader2, Check, ArrowLeft, ShieldCheck, Sparkles, Store, Plus, Trash2 } from "lucide-react";
+import { Loader2, Check, ArrowLeft, ShieldCheck, Store, Plus, Trash2 } from "lucide-react";
 
 import { addAppToMyWidgets } from "@/lib/myWidgets";
 import { useAppFrameAuth } from "@/lib/appFrameAuth";
@@ -380,8 +380,6 @@ export default function Marketplace() {
     void loadOwnListings();
     void loadBuildable();
   };
-  const buildApp = () =>
-    window.dispatchEvent(new CustomEvent("open-assistant", { detail: { mode: "build", origin: "market" } }));
 
   /** The grant, and nothing else. Where it shows up is a separate choice. */
   const install = async () => {
@@ -478,22 +476,14 @@ export default function Marketplace() {
               <h1 className="text-base font-semibold text-foreground">App Market</h1>
               <p className="text-sm text-muted-foreground">Discover apps for your workspace, or share one you&apos;ve built.</p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {canPublish && (
-                <button
-                  onClick={openPublishPicker}
-                  className="flex items-center gap-2 rounded-md border border-border px-3.5 py-2 text-sm font-medium text-foreground transition-colors hover:bg-secondary"
-                >
-                  <Store className="h-3.5 w-3.5" /> Publish an app
-                </button>
-              )}
+            {canPublish && (
               <button
-                onClick={buildApp}
-                className="flex items-center gap-2 rounded-md bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                onClick={openPublishPicker}
+                className="flex items-center gap-2 rounded-md border border-border px-3.5 py-2 text-sm font-medium text-foreground transition-colors hover:bg-secondary"
               >
-                <Sparkles className="h-3.5 w-3.5" /> Build an app
+                <Store className="h-3.5 w-3.5" /> Publish an app
               </button>
-            </div>
+            )}
           </div>
         </div>
       </div>
@@ -515,21 +505,16 @@ export default function Marketplace() {
           <div className="py-24 text-center">
             <Store className="mx-auto mb-3 h-6 w-6 text-muted-foreground/40" />
             <p className="text-sm text-muted-foreground">
-              Nothing published yet. Build an app, then publish it from My apps.
+              {canPublish
+                ? "Nothing published yet. Publish one of your apps to get started."
+                : "Nothing published yet. Create an app in My apps to share it here."}
             </p>
-            {canPublish ? (
+            {canPublish && (
               <button
                 onClick={openPublishPicker}
                 className="mt-4 inline-flex items-center gap-2 rounded-md bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground"
               >
                 <Store className="h-3.5 w-3.5" /> Publish an app
-              </button>
-            ) : (
-              <button
-                onClick={buildApp}
-                className="mt-4 inline-flex items-center gap-2 rounded-md bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground"
-              >
-                <Sparkles className="h-3.5 w-3.5" /> Build an app
               </button>
             )}
           </div>
