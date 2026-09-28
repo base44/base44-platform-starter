@@ -37,21 +37,6 @@ function LivePreview({ app }) {
   </div>;
 }
 
-function CardPreview({ app }) {
-  const image = app.preview_screenshot_url || app.social_image_url || app.logo_url;
-  const [imageFailed, setImageFailed] = useState(false);
-  useEffect(() => { setImageFailed(false); }, [image]);
-
-  return <>
-    {image && !imageFailed
-      ? <img src={image} alt="" loading="lazy" onError={() => setImageFailed(true)} />
-      : <span className="sunny-apps-card-fallback" aria-hidden="true">
-          <span>{(app.name || "App").slice(0, 1).toUpperCase()}</span>
-          <strong>{app.name || "Untitled app"}</strong>
-        </span>}
-  </>;
-}
-
 function CardApp({ app }) {
   const [loaded, setLoaded] = useState(false);
   const [version, setVersion] = useState(0);
@@ -64,9 +49,12 @@ function CardApp({ app }) {
 
   return <div className="sunny-apps-card-preview" aria-label={`${app.name || "Untitled"} app`}>
     {!loaded && <div className="sunny-apps-card-loading" role="status">
-      <CardPreview app={app} />
-      <span>{error || "Starting interactive app…"}</span>
-      {error && <button onClick={() => setVersion((current) => current + 1)}>Try again</button>}
+      <div className="sunny-apps-card-loading-content">
+        <span>{error || "Loading your app"}</span>
+        {error
+          ? <button onClick={() => setVersion((current) => current + 1)}>Try again</button>
+          : <div className="sunny-apps-card-loading-track" aria-hidden="true"><span /></div>}
+      </div>
     </div>}
     {url && <iframe
       ref={frameRef}
