@@ -473,13 +473,10 @@ export default function Marketplace() {
       )}
 
       <div className="border-b border-border">
-        <div className="mx-auto max-w-7xl px-6 py-8 md:py-10">
-          <p className="mb-1 text-xs font-medium text-muted-foreground">Workspace</p>
-          <h1 className="font-display text-3xl text-foreground md:text-4xl">App market</h1>
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-              Install apps other people built — one works on your boards and never sees anyone
-              else&apos;s — and publish your own for them to install.
+        <div className="mx-auto max-w-7xl px-6 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <p className="text-sm text-muted-foreground">
+              Discover apps for your workspace, or share one you&apos;ve built.
             </p>
             <div className="flex flex-wrap items-center gap-2">
               {canPublish && (
