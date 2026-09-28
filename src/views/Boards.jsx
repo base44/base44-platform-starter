@@ -112,13 +112,13 @@ export default function Boards() {
     <div className="min-h-screen bg-background">
       {/* Page header */}
       <div className="border-b border-border">
-        <div className="px-4 sm:px-6 py-6 md:py-10">
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div className="px-4 sm:px-6 py-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-              <p className="text-xs font-medium text-muted-foreground mb-1">Workspace</p>
-              <h1 className="font-display text-3xl md:text-4xl text-foreground">
+              <h1 className="text-base font-semibold text-foreground">
                 {WORKSPACE_BRAND.name} Boards
               </h1>
+              <p className="text-sm text-muted-foreground">Manage boards in your workspace.</p>
             </div>
             <div className="flex items-center gap-2 self-start md:self-auto">
               <button

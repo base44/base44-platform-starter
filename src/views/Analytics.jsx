@@ -126,11 +126,11 @@ export default function AnalyticsPage() {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <div className="border-b border-border">
-        <div className="px-4 sm:px-6 py-6 md:py-10">
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div className="px-4 sm:px-6 py-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-              <p className="text-xs font-medium text-muted-foreground mb-1 hidden">Insights</p>
-              <h1 className="font-display text-3xl md:text-4xl text-foreground">Analytics</h1>
+              <h1 className="text-base font-semibold text-foreground">Analytics</h1>
+              <p className="text-sm text-muted-foreground">Track progress across your boards.</p>
             </div>
             <div className="flex items-center gap-2">
               <Select value={selectedBoard} onValueChange={setSelectedBoard}>
