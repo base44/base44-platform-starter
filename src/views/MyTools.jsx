@@ -15,7 +15,7 @@ import { useSandboxPreview } from "@/lib/useSandboxPreview";
 import AppBuilderSidebar from "@/components/AppBuilderSidebar";
 import PublishDialog from "@/components/market/PublishDialog";
 
-function LivePreview({ app, compact = false }) {
+function LivePreview({ app }) {
   const [version, setVersion] = useState(0);
   const frameRef = useRef(null);
   const rebuildNonce = useAppRebuildNonce(app.id);
@@ -23,17 +23,60 @@ function LivePreview({ app, compact = false }) {
   const { src: framedUrl } = useEmbedSrc(app.id, url, rebuildNonce + version, "live_preview");
   useAppFrameAuth(frameRef, app.id, framedUrl);
 
-  return <div className={`sunny-apps-live${compact ? " sunny-apps-live-compact" : ""}`} aria-label={`${app.name || "Untitled"} preview`}>
+  return <div className="sunny-apps-live" aria-label={`${app.name || "Untitled"} preview`}>
     {url
-      ? <iframe ref={frameRef} key={framedUrl} src={framedUrl} title={`${app.name || "Untitled"} preview`} allow="fullscreen" tabIndex={compact ? -1 : undefined} />
+      ? <iframe ref={frameRef} key={framedUrl} src={framedUrl} title={`${app.name || "Untitled"} preview`} allow="fullscreen" />
       : <div className="sunny-apps-placeholder" role="status">
           {!error && <Loader2 className="animate-spin" size={20} />}
           {error || "Starting your preview…"}
         </div>}
-    {!compact && <div className="sunny-apps-preview-controls">
+    <div className="sunny-apps-preview-controls">
       <span>{url ? "Live preview" : error || "Starting live preview…"}</span>
       <button onClick={() => setVersion((value) => value + 1)}>Refresh preview</button>
+    </div>
+  </div>;
+}
+
+function CardPreview({ app }) {
+  const image = app.preview_screenshot_url || app.social_image_url || app.logo_url;
+  const [imageFailed, setImageFailed] = useState(false);
+  useEffect(() => { setImageFailed(false); }, [image]);
+
+  return <>
+    {image && !imageFailed
+      ? <img src={image} alt="" loading="lazy" onError={() => setImageFailed(true)} />
+      : <span className="sunny-apps-card-fallback" aria-hidden="true">
+          <span>{(app.name || "App").slice(0, 1).toUpperCase()}</span>
+          <strong>{app.name || "Untitled app"}</strong>
+        </span>}
+  </>;
+}
+
+function CardApp({ app }) {
+  const [loaded, setLoaded] = useState(false);
+  const [version, setVersion] = useState(0);
+  const frameRef = useRef(null);
+  const rebuildNonce = useAppRebuildNonce(app.id);
+  const { url, error } = useSandboxPreview(app.id, `${rebuildNonce}:${app.last_git_commit_hash || ""}:${app.status?.state || ""}:${version}`);
+  const { src } = useEmbedSrc(app.id, url, rebuildNonce + version, "live_preview");
+  useAppFrameAuth(frameRef, app.id, src);
+  useEffect(() => { setLoaded(false); }, [src]);
+
+  return <div className="sunny-apps-card-preview" aria-label={`${app.name || "Untitled"} app`}>
+    {!loaded && <div className="sunny-apps-card-loading" role="status">
+      <CardPreview app={app} />
+      <span>{error || "Starting interactive app…"}</span>
+      {error && <button onClick={() => setVersion((current) => current + 1)}>Try again</button>}
     </div>}
+    {url && <iframe
+      ref={frameRef}
+      key={src}
+      src={src}
+      title={`${app.name || "Untitled"} app`}
+      onLoad={() => setLoaded(true)}
+      style={{ visibility: loaded ? "visible" : "hidden" }}
+      allow="fullscreen"
+    />}
   </div>;
 }
 
@@ -165,15 +208,11 @@ export default function MyTools() {
                   <h2>{name}</h2>
                   {building && <Loader2 className="animate-spin" size={14} />}
                   <div className="sunny-apps-card-actions">
-                    <button aria-label={`Edit ${name}`} title="Open app" onClick={() => openApp(app)}><Pencil size={15} /></button>
+                    <button aria-label={`Edit ${name}`} title="Edit app" onClick={() => openApp(app)}><Pencil size={15} /></button>
                     <button aria-label={`Remove ${name} from My apps`} title="Remove from My apps only" disabled={Boolean(removing)} onClick={() => void removeApp(app)}><Trash2 size={15} /></button>
                   </div>
                 </header>
-                <button className="sunny-apps-card-preview" onClick={() => openApp(app)} aria-label={`Open ${name}`}>
-                  {building
-                    ? <span><Loader2 className="animate-spin" size={20} /> Generating your app…</span>
-                    : <LivePreview app={app} compact />}
-                </button>
+                <CardApp app={app} />
                 <footer className="sunny-apps-card-footer">
                   <span>{marketState === "live" ? "Published and up to date" : marketState === "needs_publish" ? "Changes are in preview until published" : "Preview only"}</span>
                   {marketState === "live"
