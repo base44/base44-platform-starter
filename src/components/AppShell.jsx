@@ -16,14 +16,11 @@
  * The `open-assistant` window event is how several pages open the builder with a
  * preset mode; rewiring that to context is future polish.
  *
- * The builder starts closed and remembers the last choice. It used to open on
- * every page, on every route, taking 380px — over a quarter of a 1440px window —
- * to show a list of four apps, and squeezing the page the user actually asked
- * for. Opening a panel is the user's decision to make once, not the shell's to
- * make repeatedly.
+ * The builder stays mounted across workspace routes. My apps opens it beside
+ * the app grid; other pages keep the user's current chat when they navigate.
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
@@ -32,6 +29,7 @@ import { LogOut, Menu as MenuIcon, Sparkles, X } from "lucide-react";
 import dynamic from "next/dynamic";
 
 import SunnyLogo from "@/components/SunnyLogo";
+import { BuilderPanelContext } from "@/components/BuilderPanelContext";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -130,16 +128,12 @@ export default function AppShell({ children }) {
   // Keep it mounted after first opening so closing preserves an active build.
   const [builderLoaded, setBuilderLoaded] = useState(false);
   const [builderInitialMode, setBuilderInitialMode] = useState(null);
+  const [activeBuilderApp, setActiveBuilderApp] = useState(null);
+  const [appsStageOpen, setAppsStageOpen] = useState(false);
 
   // `builderInitialMode` sticks around after the open that set it, so clear it
   // here: the assistant button always lands on the builder's own entry screen,
   // never on whatever a previous caller asked for.
-  const openAssistant = () => {
-    setBuilderInitialMode(null);
-    setBuilderOrigin(null);
-    setBuilderRequest((n) => n + 1);
-    setBuilderOpenPersisted(true);
-  };
   const [builderInitialAppId, setBuilderInitialAppId] = useState(null);
   // "home-widget" means the user started in the Add-widget picker.
   const [builderOrigin, setBuilderOrigin] = useState(null);
@@ -154,7 +148,7 @@ export default function AppShell({ children }) {
     }
   }, []);
 
-  const setBuilderOpenPersisted = (next) => {
+  const setBuilderOpenPersisted = useCallback((next) => {
     if (next) setBuilderLoaded(true);
     setBuilderOpen(next);
     try {
@@ -162,29 +156,70 @@ export default function AppShell({ children }) {
     } catch {
       // Private mode: the panel still opens, it just will not be remembered.
     }
-  };
+  }, []);
+
+  const openAssistant = useCallback(() => {
+    setBuilderInitialMode(null);
+    setBuilderInitialAppId(null);
+    setBuilderOrigin(null);
+    setActiveBuilderApp(null);
+    setAppsStageOpen(false);
+    setBuilderRequest((n) => n + 1);
+    setBuilderOpenPersisted(true);
+  }, [setBuilderOpenPersisted]);
+
+  const openBuilderApp = useCallback((app = null) => {
+    setActiveBuilderApp(app);
+    setAppsStageOpen(true);
+    setBuilderInitialMode("build");
+    setBuilderInitialAppId(app?.id || null);
+    setBuilderOrigin(null);
+    setBuilderRequest((n) => n + 1);
+    setBuilderOpenPersisted(true);
+  }, [setBuilderOpenPersisted]);
+  const handleBuilderAppChange = useCallback((app) => {
+    if (app) setActiveBuilderApp(app);
+  }, []);
+
+  useEffect(() => {
+    if (activeBuilderApp?.id) setAppsStageOpen(true);
+  }, [activeBuilderApp?.id]);
+
+  useLayoutEffect(() => {
+    if (pathname === "/apps" && window.matchMedia("(min-width: 768px)").matches) {
+      setBuilderLoaded(true);
+      setBuilderOpen(true);
+    }
+  }, [pathname]);
 
   useEffect(() => {
     const handler = (e) => {
       const detail = e.detail;
       setBuilderInitialMode(detail?.mode || null);
       setBuilderInitialAppId(detail?.appId || null);
+      if (detail?.mode === "build" && !detail?.appId) {
+        setActiveBuilderApp(null);
+        setAppsStageOpen(false);
+      }
       setBuilderOrigin(detail?.origin || null);
       setBuilderRequest((n) => n + 1);
       setBuilderOpenPersisted(true);
     };
     window.addEventListener("open-assistant", handler);
     return () => window.removeEventListener("open-assistant", handler);
-  }, []);
+  }, [setBuilderOpenPersisted]);
 
   const isActive = (url) => pathname === url;
 
   return (
-    <div
-      className={`min-h-screen flex flex-col bg-background transition-all duration-300 ${
-        builderOpen && pathname !== "/apps" ? "md:mr-[380px]" : ""
-      }`}
-    >
+    <BuilderPanelContext.Provider value={{
+      activeApp: activeBuilderApp,
+      stageOpen: appsStageOpen,
+      setStageOpen: setAppsStageOpen,
+      openApp: openBuilderApp,
+      showAssistant: () => setBuilderOpenPersisted(true),
+    }}>
+    <div className="min-h-screen flex flex-col bg-background">
       <nav className="bg-card border-b border-border shadow-sm sticky top-0 z-30">
         <div className="px-4 sm:px-6">
           <div className="flex items-center h-14 gap-8">
@@ -272,9 +307,9 @@ export default function AppShell({ children }) {
         )}
       </nav>
 
-      <main className="flex-1 overflow-y-auto overflow-x-hidden">{children}</main>
+      <main className={`flex-1 overflow-y-auto overflow-x-hidden ${builderOpen ? "sunny-shell-with-builder" : ""}`}>{children}</main>
 
-      {builderLoaded && pathname !== "/apps" && (
+      {builderLoaded && (
         <AppBuilderSidebar
           open={builderOpen}
           onClose={() => setBuilderOpenPersisted(false)}
@@ -282,8 +317,25 @@ export default function AppShell({ children }) {
           initialAppId={builderInitialAppId}
           origin={builderOrigin}
           requestId={builderRequest}
+          workspacePage={pathname === "/apps"}
+          onActiveAppChange={handleBuilderAppChange}
+          onAppCreated={setActiveBuilderApp}
+          onGoHome={() => setAppsStageOpen(false)}
+          onCreateNewApp={() => {
+            setBuilderInitialAppId(null);
+            setBuilderInitialMode(null);
+            setActiveBuilderApp(null);
+            setAppsStageOpen(true);
+          }}
+          onBackToList={() => {
+            setBuilderInitialAppId(null);
+            setBuilderInitialMode(null);
+            setActiveBuilderApp(null);
+            setAppsStageOpen(false);
+          }}
         />
       )}
     </div>
+    </BuilderPanelContext.Provider>
   );
 }

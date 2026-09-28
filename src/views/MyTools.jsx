@@ -12,7 +12,7 @@ import { useAuth } from "@/lib/AuthContext";
 import { useMarketChanges } from "@/lib/marketEvents";
 import { marketPublishState } from "@/lib/marketPublishState";
 import { useSandboxPreview } from "@/lib/useSandboxPreview";
-import AppBuilderSidebar from "@/components/AppBuilderSidebar";
+import { useBuilderPanel } from "@/components/BuilderPanelContext";
 import PublishDialog from "@/components/market/PublishDialog";
 
 function LivePreview({ app }) {
@@ -70,14 +70,12 @@ function CardApp({ app }) {
 
 export default function MyTools() {
   const { b44Linked } = useAuth();
+  const { activeApp: selected, stageOpen: inApp, setStageOpen: setInApp, openApp: openBuilderApp, showAssistant } = useBuilderPanel();
   const [apps, setApps] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [inApp, setInApp] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const [selected, setSelected] = useState(null);
-  const [builderAppId, setBuilderAppId] = useState(null);
-  const [builderRequest, setBuilderRequest] = useState(0);
+  const lastStageAppId = useRef(selected?.id || null);
+  const handledRequestedApp = useRef(false);
   const [publishing, setPublishing] = useState(null);
   const [listings, setListings] = useState({});
   const [removing, setRemoving] = useState(null);
@@ -88,15 +86,6 @@ export default function MyTools() {
       const list = await platform.listAppsForUser({ limit: 50 });
       setApps(list);
       setError("");
-      const requested = new URLSearchParams(window.location.search).get("app");
-      const match = requested && list.find((app) => app.id === requested);
-      if (match) {
-        setSelected(match);
-        setBuilderAppId(match.id);
-        setBuilderRequest((value) => value + 1);
-        setInApp(true);
-        setMobileOpen(true);
-      }
     } catch (err) {
       setError(err.message || "Could not load your apps.");
     } finally {
@@ -108,6 +97,31 @@ export default function MyTools() {
     if (b44Linked === true) void loadApps();
     if (b44Linked === false) setLoading(false);
   }, [b44Linked, loadApps]);
+  useEffect(() => {
+    if (!selected) {
+      lastStageAppId.current = null;
+      return;
+    }
+    setApps((current) => current.some((app) => app.id === selected.id)
+      ? current.map((app) => app.id === selected.id ? { ...app, ...selected } : app)
+      : [selected, ...current]);
+    if (lastStageAppId.current !== selected.id) setInApp(true);
+    lastStageAppId.current = selected.id;
+  }, [selected, loading, setInApp]);
+  useEffect(() => {
+    if (loading || b44Linked !== true || handledRequestedApp.current) return;
+    const requested = new URLSearchParams(window.location.search).get("app");
+    if (!requested) {
+      handledRequestedApp.current = true;
+      return;
+    }
+    const match = apps.find((app) => app.id === requested);
+    if (match) {
+      handledRequestedApp.current = true;
+      setInApp(true);
+      if (selected?.id !== match.id) openBuilderApp(match);
+    }
+  }, [loading, b44Linked, apps, selected?.id, openBuilderApp, setInApp]);
   const refreshPublished = useCallback(() => {
     fetch("/api/marketplace", {
       method: "POST",
@@ -125,11 +139,7 @@ export default function MyTools() {
 
   const backToApps = useCallback(() => {
     setInApp(false);
-    setMobileOpen(false);
-    setSelected(null);
-    setBuilderAppId(null);
-    setBuilderRequest((value) => value + 1);
-  }, []);
+  }, [setInApp]);
   useAppRemoved((appId) => {
     setApps((current) => current.filter((app) => app.id !== appId));
     if (selected?.id === appId) backToApps();
@@ -138,28 +148,14 @@ export default function MyTools() {
     platform.listAppsForUser({ limit: 50 })
       .then((list) => {
         setApps(list);
-        setSelected((current) => current ? list.find((app) => app.id === current.id) || current : null);
       })
       .catch(() => {});
   });
 
   const openApp = useCallback((app = null) => {
-    setSelected(app);
-    setBuilderAppId(app?.id || null);
-    setBuilderRequest((value) => value + 1);
     setInApp(true);
-    setMobileOpen(true);
-  }, []);
-  const onActiveAppChange = useCallback((app) => {
-    if (app) {
-      setSelected(app);
-      setApps((current) => current.map((item) => item.id === app.id ? { ...item, ...app } : item));
-    }
-  }, []);
-  const onAppCreated = useCallback((app) => {
-    setSelected(app);
-    setApps((current) => [app, ...current.filter((item) => item.id !== app.id)]);
-  }, []);
+    openBuilderApp(app);
+  }, [openBuilderApp, setInApp]);
   async function removeApp(app) {
     if (removing) return;
     setRemoving(app.id);
@@ -219,21 +215,7 @@ export default function MyTools() {
               </article>;
             })}</div>}
       </main>}
-      <button className="sunny-apps-mobile-toggle" onClick={() => setMobileOpen(true)}>Assistant</button>
-      <AppBuilderSidebar
-        embedded
-        mobileExpanded={mobileOpen}
-        open
-        onClose={() => setMobileOpen(false)}
-        initialMode="build"
-        initialAppId={builderAppId}
-        requestId={builderRequest}
-        onActiveAppChange={onActiveAppChange}
-        onAppCreated={onAppCreated}
-        onGoHome={backToApps}
-        onCreateNewApp={() => openApp()}
-        marketListing={listings[selected?.id]}
-      />
+      <button className="sunny-apps-mobile-toggle" onClick={showAssistant}>Assistant</button>
     </div>
     {publishing && <PublishDialog app={publishing} onClose={() => setPublishing(null)} onDone={(fresh) => {
       setApps((current) => current.map((item) => item.id === fresh.id ? { ...item, ...fresh } : item));

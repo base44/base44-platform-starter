@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Loader2, Search, Check, ArrowLeft, ShieldCheck, Sparkles, Store, Plus, Trash2 } from "lucide-react";
+import { Loader2, Check, ArrowLeft, ShieldCheck, Store, Plus, Trash2 } from "lucide-react";
 
 import { addAppToMyWidgets } from "@/lib/myWidgets";
 import { useAppFrameAuth } from "@/lib/appFrameAuth";
@@ -199,7 +199,7 @@ function ListingCard({ listing, busy, onInstall, onOpen, onUnpublish, onPin, onU
   const canDelist = listing.is_author && listing.status === "published";
 
   const thumbnail = listing.screenshot_url ? (
-    <img src={listing.screenshot_url} alt="" className="h-full w-full object-cover" />
+    <img src={listing.screenshot_url} alt="" className="h-full w-full object-cover object-top" />
   ) : (
     <span className="select-none font-display text-4xl text-muted-foreground/20">
       {listing.title[0].toUpperCase()}
@@ -207,39 +207,41 @@ function ListingCard({ listing, busy, onInstall, onOpen, onUnpublish, onPin, onU
   );
 
   return (
-    <div className="group flex flex-col overflow-hidden rounded-lg border border-border bg-card shadow-sm transition-all hover:border-primary/40 hover:shadow-md">
-      <div className="flex aspect-[16/9] items-center justify-center overflow-hidden border-b border-border bg-muted">
-        {thumbnail}
-      </div>
-
-      <div className="flex-1 p-3.5">
-        <div className="flex items-start justify-between gap-2">
-          <p className="text-sm font-medium text-foreground">{listing.title}</p>
-          <div className="flex flex-shrink-0 items-center gap-1">
-            {listing.is_author && (
-              <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] text-muted-foreground">Yours</span>
-            )}
-            {listing.status === "delisted" && (
-              <span
-                title="Off the market. Republish it from My apps."
-                className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground"
-              >
-                Delisted
-              </span>
-            )}
-            {listing.installed && (
-              <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] text-primary">
-                <Check className="h-2.5 w-2.5" /> Installed
-              </span>
-            )}
-          </div>
+    <article className="sunny-apps-card flex flex-col" aria-label={listing.title}>
+      <header>
+        <h2 title={listing.title}>{listing.title}</h2>
+        <div className="ml-auto flex flex-shrink-0 items-center gap-1">
+          {listing.is_author && (
+            <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] text-muted-foreground">Yours</span>
+          )}
+          {listing.status === "delisted" && (
+            <span
+              title="Off the market. Republish it from My apps."
+              className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground"
+            >
+              Delisted
+            </span>
+          )}
+          {listing.installed && (
+            <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] text-primary">
+              <Check className="h-2.5 w-2.5" /> Installed
+            </span>
+          )}
         </div>
-        {listing.tagline && <p className="mt-1 text-xs text-muted-foreground">{listing.tagline}</p>}
-        <p className="mt-2 text-[11px] text-muted-foreground">
-          {listing.is_author ? "Built by you" : `by ${listing.author}`}
-          {listing.install_count > 0 &&
-            ` · ${listing.install_count} install${listing.install_count === 1 ? "" : "s"}`}
-        </p>
+      </header>
+
+      <div className="sunny-apps-card-preview flex-col overflow-hidden">
+        <div className="flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden bg-card">
+          {thumbnail}
+        </div>
+        <div className="w-full flex-shrink-0 border-t border-border bg-card px-3.5 py-2.5 text-left">
+          {listing.tagline && <p className="truncate text-xs text-muted-foreground">{listing.tagline}</p>}
+          <p className="text-[11px] text-muted-foreground">
+            {listing.is_author ? "Built by you" : `by ${listing.author}`}
+            {listing.install_count > 0 &&
+              ` · ${listing.install_count} install${listing.install_count === 1 ? "" : "s"}`}
+          </p>
+        </div>
       </div>
 
       {/*
@@ -248,7 +250,7 @@ function ListingCard({ listing, busy, onInstall, onOpen, onUnpublish, onPin, onU
         your own you can pull from the market. An app you have not installed offers the
         one thing you can do with it.
       */}
-      <div className="flex gap-2 border-t border-border p-2.5">
+      <footer className="flex min-h-[58px] items-center gap-2 border-t border-border p-2.5">
         {canOpen ? (
           <>
             <button
@@ -300,15 +302,13 @@ function ListingCard({ listing, busy, onInstall, onOpen, onUnpublish, onPin, onU
             Install
           </button>
         )}
-      </div>
-    </div>
+      </footer>
+    </article>
   );
 }
 
 export default function Marketplace() {
-  const [tab, setTab] = useState("browse");
   const [listings, setListings] = useState([]);
-  const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [installing, setInstalling] = useState(null);
@@ -321,12 +321,19 @@ export default function Marketplace() {
   const [buildable, setBuildable] = useState([]);
   const [ownListings, setOwnListings] = useState(undefined);
 
-  const load = useCallback(async (which) => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const { listings } = await post("/api/marketplace", { action: which });
-      setListings(listings);
+      const [published, installed] = await Promise.all([
+        post("/api/marketplace", { action: "browse" }),
+        post("/api/marketplace", { action: "installed" }),
+      ]);
+      const seen = new Set(published.listings.map((listing) => listing.app_id));
+      setListings([
+        ...published.listings,
+        ...installed.listings.filter((listing) => !seen.has(listing.app_id)),
+      ]);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -335,11 +342,11 @@ export default function Marketplace() {
   }, []);
 
   useEffect(() => {
-    load(tab);
-  }, [tab, load]);
+    load();
+  }, [load]);
 
   // Publishing happens in a panel over this page, so the grid has to be told.
-  useMarketChanges(() => load(tab));
+  useMarketChanges(load);
   const loadOwnListings = useCallback(async () => {
     try {
       const { listings = [] } = await post("/api/marketplace", { action: "mine" });
@@ -375,8 +382,6 @@ export default function Marketplace() {
     void loadOwnListings();
     void loadBuildable();
   };
-  const buildApp = () =>
-    window.dispatchEvent(new CustomEvent("open-assistant", { detail: { mode: "build", origin: "market" } }));
 
   /** The grant, and nothing else. Where it shows up is a separate choice. */
   const install = async () => {
@@ -390,7 +395,7 @@ export default function Marketplace() {
       });
       announceMarketChanged();
       setNotice(`${listing.title} is installed. Find it under Installed.`);
-      await load(tab);
+      await load();
     } catch (err) {
       setError(err.message);
     }
@@ -409,7 +414,7 @@ export default function Marketplace() {
         listing.app_url,
       );
       setNotice(`${listing.title} added to your widgets.`);
-      await load(tab);
+      await load();
     } catch (err) {
       setError(err.message);
     }
@@ -424,7 +429,7 @@ export default function Marketplace() {
       // A pinned widget for an app that can no longer read anything is a dead tile.
       window.dispatchEvent(new CustomEvent("widgets-updated"));
       announceMarketChanged();
-      await load(tab);
+      await load();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -436,19 +441,13 @@ export default function Marketplace() {
     try {
       await post("/api/marketplace", { action: "unpublish", app_id: listing.app_id });
       announceMarketChanged();
-      await load(tab);
+      await load();
     } catch (err) {
       setError(err.message);
     }
   };
 
   if (open) return <EmbeddedApp listing={open} onBack={() => setOpen(null)} />;
-
-  const shown = query
-    ? listings.filter((l) =>
-        `${l.title} ${l.tagline ?? ""} ${l.category ?? ""}`.toLowerCase().includes(query.toLowerCase()),
-      )
-    : listings;
 
   return (
     <div className="min-h-screen bg-background">
@@ -468,67 +467,30 @@ export default function Marketplace() {
         <PublishDialog
           app={publishing}
           onClose={() => setPublishing(null)}
-          onDone={() => { setPublishing(null); setTab("mine"); load("mine"); void loadBuildable(); }}
+          onDone={() => { setPublishing(null); void load(); void loadBuildable(); }}
         />
       )}
 
       <div className="border-b border-border">
-        <div className="mx-auto max-w-7xl px-6 py-8 md:py-10">
-          <p className="mb-1 text-xs font-medium text-muted-foreground">Workspace</p>
-          <h1 className="font-display text-3xl text-foreground md:text-4xl">App market</h1>
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-              Install apps other people built — one works on your boards and never sees anyone
-              else&apos;s — and publish your own for them to install.
-            </p>
-            <div className="flex flex-wrap items-center gap-2">
-              {canPublish && (
-                <button
-                  onClick={openPublishPicker}
-                  className="flex items-center gap-2 rounded-md border border-border px-3.5 py-2 text-sm font-medium text-foreground transition-colors hover:bg-secondary"
-                >
-                  <Store className="h-3.5 w-3.5" /> Publish an app
-                </button>
-              )}
-              <button
-                onClick={buildApp}
-                className="flex items-center gap-2 rounded-md bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-              >
-                <Sparkles className="h-3.5 w-3.5" /> Build an app
-              </button>
+        <div className="mx-auto max-w-7xl px-6 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h1 className="text-base font-semibold text-foreground">App Market</h1>
+              <p className="text-sm text-muted-foreground">Discover apps for your workspace, or share one you&apos;ve built.</p>
             </div>
+            {canPublish && (
+              <button
+                onClick={openPublishPicker}
+                className="flex items-center gap-2 rounded-md border border-border px-3.5 py-2 text-sm font-medium text-foreground transition-colors hover:bg-secondary"
+              >
+                <Store className="h-3.5 w-3.5" /> Publish an app
+              </button>
+            )}
           </div>
         </div>
       </div>
 
       <div className="mx-auto max-w-7xl px-6 py-6">
-        <div className="mb-6 flex flex-wrap items-center gap-3">
-          {[
-            ["browse", "Browse"],
-            ["installed", "Installed"],
-            ["mine", "Published by me"],
-          ].map(([key, label]) => (
-            <button
-              key={key}
-              onClick={() => setTab(key)}
-              className={`rounded-md px-3 py-1.5 text-sm transition-colors ${
-                tab === key ? "bg-primary/10 font-semibold text-primary" : "text-muted-foreground hover:bg-secondary"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-          <div className="relative ml-auto">
-            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search apps"
-              className="rounded-md border border-border bg-card py-1.5 pl-8 pr-3 text-sm text-foreground placeholder:text-muted-foreground"
-            />
-          </div>
-        </div>
-
         {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
         {notice && (
           <p className="mb-4 flex items-center gap-2 text-sm text-primary">
@@ -541,34 +503,26 @@ export default function Marketplace() {
           <div className="flex items-center justify-center py-24">
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>
-        ) : shown.length === 0 ? (
+        ) : listings.length === 0 ? (
           <div className="py-24 text-center">
             <Store className="mx-auto mb-3 h-6 w-6 text-muted-foreground/40" />
             <p className="text-sm text-muted-foreground">
-              {tab === "browse" && "Nothing published yet. Build an app, then publish it from My apps."}
-              {tab === "installed" && "You haven't installed anything yet."}
-              {tab === "mine" && "You haven't published anything yet."}
+              {canPublish
+                ? "Nothing published yet. Publish one of your apps to get started."
+                : "Nothing published yet. Create an app in My apps to share it here."}
             </p>
-            {(tab === "mine" || tab === "browse") &&
-              (canPublish ? (
-                <button
-                  onClick={openPublishPicker}
-                  className="mt-4 inline-flex items-center gap-2 rounded-md bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground"
-                >
-                  <Store className="h-3.5 w-3.5" /> Publish an app
-                </button>
-              ) : (
-                <button
-                  onClick={buildApp}
-                  className="mt-4 inline-flex items-center gap-2 rounded-md bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground"
-                >
-                  <Sparkles className="h-3.5 w-3.5" /> Build an app
-                </button>
-              ))}
+            {canPublish && (
+              <button
+                onClick={openPublishPicker}
+                className="mt-4 inline-flex items-center gap-2 rounded-md bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground"
+              >
+                <Store className="h-3.5 w-3.5" /> Publish an app
+              </button>
+            )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {shown.map((l) => (
+          <div className="sunny-apps-grid">
+            {listings.map((l) => (
               <ListingCard
                 key={l.app_id}
                 listing={l}

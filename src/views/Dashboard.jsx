@@ -151,13 +151,13 @@ export default function Dashboard() {
     <div className="min-h-screen bg-background">
       {/* Header strip */}
       <div className="border-b border-border">
-        <div className="mx-auto max-w-[1400px] px-4 sm:px-6 py-5 md:py-7">
+        <div className="mx-auto max-w-[1400px] px-4 sm:px-6 py-4">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
-              <p className="text-sm text-muted-foreground mb-1">{today}</p>
-              <h1 className="text-2xl text-foreground font-semibold tracking-tight">
+              <h1 className="text-base font-semibold text-foreground">
                 {firstName ? `${greeting}, ${firstName}` : "Your workspace"}
               </h1>
+              <p className="text-sm text-muted-foreground">{today}</p>
             </div>
             <div className="flex items-center gap-3">
               {/* The page's one primary control is an action, not a second route

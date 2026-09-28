@@ -1,7 +1,7 @@
 /**
  * The App Builder — the whole Base44 integration, as a user sees it.
  *
- * A slide-over with two views: a list of the apps this user has built, and a chat
+ * A docked panel with two views: a list of the apps this user has built, and a chat
  * that drives one build. Everything it does goes through `src/lib/base44Platform.ts`
  * to the server proxy; nothing here holds a Base44 credential.
  *
@@ -47,19 +47,15 @@ import {
   Plus,
   Loader2,
   AlertTriangle,
-  Eye,
   ChevronDown,
   Bot,
   User,
   X,
   ChevronLeft,
-  LayoutGrid,
   Sparkles,
   Hammer,
-  Store,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
-import Link from "next/link";
 import { widgetFor } from "@/components/builder/toolWidgets";
 import AppReadyWidget from "@/components/builder/widgets/AppReadyWidget";
 import PublishDialog from "@/components/market/PublishDialog";
@@ -189,11 +185,13 @@ export default function AppBuilderSidebar({
   origin,
   requestId,
   embedded = false,
+  workspacePage = false,
   mobileExpanded = false,
   onActiveAppChange,
   onAppCreated,
   onGoHome,
   onCreateNewApp,
+  onBackToList,
   marketListing,
 }) {
   // App build state
@@ -532,7 +530,7 @@ export default function AppBuilderSidebar({
     const content = buildInput.trim();
     // Answer the pending user-input widget before sending a free-form message,
     // or it races into the paused turn.
-    if (!content || isSending || pendingSend || awaitingInput || (embedded && isBuilding)) return;
+    if (!content || isSending || pendingSend || awaitingInput || isBuilding) return;
     const req = composerReqRef.current;
     // Carrying on, so the card steps aside.
     if (appReady) setDismissedReadyFor(lastAssistantId);
@@ -599,6 +597,7 @@ export default function AppBuilderSidebar({
     setError(null);
     setDismissedReadyFor(null);
     setSavedAs(null);
+    onBackToList?.();
   };
 
   const closePreview = () => {
@@ -688,11 +687,6 @@ export default function AppBuilderSidebar({
     lastVisible?.role === "assistant" &&
     lastAssistantId !== null &&
     dismissedReadyFor !== lastAssistantId;
-  const completedBuild = buildMessages.some((message) =>
-    (message.tool_calls || []).some((tool) =>
-      (tool.name === "write_file" || tool.name === "find_replace") && tool.status === "success",
-    ),
-  );
 
   // Retire the held text once the conversation carries it. Two tests, because an
   // exact match alone strands text the server normalised.
@@ -790,68 +784,33 @@ export default function AppBuilderSidebar({
             animate={embedded ? undefined : { x: 0 }}
             exit={embedded ? undefined : { x: "100%" }}
             transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-            className={embedded ? `sunny-apps-embedded-builder ${mobileExpanded ? "is-open" : ""}` : "fixed right-[var(--removed-body-scroll-bar-size,0px)] top-0 bottom-0 z-50 w-[380px] max-w-[95vw] bg-background border-l border-border flex flex-col shadow-2xl md:shadow-none"}
+            className={embedded ? `sunny-builder-panel sunny-apps-embedded-builder ${mobileExpanded ? "is-open" : ""}` : "sunny-builder-panel sunny-builder-docked"}
           >
             {/* Header */}
             <div className="flex items-center gap-2 px-4 py-3 border-b border-border flex-shrink-0">
               {buildView === "chat" && !embedded && (
                 <button
                   onClick={backToList}
-                  aria-label="Back to your tools"
+                  aria-label="Choose an app"
                   className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
               )}
               <div className="flex-1 min-w-0 flex items-center gap-2">
-                {activeApp && embedded ? <span className="sunny-apps-edit-badge">Editing</span> : <Sparkles className="w-3.5 h-3.5 text-accent flex-shrink-0" />}
-                {buildView === "chat" && activeApp && !embedded ? (
-                  <AppNameField app={activeApp} onRenamed={handleRenamed} />
-                ) : (
-                  <p className="text-sm font-medium text-foreground truncate">{activeApp?.name || "Build an app"}</p>
-                )}
-                {buildView === "chat" && activeApp && !embedded && (
-                  <div className="flex items-center gap-2 ml-1">
-                    {isBuilding ? (
-                      <span className="text-xs text-accent flex items-center gap-1">
-                        <Loader2 className="w-2.5 h-2.5 animate-spin" /> Building
-                      </span>
-                    ) : null}
-                  </div>
-                )}
+                {activeApp && buildView === "chat" ? <span className="sunny-apps-edit-badge">Editing</span> : <Sparkles className="w-3.5 h-3.5 text-accent flex-shrink-0" />}
+                {buildView === "chat" && activeApp
+                  ? <AppNameField app={activeApp} onRenamed={handleRenamed} className="min-w-0" />
+                  : <p className="text-sm font-medium text-foreground truncate">{buildView === "list" ? "Your apps" : "Build an app"}</p>}
+                {isBuilding && buildView === "chat" && <Loader2 className="w-3 h-3 animate-spin text-accent flex-shrink-0" aria-label="Building" />}
               </div>
               <div className="flex items-center gap-1 flex-shrink-0">
-                {embedded && <button
-                  onClick={onCreateNewApp}
+                <button
+                  onClick={() => { startNewApp(); onCreateNewApp?.(); }}
                   className="sunny-apps-new-app"
                 >
                   <Plus className="w-3.5 h-3.5" /> Create new app
-                </button>}
-                {buildView === "chat" && activeApp && !embedded && (
-                  <>
-                    <button
-                      onClick={openPreview}
-                      disabled={isLoadingPreview}
-                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground px-2 py-1.5 rounded hover:bg-secondary transition-colors disabled:opacity-50"
-                    >
-                      {isLoadingPreview ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Eye className="w-3.5 h-3.5" />
-                      )}
-                      {isLoadingPreview ? "Opening…" : "Preview"}
-                    </button>
-                  </>
-                )}
-                {buildView === "list" && (
-                  <Link
-                    href="/market"
-                    onClick={onClose}
-                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground px-2 py-1.5 rounded hover:bg-secondary transition-colors hidden"
-                  >
-                    <LayoutGrid className="w-3.5 h-3.5" /> Market
-                  </Link>
-                )}
+                </button>
                 {(!embedded || mobileExpanded) && <button
                   onClick={onClose}
                   className={`p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors ${embedded ? "sunny-apps-mobile-close" : ""}`}
@@ -897,14 +856,10 @@ export default function AppBuilderSidebar({
 
             {/* BUILD MODE — app list */}
             {linked === true && buildView === "list" && (
-              <div className="flex-1 flex flex-col overflow-hidden">
-                <div className="px-4 py-3 border-b border-border">
-                  <button
-                    onClick={startNewApp}
-                    className="w-full flex items-center gap-2 justify-center text-sm font-medium bg-primary text-primary-foreground px-4 py-2.5 rounded hover:bg-primary/90 transition-colors"
-                  >
-                    <Plus className="w-4 h-4" /> create new
-                  </button>
+              <div className="sunny-builder-picker flex-1 flex flex-col overflow-hidden">
+                <div className="sunny-builder-picker-intro">
+                  <strong>Continue with an app</strong>
+                  <span>Choose an app to edit, or create a new one.</span>
                 </div>
                 <div className="flex-1 overflow-y-auto">
                   {isLoadingApps ? (
@@ -914,16 +869,16 @@ export default function AppBuilderSidebar({
                   ) : apps.length === 0 ? (
                     <div className="px-4 py-10 text-center">
                       <p className="text-sm text-muted-foreground">
-                        No apps yet. Hit "New app" to build one.
+                        No apps yet. Create a new app to get started.
                       </p>
                     </div>
                   ) : (
-                    <div className="divide-y divide-border">
+                    <div className="sunny-builder-picker-list">
                       {apps.map((app) => (
                         <button
                           key={app.id}
                           onClick={() => selectApp(app)}
-                          className="w-full text-left px-4 py-3.5 hover:bg-secondary/50 transition-colors flex items-center gap-3"
+                          className="sunny-builder-picker-item w-full text-left flex items-center gap-3"
                         >
                           <div className="w-9 h-9 rounded bg-muted flex-shrink-0 overflow-hidden flex items-center justify-center">
                             {app.preview_screenshot_url || app.logo_url ? (
@@ -963,17 +918,17 @@ export default function AppBuilderSidebar({
             {/* BUILD MODE — chat */}
             {linked === true && buildView === "chat" && (
               <>
-                <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4" role={embedded ? "region" : undefined} aria-label={embedded ? "Conversation" : undefined}>
+                <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4" role="region" aria-label="Conversation">
                   {!activeApp && buildMessages.length === 0 && (
                     <div className="flex flex-col items-center justify-center h-full gap-3 text-center py-10">
-                      {!embedded && <Hammer className="w-8 h-8 text-muted-foreground/40" />}
+                      <Hammer className="w-8 h-8 text-muted-foreground/40" />
                       <div>
                         <h3 className="font-display text-xl text-foreground mb-1">Build an app</h3>
-                        {!embedded && <p className="text-muted-foreground text-xs max-w-xs">
+                        <p className="text-muted-foreground text-xs max-w-xs">
                           Describe what you want and I'll create it.
-                        </p>}
+                        </p>
                       </div>
-                      {!embedded && <div className="flex flex-col gap-1.5 w-full mt-2">
+                      <div className="flex flex-col gap-1.5 w-full mt-2">
                         {boardSuggestions.map((s) => (
                           <button
                             key={s}
@@ -983,7 +938,7 @@ export default function AppBuilderSidebar({
                             {s}
                           </button>
                         ))}
-                      </div>}
+                      </div>
                     </div>
                   )}
                   {buildMessages.map((msg, i) => (
@@ -995,7 +950,7 @@ export default function AppBuilderSidebar({
                       onSubmitted={() => refresh(activeAppId).catch(() => {})}
                     />
                   ))}
-                  {embedded && pendingSend && !buildMessages.some((message) =>
+                  {pendingSend && !buildMessages.some((message) =>
                     message.role === "user" &&
                     (typeof message.content === "string" ? message.content : platform.messageText?.(message.content) || "") === pendingSend.text,
                   ) && (
@@ -1006,27 +961,26 @@ export default function AppBuilderSidebar({
                       <Loader2 className="w-3 h-3 animate-spin" /> building…
                     </div>
                   )}
-                  {appReady && !embedded && (
-                    <div className="pl-8">
+                  {appReady && (
+                    <div className="sunny-builder-ready">
                       <AppReadyWidget
                         appName={activeApp?.name}
                         onPreview={openPreview}
+                        hidePreview={embedded || workspacePage}
                         isLoadingPreview={isLoadingPreview}
                         onSaveToMyTools={saveToMyTools}
                         isSaving={pendingSave === "my-tools"}
                         isSaved={savedToMyTools}
-                        offerMarket={cameFromMarket}
+                        offerMarket={embedded || workspacePage || cameFromMarket}
                         onAddToMarket={addToMarket}
                         isAddingToMarket={pendingSave === "market"}
                         isAddedToMarket={marketState === "live"}
-                        offerMyWidgets={cameFromWidgetPicker}
+                        offerMyWidgets={!embedded && !workspacePage && cameFromWidgetPicker}
                         onAddToMyWidgets={addToMyWidgets}
                         isAddingToMyWidgets={pendingSave === "widgets"}
                         isAddedToMyWidgets={addedToMyWidgets || alreadyPinned}
                         myToolsHref={activeAppId ? `/apps?app=${activeAppId}` : null}
-                        // Close the builder on the way: the point of following the
-                        // link is to look at the app, and the panel covers it.
-                        onNavigate={onClose}
+                        onAllApps={embedded || workspacePage ? onGoHome : undefined}
                         onKeepEditing={() => {
                           // Dismissed for this turn only: the next finished turn
                           // produces a new assistant message, so a fresh card.
@@ -1036,23 +990,13 @@ export default function AppBuilderSidebar({
                       />
                     </div>
                   )}
-                  {embedded && appReady && completedBuild && activeApp?.status?.state === "ready" && (
-                    <section className="sunny-apps-ready" aria-label="App ready">
-                      <span>✓ Ready</span>
-                      <strong>{activeApp?.name || "Your app"}</strong>
-                      {marketState === "live"
-                        ? <Link href="/market"><Store size={14} /> Live in app market</Link>
-                        : <button onClick={addToMarket}><Store size={14} /> Publish to market</button>}
-                      <button onClick={onGoHome}>See it in all apps →</button>
-                    </section>
-                  )}
                   <div ref={messagesEndRef} />
                 </div>
                 <div className="border-t border-border bg-card p-3 flex-shrink-0">
                   <div className="flex gap-2 items-end">
                     <Textarea
                       ref={composerInputRef}
-                      value={embedded && pendingSend ? "" : buildInput}
+                      value={pendingSend ? "" : buildInput}
                       onChange={(e) => setBuildInput(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && !e.shiftKey) {
@@ -1060,7 +1004,7 @@ export default function AppBuilderSidebar({
                           submitBuild();
                         }
                       }}
-                      disabled={awaitingInput || Boolean(pendingSend) || (embedded && isBuilding)}
+                      disabled={awaitingInput || Boolean(pendingSend) || isBuilding}
                       aria-label={activeApp ? "What should change?" : "What would you like to build?"}
                       placeholder={
                         awaitingInput
@@ -1075,7 +1019,7 @@ export default function AppBuilderSidebar({
 
                     <button
                       onClick={submitBuild}
-                      disabled={!buildInput.trim() || isSending || Boolean(pendingSend) || awaitingInput || (embedded && isBuilding)}
+                      disabled={!buildInput.trim() || isSending || Boolean(pendingSend) || awaitingInput || isBuilding}
                       aria-label={activeApp ? "Send prompt" : "Create app"}
                       className="flex-shrink-0 w-9 h-9 bg-primary text-primary-foreground rounded flex items-center justify-center hover:bg-primary/90 transition-colors disabled:opacity-40"
                     >
