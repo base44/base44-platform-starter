@@ -199,7 +199,7 @@ function ListingCard({ listing, busy, onInstall, onOpen, onUnpublish, onPin, onU
   const canDelist = listing.is_author && listing.status === "published";
 
   const thumbnail = listing.screenshot_url ? (
-    <img src={listing.screenshot_url} alt="" className="h-full w-full object-contain" />
+    <img src={listing.screenshot_url} alt="" className="h-full w-full object-cover object-top" />
   ) : (
     <span className="select-none font-display text-4xl text-muted-foreground/20">
       {listing.title[0].toUpperCase()}
