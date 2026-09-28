@@ -158,6 +158,345 @@
   background: hsl(var(--muted-foreground));
 }
 
+/* The Apps workspace follows Tiny Sunny's grid, stage, and docked editor. */
+.sunny-apps {
+  --apps-border: #e2e5eb;
+  --apps-muted: #737b8b;
+  display: flex;
+  flex-direction: column;
+  height: calc(100dvh - 56px);
+  min-height: 520px;
+  color: #222b3b;
+  background: #f6f7f9;
+}
+.sunny-apps-new-app {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 9px;
+  border: 1px solid var(--apps-border);
+  border-radius: 6px;
+  color: #0e2e56;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  background: white;
+}
+.sunny-apps-new-app:hover { background: #edf0f5; }
+.sunny-apps-body { display: flex; flex: 1; min-height: 0; }
+.sunny-apps-list, .sunny-apps-stage { flex: 1; min-width: 0; }
+.sunny-apps-list { overflow: auto; padding: 32px; }
+.sunny-apps-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+  gap: 20px;
+}
+.sunny-apps-card {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--apps-border);
+  border-radius: 14px;
+  background: white;
+  box-shadow: 0 1px 2px #10233e0d;
+}
+.sunny-apps-card > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 52px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--apps-border);
+}
+.sunny-apps-card h2 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+}
+.sunny-apps-card-actions { display: flex; margin-left: auto; }
+.sunny-apps-card-actions button {
+  padding: 8px;
+  border-radius: 6px;
+  color: var(--apps-muted);
+}
+.sunny-apps-card-actions button:hover { background: #edf0f5; color: #0e2e56; }
+.sunny-apps-card-preview {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 400px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--apps-muted);
+  font-size: 13px;
+  text-align: center;
+}
+.sunny-apps-card-preview > span { display: flex; align-items: center; gap: 10px; padding: 24px; }
+.sunny-apps-card-preview iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+.sunny-apps-card-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: white;
+}
+.sunny-apps-card-loading-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: min(220px, 70%);
+  color: var(--apps-muted);
+  font-size: 13px;
+}
+.sunny-apps-card-loading-content > button {
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: #0e2e56;
+  color: white;
+}
+.sunny-apps-card-loading-track {
+  overflow: hidden;
+  width: 100%;
+  height: 5px;
+  border-radius: 999px;
+  background: #e9edf4;
+}
+.sunny-apps-card-loading-track > span {
+  display: block;
+  width: 35%;
+  height: 100%;
+  border-radius: inherit;
+  background: #0e2e56;
+  animation: sunny-apps-loading-bar 1.3s ease-in-out infinite;
+}
+@keyframes sunny-apps-loading-bar {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(290%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sunny-apps-card-loading-track > span { animation: none; width: 60%; }
+}
+.sunny-apps-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 58px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--apps-border);
+  color: var(--apps-muted);
+  font-size: 11px;
+}
+.sunny-apps-card-footer > span { min-width: 0; }
+.sunny-apps-card-footer > button, .sunny-apps-card-footer > a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  flex-shrink: 0;
+  padding: 7px 9px;
+  border-radius: 7px;
+  background: #0e2e56;
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+}
+.sunny-apps-card-footer > button:disabled { opacity: .45; cursor: not-allowed; }
+.sunny-apps-card-footer > a { background: #e8f7ee; color: #176534; }
+.sunny-apps-stage { display: flex; flex-direction: column; }
+.sunny-apps-stage > header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 64px;
+  flex-shrink: 0;
+  padding: 0 32px;
+  border-bottom: 1px solid var(--apps-border);
+  background: white;
+  box-shadow: 0 1px 3px #10233e0f;
+}
+.sunny-apps-stage > header strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 500;
+}
+.sunny-apps-secondary, .sunny-apps-preview-controls button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--apps-border);
+  border-radius: 6px;
+  background: white;
+  color: #0e2e56;
+  font-size: 12px;
+}
+.sunny-apps-stage-content { flex: 1; min-height: 0; padding: 24px 32px 32px; }
+.sunny-apps-live, .sunny-apps-stage-content > .sunny-apps-placeholder {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--apps-border);
+  border-radius: 14px;
+  background: white;
+  box-shadow: 0 1px 2px #10233e0d;
+}
+.sunny-apps-live iframe { flex: 1; min-height: 0; width: 100%; border: 0; }
+.sunny-apps-preview-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 34px;
+  padding: 5px 10px;
+  border-top: 1px solid var(--apps-border);
+  color: var(--apps-muted);
+  font-size: 11px;
+}
+.sunny-apps-preview-controls button { padding: 5px 8px; font-size: 11px; }
+.sunny-apps-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 330px;
+  padding: 24px;
+  color: var(--apps-muted);
+  font-size: 13px;
+  text-align: center;
+}
+.sunny-apps-placeholder h2 { font-size: 20px; color: #26344b; font-weight: 500; }
+.sunny-apps-placeholder button {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 15px;
+  border-radius: 6px;
+  background: #0e2e56;
+  color: white;
+}
+.sunny-apps-error { margin: 16px; padding: 12px; border-radius: 6px; background: #fff2e7; font-size: 13px; }
+.sunny-apps-embedded-builder {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  width: clamp(380px, 34vw, 520px);
+  min-width: 0;
+  min-height: 0;
+  flex-shrink: 0;
+  background: #eef1f5;
+  box-shadow: -14px 0 34px -20px #10233e45;
+}
+.sunny-apps-embedded-builder > div:first-child {
+  height: 64px;
+  min-height: 64px;
+  background: white;
+  border-bottom-color: var(--apps-border);
+}
+.sunny-apps-edit-badge {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 4px 8px;
+  border-radius: 99px;
+  background: #e4f4f8;
+  color: #0c5c6b;
+  font-size: 11px;
+}
+.sunny-apps-embedded-builder:has(.sunny-apps-edit-badge)::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 1;
+  height: 3px;
+  background: linear-gradient(90deg,#e8492c,#bad03a 55%,#17a2bd);
+}
+.sunny-apps-embedded-builder .flex-1.overflow-y-auto.px-4.py-4 { padding: 16px; }
+.sunny-apps-embedded-builder .border-t.border-border.bg-card.p-3 {
+  margin: 0 14px 14px;
+  padding: 12px;
+  border: 1px solid var(--apps-border);
+  border-radius: 12px;
+  background: white;
+  box-shadow: 0 1px 2px #10233e0d;
+}
+.sunny-apps-embedded-builder textarea { height: 40px; min-height: 40px; max-height: 112px; }
+.sunny-apps-ready {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 16px 0 8px 34px;
+  padding: 14px 16px;
+  border: 1px solid var(--apps-border);
+  border-radius: 8px;
+  background: white;
+  font-size: 12px;
+}
+.sunny-apps-ready > span { padding: 4px 8px; border-radius: 99px; background: #ecfdf5; color: #047857; font-size: 11px; }
+.sunny-apps-ready strong { font-size: 13px; }
+.sunny-apps-ready button, .sunny-apps-ready a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 4px;
+  background: #0e2e56;
+  color: white;
+}
+.sunny-apps-backdrop { display: none; }
+.sunny-apps-mobile-toggle, .sunny-apps-mobile-close { display: none; }
+@media (max-width: 760px) {
+  .sunny-apps-stage > header { padding-left: 20px; padding-right: 20px; }
+  .sunny-apps-list, .sunny-apps-stage-content { padding: 20px; }
+  .sunny-apps-mobile-toggle {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    z-index: 10;
+    display: inline-flex;
+    padding: 10px 15px;
+    border-radius: 6px;
+    background: #0e2e56;
+    color: white;
+  }
+  .sunny-apps-backdrop.is-open { display: block; }
+  .sunny-apps-embedded-builder {
+    position: fixed;
+    top: 56px;
+    right: 0;
+    bottom: 0;
+    z-index: 50;
+    width: min(100%, 440px);
+    visibility: hidden;
+    transform: translateX(100%);
+    transition: transform .2s ease, visibility .2s ease;
+  }
+  .sunny-apps-embedded-builder.is-open { visibility: visible; transform: translateX(0); }
+  .sunny-apps-mobile-close { display: inline-flex; }
+}
+@media (max-width: 600px) {
+  .sunny-apps-grid { grid-template-columns: 1fr; }
+}
+
 /**
  * A control that fades in when its `group` is hovered — used for row menus and
  * per-item delete buttons, to keep dense lists calm.

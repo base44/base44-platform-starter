@@ -70,7 +70,7 @@ export default function AppReadyWidget({
           // Confirm the destination actually chosen, not a different one.
           <Link href="/market" onClick={onNavigate} className={done}>
             <Check className="w-3.5 h-3.5" />
-            In the market — view it
+            Live in app market
             <ArrowRight className="w-3.5 h-3.5 ml-auto" />
           </Link>
         ) : offerMarket ? (
@@ -80,7 +80,7 @@ export default function AppReadyWidget({
             ) : (
               <Store className="w-3.5 h-3.5" />
             )}
-            {isAddingToMarket ? "Deploying…" : "Add to the market"}
+            {isAddingToMarket ? "Publishing…" : "Publish to market"}
           </button>
         ) : offerMyWidgets && !isAddedToMyWidgets ? (
           <button onClick={onAddToMyWidgets} disabled={busy} className={primary}>
@@ -107,6 +107,17 @@ export default function AppReadyWidget({
             {isSaving ? "Publishing…" : "Publish"}
           </button>
         )}
+
+        {!offerMarket && (isAddedToMarket ? (
+          <Link href="/market" onClick={onNavigate} className={secondary}>
+            <Store className="w-3.5 h-3.5" /> Live in app market
+            <ArrowRight className="w-3.5 h-3.5 ml-auto" />
+          </Link>
+        ) : (
+          <button onClick={onAddToMarket} disabled={busy} className={secondary}>
+            <Store className="w-3.5 h-3.5" /> Publish to market
+          </button>
+        ))}
 
         <button
           onClick={onKeepEditing}

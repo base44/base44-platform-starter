@@ -36,6 +36,8 @@ import { suggestAppName } from "@/lib/appName";
 import { buildCustomInstructions } from "@/lib/builderInstructions";
 import { addAppToMyWidgets } from "@/lib/myWidgets";
 import { announceAppRebuilt, useAppRemoved, useAppsChanged } from "@/lib/appRefresh";
+import { useMarketChanges } from "@/lib/marketEvents";
+import { marketPublishState } from "@/lib/marketPublishState";
 import { Widget as WidgetEntity } from "@/lib/entityClient";
 import AppPreviewModal from "@/components/AppPreviewModal";
 import { Textarea } from "@/components/ui/textarea";
@@ -54,6 +56,7 @@ import {
   LayoutGrid,
   Sparkles,
   Hammer,
+  Store,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
@@ -185,6 +188,13 @@ export default function AppBuilderSidebar({
   initialAppId,
   origin,
   requestId,
+  embedded = false,
+  mobileExpanded = false,
+  onActiveAppChange,
+  onAppCreated,
+  onGoHome,
+  onCreateNewApp,
+  marketListing,
 }) {
   // App build state
   const [apps, setApps] = useState([]);
@@ -195,7 +205,8 @@ export default function AppBuilderSidebar({
   const [isSending, setIsSending] = useState(false);
   const [buildView, setBuildView] = useState("list"); // "list" | "chat"
 
-  const { b44Linked } = useAuth();
+  const { b44Linked, connect } = useAuth();
+  const [connecting, setConnecting] = useState(false);
   // Mirror context value so local app-list loading still works after link
   const [linked, setLinked] = useState(null);
 
@@ -239,6 +250,7 @@ export default function AppBuilderSidebar({
   const [previewError, setPreviewError] = useState(null);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const messagesEndRef = useRef(null);
+  const composerInputRef = useRef(null);
 
   // The app the chat is *intended* to be showing. Every awaited refresh checks it
   // before committing, so a reply that lands after the user moved on is dropped
@@ -266,17 +278,39 @@ export default function AppBuilderSidebar({
   const activeAppId = activeApp?.id || null;
   const isBuilding = activeApp?.status?.state === "processing";
 
+  useEffect(() => {
+    onActiveAppChange?.(activeApp);
+  }, [activeApp, onActiveAppChange]);
+
   // Where the builder was opened from is already a statement of intent, so it picks
   // the finished app's primary destination rather than asking. From the Add-widget
   // picker: pin it. From the market: list it. Everything lands in My Tools regardless.
   const cameFromWidgetPicker = origin === "home-widget";
   const cameFromMarket = origin === "market";
   const [marketApp, setMarketApp] = useState(null);
-  const [listedInMarket, setListedInMarket] = useState(false);
+  const [ownListings, setOwnListings] = useState({});
+  const refreshMarketListings = useCallback(() => {
+    fetch("/api/marketplace", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "mine" }),
+    }).then((response) => response.ok ? response.json() : { listings: [] })
+      .then(({ listings = [] }) => setOwnListings(Object.fromEntries(listings.map((item) => [item.app_id, item]))))
+      .catch(() => {});
+  }, []);
+  useEffect(() => { if (open && !embedded) refreshMarketListings(); }, [open, embedded, refreshMarketListings]);
+  useMarketChanges(refreshMarketListings);
+  const activeMarketListing = embedded ? marketListing : ownListings[activeAppId];
+  const marketState = activeApp ? marketPublishState(activeApp, activeMarketListing, editedSinceDeploy) : "unlisted";
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [buildMessages]);
+  }, [buildMessages, pendingSend]);
+  useEffect(() => {
+    if (embedded && open && requestId > 0 && initialAppId == null && buildView === "chat" && linked === true) {
+      composerInputRef.current?.focus();
+    }
+  }, [embedded, open, requestId, initialAppId, buildView, linked]);
 
   // Open a specific app in the build chat when initialAppId is provided
   useEffect(() => {
@@ -483,28 +517,9 @@ export default function AppBuilderSidebar({
     }
   };
 
-  /**
-   * Deploy, then ask for the listing. Deploying first is not optional: a listing
-   * snapshots the app's deployed URL, and installers load that build rather than the
-   * author's preview sandbox.
-   */
-  const addToMarket = async () => {
-    if (!activeAppId || isSavingToMyTools) return;
-    setPendingSave("market");
-    try {
-      await platform.deployApp(activeAppId);
-      // getApp directly, not refresh(): the dialog needs `last_deployed_at` and the
-      // slug from *this* moment, and refresh() commits to state without returning.
-      const fresh = await platform.getApp(activeAppId);
-      await refresh(activeAppId);
-      announceAppRebuilt(activeAppId);
-      setMarketApp({ ...fresh, id: activeAppId });
-    } catch (err) {
-      if (platform.isNotLinkedError(err)) setLinked(false);
-      setError(err.message);
-    } finally {
-      setPendingSave(null);
-    }
+  const addToMarket = () => {
+    if (!activeAppId || isSavingToMyTools || isBuilding) return;
+    setMarketApp(activeApp);
   };
 
   const handleRenamed = useCallback((id, name) => {
@@ -517,7 +532,7 @@ export default function AppBuilderSidebar({
     const content = buildInput.trim();
     // Answer the pending user-input widget before sending a free-form message,
     // or it races into the paused turn.
-    if (!content || isSending || pendingSend || awaitingInput) return;
+    if (!content || isSending || pendingSend || awaitingInput || (embedded && isBuilding)) return;
     const req = composerReqRef.current;
     // Carrying on, so the card steps aside.
     if (appReady) setDismissedReadyFor(lastAssistantId);
@@ -539,6 +554,7 @@ export default function AppBuilderSidebar({
         if (composerReqRef.current !== req) return;
         shownAppIdRef.current = app.id;
         setActiveApp(app);
+        onAppCreated?.(app);
         await refresh(app.id);
       } else {
         await platform.sendMessage(activeApp.id, content);
@@ -672,6 +688,11 @@ export default function AppBuilderSidebar({
     lastVisible?.role === "assistant" &&
     lastAssistantId !== null &&
     dismissedReadyFor !== lastAssistantId;
+  const completedBuild = buildMessages.some((message) =>
+    (message.tool_calls || []).some((tool) =>
+      (tool.name === "write_file" || tool.name === "find_replace") && tool.status === "success",
+    ),
+  );
 
   // Retire the held text once the conversation carries it. Two tests, because an
   // exact match alone strands text the server normalised.
@@ -760,20 +781,20 @@ export default function AppBuilderSidebar({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-40 bg-foreground/10 md:hidden"
+            className={`fixed inset-0 z-40 bg-foreground/10 md:hidden ${embedded ? `sunny-apps-backdrop ${mobileExpanded ? "is-open" : ""}` : ""}`}
             onClick={onClose}
           />
 
           <motion.div
-            initial={{ x: "100%" }}
-            animate={{ x: 0 }}
-            exit={{ x: "100%" }}
+            initial={embedded ? false : { x: "100%" }}
+            animate={embedded ? undefined : { x: 0 }}
+            exit={embedded ? undefined : { x: "100%" }}
             transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-            className="fixed right-[var(--removed-body-scroll-bar-size,0px)] top-0 bottom-0 z-50 w-[380px] max-w-[95vw] bg-background border-l border-border flex flex-col shadow-2xl md:shadow-none"
+            className={embedded ? `sunny-apps-embedded-builder ${mobileExpanded ? "is-open" : ""}` : "fixed right-[var(--removed-body-scroll-bar-size,0px)] top-0 bottom-0 z-50 w-[380px] max-w-[95vw] bg-background border-l border-border flex flex-col shadow-2xl md:shadow-none"}
           >
             {/* Header */}
             <div className="flex items-center gap-2 px-4 py-3 border-b border-border flex-shrink-0">
-              {buildView === "chat" && (
+              {buildView === "chat" && !embedded && (
                 <button
                   onClick={backToList}
                   aria-label="Back to your tools"
@@ -783,13 +804,13 @@ export default function AppBuilderSidebar({
                 </button>
               )}
               <div className="flex-1 min-w-0 flex items-center gap-2">
-                <Sparkles className="w-3.5 h-3.5 text-accent flex-shrink-0" />
-                {buildView === "chat" && activeApp ? (
+                {activeApp && embedded ? <span className="sunny-apps-edit-badge">Editing</span> : <Sparkles className="w-3.5 h-3.5 text-accent flex-shrink-0" />}
+                {buildView === "chat" && activeApp && !embedded ? (
                   <AppNameField app={activeApp} onRenamed={handleRenamed} />
                 ) : (
-                  <p className="text-sm font-medium text-foreground truncate">Build an app</p>
+                  <p className="text-sm font-medium text-foreground truncate">{activeApp?.name || "Build an app"}</p>
                 )}
-                {buildView === "chat" && activeApp && (
+                {buildView === "chat" && activeApp && !embedded && (
                   <div className="flex items-center gap-2 ml-1">
                     {isBuilding ? (
                       <span className="text-xs text-accent flex items-center gap-1">
@@ -800,7 +821,13 @@ export default function AppBuilderSidebar({
                 )}
               </div>
               <div className="flex items-center gap-1 flex-shrink-0">
-                {buildView === "chat" && activeApp && (
+                {embedded && <button
+                  onClick={onCreateNewApp}
+                  className="sunny-apps-new-app"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Create new app
+                </button>}
+                {buildView === "chat" && activeApp && !embedded && (
                   <>
                     <button
                       onClick={openPreview}
@@ -825,12 +852,12 @@ export default function AppBuilderSidebar({
                     <LayoutGrid className="w-3.5 h-3.5" /> Market
                   </Link>
                 )}
-                <button
+                {(!embedded || mobileExpanded) && <button
                   onClick={onClose}
-                  className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                  className={`p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors ${embedded ? "sunny-apps-mobile-close" : ""}`}
                 >
                   <X className="w-4 h-4" />
-                </button>
+                </button>}
               </div>
             </div>
 
@@ -842,7 +869,27 @@ export default function AppBuilderSidebar({
             )}
 
             {/* BUILD MODE — checking / connecting auth */}
-            {(linked === null || linked === false) && (
+            {linked === null && (
+              <div className="flex-1 flex items-center justify-center">
+                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+              </div>
+            )}
+            {linked === false && embedded && (
+              <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
+                <p className="text-sm text-muted-foreground">Connect your workspace to build an app.</p>
+                <button
+                  disabled={connecting}
+                  onClick={async () => {
+                    setConnecting(true);
+                    try { await connect(); } finally { setConnecting(false); }
+                  }}
+                  className="rounded bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-50"
+                >
+                  {connecting ? "Connecting…" : "Connect workspace"}
+                </button>
+              </div>
+            )}
+            {linked === false && !embedded && (
               <div className="flex-1 flex items-center justify-center">
                 <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
               </div>
@@ -916,17 +963,17 @@ export default function AppBuilderSidebar({
             {/* BUILD MODE — chat */}
             {linked === true && buildView === "chat" && (
               <>
-                <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+                <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4" role={embedded ? "region" : undefined} aria-label={embedded ? "Conversation" : undefined}>
                   {!activeApp && buildMessages.length === 0 && (
                     <div className="flex flex-col items-center justify-center h-full gap-3 text-center py-10">
-                      <Hammer className="w-8 h-8 text-muted-foreground/40" />
+                      {!embedded && <Hammer className="w-8 h-8 text-muted-foreground/40" />}
                       <div>
                         <h3 className="font-display text-xl text-foreground mb-1">Build an app</h3>
-                        <p className="text-muted-foreground text-xs max-w-xs">
+                        {!embedded && <p className="text-muted-foreground text-xs max-w-xs">
                           Describe what you want and I'll create it.
-                        </p>
+                        </p>}
                       </div>
-                      <div className="flex flex-col gap-1.5 w-full mt-2">
+                      {!embedded && <div className="flex flex-col gap-1.5 w-full mt-2">
                         {boardSuggestions.map((s) => (
                           <button
                             key={s}
@@ -936,7 +983,7 @@ export default function AppBuilderSidebar({
                             {s}
                           </button>
                         ))}
-                      </div>
+                      </div>}
                     </div>
                   )}
                   {buildMessages.map((msg, i) => (
@@ -948,12 +995,18 @@ export default function AppBuilderSidebar({
                       onSubmitted={() => refresh(activeAppId).catch(() => {})}
                     />
                   ))}
+                  {embedded && pendingSend && !buildMessages.some((message) =>
+                    message.role === "user" &&
+                    (typeof message.content === "string" ? message.content : platform.messageText?.(message.content) || "") === pendingSend.text,
+                  ) && (
+                    <MessageBubble message={{ id: "pending-send", role: "user", content: pendingSend.text }} />
+                  )}
                   {isBuilding && (
                     <div className="flex items-center gap-2 text-xs text-muted-foreground pl-8">
                       <Loader2 className="w-3 h-3 animate-spin" /> building…
                     </div>
                   )}
-                  {appReady && (
+                  {appReady && !embedded && (
                     <div className="pl-8">
                       <AppReadyWidget
                         appName={activeApp?.name}
@@ -965,7 +1018,7 @@ export default function AppBuilderSidebar({
                         offerMarket={cameFromMarket}
                         onAddToMarket={addToMarket}
                         isAddingToMarket={pendingSave === "market"}
-                        isAddedToMarket={listedInMarket}
+                        isAddedToMarket={marketState === "live"}
                         offerMyWidgets={cameFromWidgetPicker}
                         onAddToMyWidgets={addToMyWidgets}
                         isAddingToMyWidgets={pendingSave === "widgets"}
@@ -983,12 +1036,23 @@ export default function AppBuilderSidebar({
                       />
                     </div>
                   )}
+                  {embedded && appReady && completedBuild && activeApp?.status?.state === "ready" && (
+                    <section className="sunny-apps-ready" aria-label="App ready">
+                      <span>✓ Ready</span>
+                      <strong>{activeApp?.name || "Your app"}</strong>
+                      {marketState === "live"
+                        ? <Link href="/market"><Store size={14} /> Live in app market</Link>
+                        : <button onClick={addToMarket}><Store size={14} /> Publish to market</button>}
+                      <button onClick={onGoHome}>See it in all apps →</button>
+                    </section>
+                  )}
                   <div ref={messagesEndRef} />
                 </div>
                 <div className="border-t border-border bg-card p-3 flex-shrink-0">
                   <div className="flex gap-2 items-end">
                     <Textarea
-                      value={buildInput}
+                      ref={composerInputRef}
+                      value={embedded && pendingSend ? "" : buildInput}
                       onChange={(e) => setBuildInput(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && !e.shiftKey) {
@@ -996,7 +1060,8 @@ export default function AppBuilderSidebar({
                           submitBuild();
                         }
                       }}
-                      disabled={awaitingInput || Boolean(pendingSend)}
+                      disabled={awaitingInput || Boolean(pendingSend) || (embedded && isBuilding)}
+                      aria-label={activeApp ? "What should change?" : "What would you like to build?"}
                       placeholder={
                         awaitingInput
                           ? "Answer the prompt above to continue…"
@@ -1010,7 +1075,8 @@ export default function AppBuilderSidebar({
 
                     <button
                       onClick={submitBuild}
-                      disabled={!buildInput.trim() || isSending || awaitingInput}
+                      disabled={!buildInput.trim() || isSending || Boolean(pendingSend) || awaitingInput || (embedded && isBuilding)}
+                      aria-label={activeApp ? "Send prompt" : "Create app"}
                       className="flex-shrink-0 w-9 h-9 bg-primary text-primary-foreground rounded flex items-center justify-center hover:bg-primary/90 transition-colors disabled:opacity-40"
                     >
                       {isSending ? (
@@ -1041,9 +1107,12 @@ export default function AppBuilderSidebar({
             <PublishDialog
               app={marketApp}
               onClose={() => setMarketApp(null)}
-              onDone={() => {
+              onDone={(fresh) => {
                 setMarketApp(null);
-                setListedInMarket(true);
+                setEditedAppId(null);
+                setActiveApp((current) => current?.id === fresh.id ? { ...current, ...fresh } : current);
+                refreshMarketListings();
+                void refresh(fresh.id);
               }}
             />
           )}
