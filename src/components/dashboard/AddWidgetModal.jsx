@@ -84,7 +84,8 @@ export default function AddWidgetModal({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-md">
+      {/* Long app descriptions must not set the dialog grid's minimum column width. */}
+      <DialogContent className="max-w-md grid-cols-[minmax(0,1fr)]">
         <DialogHeader>
           <DialogTitle>Add a widget</DialogTitle>
         </DialogHeader>
@@ -92,7 +93,7 @@ export default function AddWidgetModal({
           Choose an app to add to your home page.
         </p>
 
-        <div role="tablist" aria-label="App source" className="flex border-b border-border">
+        <div role="tablist" aria-label="App source" className="flex min-w-0 border-b border-border">
           {tabs.map((tab) => (
             <button
               key={tab.key}
@@ -121,7 +122,7 @@ export default function AddWidgetModal({
           ))}
         </div>
 
-        <div id="add-widget-panel" role="tabpanel" aria-labelledby={`add-widget-tab-${activeTab}`} className="space-y-3">
+        <div id="add-widget-panel" role="tabpanel" aria-labelledby={`add-widget-tab-${activeTab}`} className="min-w-0 space-y-3">
           <div className="relative">
             <Search
               className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
@@ -150,7 +151,7 @@ export default function AddWidgetModal({
               No apps match “{query}”.
             </p>
           ) : (
-            <div className="max-h-80 overflow-y-auto rounded border border-border">
+            <div className="max-h-80 min-w-0 overflow-y-auto overflow-x-hidden rounded border border-border">
               <div className="divide-y divide-border">
                 {matches.map((app) => {
                   const already = existingAppIds.includes(app.id);
