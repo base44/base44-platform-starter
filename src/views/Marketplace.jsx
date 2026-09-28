@@ -7,6 +7,7 @@ import { useAppFrameAuth } from "@/lib/appFrameAuth";
 import { useEmbedSrc } from "@/lib/embedFrame";
 import { listUsableApps } from "@/lib/usableApps";
 import { announceMarketChanged, useMarketChanges } from "@/lib/marketEvents";
+import { marketPublishState } from "@/lib/marketPublishState";
 import { APP_REBUILT } from "@/lib/appRefresh";
 import PublishDialog from "@/components/market/PublishDialog";
 
@@ -78,35 +79,50 @@ function EmbeddedApp({ listing, onBack }) {
  * The page owns the built-app list — it needs it to decide whether to offer publishing
  * at all — so the picker is handed one rather than fetching its own.
  */
-function PublishPicker({ apps, onCancel, onPick }) {
+function PublishPicker({ apps, listings, onCancel, onPick, onRetry }) {
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-foreground/50 p-4 backdrop-blur-sm" onClick={onCancel}>
       <div className="w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <h2 className="font-display text-lg text-foreground">Publish one of your apps</h2>
+        <h2 className="font-display text-lg text-foreground">Your apps</h2>
         <p className="mt-1 text-xs text-muted-foreground">
-          Pick an app you built. Anyone in Sunny will be able to install it.
+          Publish an app to make it available for others to install.
         </p>
 
         <div className="mt-4 max-h-80 divide-y divide-border overflow-y-auto rounded border border-border">
-          {apps.map((a) => (
-            <button
-              key={a.id}
-              onClick={() => onPick(a.app)}
-              className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-secondary/50"
-            >
-              <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded bg-muted">
-                {a.screenshot ? (
-                  <img src={a.screenshot} alt="" className="h-full w-full object-cover" />
-                ) : (
-                  <span className="text-base font-semibold text-muted-foreground">{a.name[0].toUpperCase()}</span>
-                )}
+          {listings === undefined ? <p role="status" className="px-3 py-4 text-sm text-muted-foreground">Checking publish status…</p>
+            : listings === null ? <div role="alert" className="px-3 py-4 text-sm text-destructive">
+                Could not load your Market listings. <button onClick={onRetry} className="underline">Try again</button>
               </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-foreground">{a.name}</p>
-                <p className="truncate text-xs text-muted-foreground">{a.subtitle}</p>
-              </div>
-            </button>
-          ))}
+            : apps.map((a) => {
+                const state = marketPublishState(a.app, listings[a.id]);
+                const building = a.app?.status?.state === "processing";
+                return <div key={a.id} className="flex w-full items-center gap-3 px-3 py-2.5">
+                  <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded bg-muted">
+                    {a.screenshot ? (
+                      <img src={a.screenshot} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <span className="text-base font-semibold text-muted-foreground">{a.name[0].toUpperCase()}</span>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-foreground">{a.name}</p>
+                    <p className="truncate text-xs text-muted-foreground">{a.subtitle}</p>
+                  </div>
+                  {state === "live" ? (
+                    <span className="flex flex-shrink-0 items-center gap-1 rounded-full bg-green-50 px-2 py-1 text-xs font-medium text-green-700">
+                      <Check className="h-3 w-3" /> Published
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => onPick(a.app)}
+                      disabled={building || !a.app?.slug}
+                      className="flex flex-shrink-0 items-center gap-1 rounded-md bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+                    >
+                      <Store className="h-3 w-3" /> Publish to market
+                    </button>
+                  )}
+                </div>;
+              })}
         </div>
 
         <div className="mt-5 flex justify-end">
@@ -303,6 +319,7 @@ export default function Marketplace() {
   const [busyId, setBusyId] = useState(null);
   /** The apps this user could publish. `[]` until known, so the button starts hidden. */
   const [buildable, setBuildable] = useState([]);
+  const [ownListings, setOwnListings] = useState(undefined);
 
   const load = useCallback(async (which) => {
     setLoading(true);
@@ -323,6 +340,16 @@ export default function Marketplace() {
 
   // Publishing happens in a panel over this page, so the grid has to be told.
   useMarketChanges(() => load(tab));
+  const loadOwnListings = useCallback(async () => {
+    try {
+      const { listings = [] } = await post("/api/marketplace", { action: "mine" });
+      setOwnListings(Object.fromEntries(listings.map((listing) => [listing.app_id, listing])));
+    } catch {
+      setOwnListings(null);
+    }
+  }, []);
+  useEffect(() => { void loadOwnListings(); }, [loadOwnListings]);
+  useMarketChanges(loadOwnListings);
 
   /**
    * Publishing is only an offer to someone who has built something, so the built apps
@@ -342,6 +369,12 @@ export default function Marketplace() {
   }, [loadBuildable]);
 
   const canPublish = buildable.length > 0;
+  const openPublishPicker = () => {
+    setPicking(true);
+    setOwnListings(undefined);
+    void loadOwnListings();
+    void loadBuildable();
+  };
   const buildApp = () =>
     window.dispatchEvent(new CustomEvent("open-assistant", { detail: { mode: "build", origin: "market" } }));
 
@@ -425,15 +458,17 @@ export default function Marketplace() {
       {picking && (
         <PublishPicker
           apps={buildable}
+          listings={ownListings}
           onCancel={() => setPicking(false)}
           onPick={(app) => { setPicking(false); setPublishing(app); }}
+          onRetry={loadOwnListings}
         />
       )}
       {publishing && (
         <PublishDialog
           app={publishing}
           onClose={() => setPublishing(null)}
-          onDone={() => { setPublishing(null); setTab("mine"); load("mine"); }}
+          onDone={() => { setPublishing(null); setTab("mine"); load("mine"); void loadBuildable(); }}
         />
       )}
 
@@ -449,7 +484,7 @@ export default function Marketplace() {
             <div className="flex flex-wrap items-center gap-2">
               {canPublish && (
                 <button
-                  onClick={() => setPicking(true)}
+                  onClick={openPublishPicker}
                   className="flex items-center gap-2 rounded-md border border-border px-3.5 py-2 text-sm font-medium text-foreground transition-colors hover:bg-secondary"
                 >
                   <Store className="h-3.5 w-3.5" /> Publish an app
@@ -517,7 +552,7 @@ export default function Marketplace() {
             {(tab === "mine" || tab === "browse") &&
               (canPublish ? (
                 <button
-                  onClick={() => setPicking(true)}
+                  onClick={openPublishPicker}
                   className="mt-4 inline-flex items-center gap-2 rounded-md bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground"
                 >
                   <Store className="h-3.5 w-3.5" /> Publish an app
