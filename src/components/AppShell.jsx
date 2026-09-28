@@ -180,11 +180,7 @@ export default function AppShell({ children }) {
   const isActive = (url) => pathname === url;
 
   return (
-    <div
-      className={`min-h-screen flex flex-col bg-background transition-all duration-300 ${
-        builderOpen && pathname !== "/apps" ? "md:mr-[380px]" : ""
-      }`}
-    >
+    <div className="min-h-screen flex flex-col bg-background">
       <nav className="bg-card border-b border-border shadow-sm sticky top-0 z-30">
         <div className="px-4 sm:px-6">
           <div className="flex items-center h-14 gap-8">
@@ -272,7 +268,7 @@ export default function AppShell({ children }) {
         )}
       </nav>
 
-      <main className="flex-1 overflow-y-auto overflow-x-hidden">{children}</main>
+      <main className={`flex-1 overflow-y-auto overflow-x-hidden transition-[margin] duration-300 ${builderOpen && pathname !== "/apps" ? "sunny-shell-with-builder" : ""}`}>{children}</main>
 
       {builderLoaded && pathname !== "/apps" && (
         <AppBuilderSidebar

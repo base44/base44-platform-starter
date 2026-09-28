@@ -18,6 +18,7 @@ import { Eye, BookmarkCheck, Pencil, LayoutGrid, Loader2, Check, ArrowRight, Sto
 export default function AppReadyWidget({
   appName,
   onPreview,
+  hidePreview = false,
   onSaveToMyTools,
   onKeepEditing,
   isSaving,
@@ -33,6 +34,7 @@ export default function AppReadyWidget({
   isAddedToMarket = false,
   myToolsHref = null,
   onNavigate,
+  onAllApps,
 }) {
   const busy = isSaving || isAddingToMyWidgets || isAddingToMarket;
   // Not `isSaved || isAddedToMyWidgets`: the picker creates a Widget row without
@@ -53,7 +55,7 @@ export default function AppReadyWidget({
         <p className="text-xs text-muted-foreground mt-1">What do you want to do next?</p>
       </div>
       <div className="flex flex-col gap-2">
-        <button
+        {!hidePreview && <button
           onClick={onPreview}
           disabled={isLoadingPreview}
           className={secondary}
@@ -64,7 +66,7 @@ export default function AppReadyWidget({
             <Eye className="w-3.5 h-3.5" />
           )}
           {isLoadingPreview ? "Opening…" : "Preview"}
-        </button>
+        </button>}
 
         {isAddedToMarket ? (
           // Confirm the destination actually chosen, not a different one.
@@ -118,6 +120,10 @@ export default function AppReadyWidget({
             <Store className="w-3.5 h-3.5" /> Publish to market
           </button>
         ))}
+
+        {onAllApps && <button onClick={onAllApps} className={secondary}>
+          <ArrowRight className="w-3.5 h-3.5" /> See it in all apps
+        </button>}
 
         <button
           onClick={onKeepEditing}
