@@ -7,87 +7,34 @@ import * as platform from "@/lib/base44Platform";
 import { AppOwnership } from "@/lib/entityClient";
 import { useAppFrameAuth } from "@/lib/appFrameAuth";
 import { useEmbedSrc } from "@/lib/embedFrame";
-import { useAppRebuildNonce, useAppRemoved, withNonce } from "@/lib/appRefresh";
+import { useAppRebuildNonce, useAppRemoved } from "@/lib/appRefresh";
 import { useAuth } from "@/lib/AuthContext";
 import { useMarketChanges } from "@/lib/marketEvents";
 import { marketPublishState } from "@/lib/marketPublishState";
+import { useSandboxPreview } from "@/lib/useSandboxPreview";
 import AppBuilderSidebar from "@/components/AppBuilderSidebar";
 import PublishDialog from "@/components/market/PublishDialog";
 
-function previewUrl(result) {
-  const raw = result?.preview_url || result?.url;
-  if (!raw) return null;
-  try {
-    const url = new URL(raw.includes("://") ? raw : `https://${raw}`);
-    if (url.protocol !== "https:" || url.username || url.password) return null;
-    if (result.preview_token) url.searchParams.set("_preview_token", result.preview_token);
-    url.searchParams.set("server_url", url.origin);
-    url.searchParams.set("hide_badge", "true");
-    url.searchParams.set("analytics-enable", "false");
-    return url.href;
-  } catch {
-    return null;
-  }
-}
-
-function LivePreview({ app }) {
-  const [url, setUrl] = useState(null);
-  const [error, setError] = useState("");
+function LivePreview({ app, compact = false }) {
   const [version, setVersion] = useState(0);
   const frameRef = useRef(null);
   const rebuildNonce = useAppRebuildNonce(app.id);
+  const { url, error } = useSandboxPreview(app.id, `${rebuildNonce}:${app.last_git_commit_hash || ""}:${app.status?.state || ""}:${version}`);
   const { src: framedUrl } = useEmbedSrc(app.id, url, rebuildNonce + version, "live_preview");
   useAppFrameAuth(frameRef, app.id, framedUrl);
 
-  useEffect(() => {
-    let cancelled = false;
-    setUrl(null);
-    setError("");
-    (async () => {
-      for (let attempt = 0; attempt < 20 && !cancelled; attempt++) {
-        try {
-          const found = previewUrl(await platform.getPreviewUrl(app.id));
-          if (found) {
-            if (!cancelled) setUrl(found);
-            return;
-          }
-        } catch (err) {
-          if (attempt === 19 && !cancelled) setError(err.message);
-        }
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-      }
-      if (!cancelled) setError((current) => current || "The live preview is not ready yet.");
-    })();
-    return () => { cancelled = true; };
-  }, [app.id, app.last_git_commit_hash, app.status?.state, version]);
-
-  return <div className="sunny-apps-live" aria-label={`${app.name || "Untitled"} preview`}>
+  return <div className={`sunny-apps-live${compact ? " sunny-apps-live-compact" : ""}`} aria-label={`${app.name || "Untitled"} preview`}>
     {url
-      ? <iframe ref={frameRef} key={framedUrl} src={framedUrl} title={`${app.name || "Untitled"} preview`} allow="fullscreen" />
+      ? <iframe ref={frameRef} key={framedUrl} src={framedUrl} title={`${app.name || "Untitled"} preview`} allow="fullscreen" tabIndex={compact ? -1 : undefined} />
       : <div className="sunny-apps-placeholder" role="status">
           {!error && <Loader2 className="animate-spin" size={20} />}
           {error || "Starting your preview…"}
         </div>}
-    <div className="sunny-apps-preview-controls">
+    {!compact && <div className="sunny-apps-preview-controls">
       <span>{url ? "Live preview" : error || "Starting live preview…"}</span>
       <button onClick={() => setVersion((value) => value + 1)}>Refresh preview</button>
-    </div>
+    </div>}
   </div>;
-}
-
-function StaticPreview({ app, listing }) {
-  const frameRef = useRef(null);
-  const rebuildNonce = useAppRebuildNonce(app.id);
-  const published = listing?.status === "published" && app.last_deployed_at
-    ? listing.app_url || platform.publishedUrl(app.slug)
-    : null;
-  const url = published || platform.previewUrl(app.slug);
-  const { src } = useEmbedSrc(app.id, withNonce(url, rebuildNonce), rebuildNonce, published ? null : "latest_preview");
-  useAppFrameAuth(frameRef, app.id, src);
-  if (!url) return app.preview_screenshot_url || app.logo_url
-    ? <img src={app.preview_screenshot_url || app.logo_url} alt="" />
-    : <span>No built preview is available yet. Open the assistant to build this app.</span>;
-  return <iframe ref={frameRef} src={src} title={`${app.name || "Untitled"} widget preview`} tabIndex={-1} />;
 }
 
 export default function MyTools() {
@@ -229,7 +176,7 @@ export default function MyTools() {
                 <button className="sunny-apps-card-preview" onClick={() => openApp(app)} aria-label={`Open ${name}`}>
                   {building
                     ? <span><Loader2 className="animate-spin" size={20} /> Generating your app…</span>
-                    : <StaticPreview app={app} listing={listing} />}
+                    : <LivePreview app={app} compact />}
                 </button>
                 <footer className="sunny-apps-card-footer">
                   <span>{marketState === "live" ? "Published and up to date" : marketState === "needs_publish" ? "Changes are in preview until published" : "Preview only"}</span>

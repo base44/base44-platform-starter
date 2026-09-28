@@ -2,9 +2,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 /**
  * Renders pinned Base44 apps as resizable dashboard widgets.
  *
- * Each widget is an iframe on the app's preview host — the builder creates apps
- * `public_without_login`, and `prevent_iframe_embedding` is set false at create time
- * so the frame is allowed at all.
+ * Each built widget is an iframe on its author's tokenized sandbox preview;
+ * installed market widgets use the published app with a viewer embed session.
  *
  * The frame has no session of its own, so `useAppFrameAuth` answers its token request
  * with one scoped to the current viewer. That is what makes an installed app read the
@@ -23,6 +22,7 @@ import * as platform from "@/lib/base44Platform";
 import AppPreviewModal from "@/components/AppPreviewModal";
 import { useAppRebuildNonce, withNonce, APP_REBUILT } from "@/lib/appRefresh";
 import { clampFrameHeight, useReportedFrameHeight } from "@/lib/appFrameSize";
+import { useSandboxPreview } from "@/lib/useSandboxPreview";
 
 const MIN_HEIGHT = 160;
 const MAX_HEIGHT = 800;
@@ -96,6 +96,8 @@ function NoFrame({ reason }) {
             Build it from the Assistant to embed it here.
           </p>
         </>
+      ) : reason === "preview" ? (
+        <p className="text-xs text-muted-foreground">The app preview could not start. Try again later.</p>
       ) : (
         <>
           <p className="text-xs text-muted-foreground">App previews aren't configured here.</p>
@@ -139,13 +141,16 @@ function WidgetFrame({
       window.removeEventListener("mouseup", h.onUp);
     };
   }, []);
-  // Built widgets always show the author's latest preview. Installed market
-  // widgets have no slug and retain the listing's published URL snapshot.
-  const baseUrl = widget.app_slug
-    ? platform.previewUrl(widget.app_slug)
-    : widget.preview_url || null;
-  const target = widget.app_slug ? "latest_preview" : null;
+  // Built widgets use the same tokenized sandbox as the Apps editor. The static
+  // preview host can show Base44's login to an author whose embed mint is refused.
+  // Installed market widgets have no slug and keep the published listing URL.
   const rebuildNonce = useAppRebuildNonce(widget.app_id);
+  const { url: sandboxUrl, error: sandboxError } = useSandboxPreview(
+    widget.app_slug ? widget.app_id : null,
+    rebuildNonce,
+  );
+  const baseUrl = widget.app_slug ? sandboxUrl : widget.preview_url || null;
+  const target = widget.app_slug ? "live_preview" : null;
   const plainUrl = withNonce(baseUrl, rebuildNonce);
   const { src: url } = useEmbedSrc(widget.app_id, plainUrl, rebuildNonce, target);
   useAppFrameAuth(frameRef, widget.app_id, url, (state) => setAuthDenied(state === "denied"));
@@ -279,13 +284,13 @@ function WidgetFrame({
 
       {/* Body */}
       <div className="relative flex-shrink-0" style={{ height }}>
-        {/* Waiting on deploy state: mounting now would load one url then the other. */}
-        {!metaReady ? (
+        {/* Wait for the author's sandbox URL and its short-lived preview token. */}
+        {!metaReady || (widget.app_slug && !sandboxUrl && !sandboxError) ? (
           <div className="absolute inset-0 flex items-center justify-center">
             <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
           </div>
         ) : !url ? (
-          <NoFrame reason={widget.app_slug ? "unconfigured" : "unbuilt"} />
+          <NoFrame reason={widget.app_slug ? "preview" : "unbuilt"} />
         ) : (
           <>
             {loading && (
