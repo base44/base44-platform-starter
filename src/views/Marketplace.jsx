@@ -231,7 +231,7 @@ function ListingCard({ listing, busy, onInstall, onOpen, onUnpublish, onPin, onU
       </header>
 
       <div className="sunny-apps-card-preview flex-col overflow-hidden">
-        <div className="flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden bg-muted">
+        <div className="flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden bg-card">
           {thumbnail}
         </div>
         <div className="w-full flex-shrink-0 border-t border-border bg-card px-3.5 py-2.5 text-left">
