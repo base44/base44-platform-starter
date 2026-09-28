@@ -1,9 +1,10 @@
 /**
  * Registers this deployment's inbound webhook endpoint with Base44, and prints
- * the public key to pin.
+ * the public key the receiver verifies against.
  *
  *   npm run webhook:register -- --url https://your-shell.example.com
  *   npm run webhook:register -- --url https://… --events app.deleted.v1,app.restored.v1
+ *   npm run webhook:register -- --activate <endpoint id>
  *
  * `--events` defaults to every type this receiver handles. Narrowing it is the
  * useful case: a subscription is what makes Base44 write an outbox row at all,
@@ -24,9 +25,14 @@
  * be talked into accepting signed traffic.
  *
  * Then it reads the workspace's published key set and prints it as the
- * `BASE44_WEBHOOK_PUBLIC_KEYS` line, because registration is what mints the
- * workspace's first key — there is nothing to copy before this runs.
- */
+ * `BASE44_WEBHOOK_PUBLIC_KEYS` line the receiver requires. Registration is what
+ * mints the workspace's first key, so on a first run the key cannot be deployed
+ * yet and the probe fails to verify: deploy the printed line, then finish with
+ *
+ *   npm run webhook:register -- --activate <endpoint id>
+ *
+ * which re-sends the probe to the endpoint just created rather than registering
+ * a second one. */
 
 import { orgId, platformHost, webhookKey } from "../src/lib/base44Config";
 import { HANDLED_EVENT_TYPES } from "../src/lib/base44WebhookEventTypes";
@@ -139,6 +145,32 @@ async function register(url: string, selected: string[]): Promise<Activation> {
   return body as Activation;
 }
 
+/** Re-sends the activation probe to an endpoint that already exists. */
+async function activate(endpointId: string): Promise<Activation> {
+  const res = await fetch(`${endpointsUrl()}/${encodeURIComponent(endpointId)}/test`, {
+    method: "POST",
+    headers: authHeaders(),
+    signal: AbortSignal.timeout(60_000),
+  });
+  const body = await readJson(res);
+  if (!res.ok) {
+    const { error, message } = body as Record<string, unknown>;
+    throw new Error(`activate failed (${res.status}): ${String(error ?? "")} ${String(message ?? "")}`.trim());
+  }
+  return body as Activation;
+}
+
+function report({ endpoint, activated, http_status, failure_category, detail }: Activation): void {
+  console.log(`  endpoint    ${endpoint.id}`);
+  console.log(`  state       ${endpoint.state}`);
+  console.log(`  activated   ${activated}`);
+  if (!activated) {
+    // The probe's outcome, not the receiver's body — Base44 never echoes that
+    // back, because a mistyped URL could return somebody else's data.
+    console.log(`  why         ${failure_category ?? "?"} (http ${http_status ?? "-"}) ${detail}`);
+  }
+}
+
 async function publishedKeys(): Promise<string[]> {
   const res = await fetch(keysUrl(), { cache: "no-store" });
   if (!res.ok) throw new Error(`key set returned ${res.status}`);
@@ -147,6 +179,15 @@ async function publishedKeys(): Promise<string[]> {
 }
 
 async function main() {
+  const toActivate = flagValues("--activate").at(-1);
+  if (toActivate) {
+    console.log(`activating endpoint ${toActivate}\n`);
+    const result = await activate(toActivate);
+    report(result);
+    process.exitCode = result.activated ? 0 : 1;
+    return;
+  }
+
   const url = targetUrl();
   const selected = eventTypes();
   console.log(`registering ${url}`);
@@ -163,20 +204,7 @@ async function main() {
   console.log("");
 
   const result = await register(url, selected);
-  const { endpoint, activated, http_status, failure_category, detail } = result;
-
-  console.log(`  endpoint    ${endpoint.id}`);
-  console.log(`  state       ${endpoint.state}`);
-  console.log(`  activated   ${activated}`);
-  if (!activated) {
-    // The probe's outcome, not the receiver's body — Base44 never echoes that
-    // back, because a mistyped URL could return somebody else's data.
-    console.log(`  why         ${failure_category ?? "?"} (http ${http_status ?? "-"}) ${detail}`);
-    console.log(
-      "\nThe endpoint exists but is pending. Fix the receiver and re-run, or " +
-        "POST …/endpoints/{id}/test to retry the probe.",
-    );
-  }
+  report(result);
 
   // After registration, never before: registering is what mints the workspace's
   // first signing key, so there is nothing to print until this point.
@@ -184,15 +212,18 @@ async function main() {
   if (keys.length === 0) {
     console.log("\nNo published keys yet — unexpected after a successful register.");
   } else {
-    console.log(`\nPin these in the receiver's env to verify without a round trip:\n`);
+    console.log(`\nThe receiver verifies against these. Set them in its env:\n`);
     console.log(`BASE44_WEBHOOK_PUBLIC_KEYS="${keys.join(" ")}"\n`);
+  }
+  if (!result.activated) {
     console.log(
-      "Leave it unset to fetch the key set instead, which picks up a rotation on " +
-        "its own. See docs/base44-webhooks.md.",
+      "The endpoint exists but is pending. Deploy the line above (or fix whatever " +
+        "the probe reported), then finish with:\n\n" +
+        `  npm run webhook:register -- --activate ${result.endpoint.id}\n`,
     );
   }
 
-  process.exitCode = activated ? 0 : 1;
+  process.exitCode = result.activated ? 0 : 1;
 }
 
 main().catch((err) => {

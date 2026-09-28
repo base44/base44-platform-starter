@@ -50,9 +50,20 @@ npm run webhook:register -- --url https://… --events app.deleted.v1,app.restor
 ```
 
 It registers, waits for the probe, reports `activated`, and then prints the workspace's public key as
-a `BASE44_WEBHOOK_PUBLIC_KEYS=` line ready to paste — see [Verifying a delivery](#verifying-a-delivery)
-for why you might want it. The order matters: **registering is what mints the workspace's first
-signing key**, so there is nothing to copy before it runs.
+a `BASE44_WEBHOOK_PUBLIC_KEYS=` line — the receiver requires it, see
+[Verifying a delivery](#verifying-a-delivery). The order matters: **registering is what mints the
+workspace's first signing key**, so there is nothing to copy before it runs, and on a first run the
+activation probe cannot verify either. That leaves the endpoint pending, which is the expected first
+result, not a failure to chase:
+
+```bash
+npm run webhook:register -- --url https://your-shell.example.com   # pending; prints the key
+# deploy BASE44_WEBHOOK_PUBLIC_KEYS="whpk_…" to the receiver
+npm run webhook:register -- --activate <endpoint id>               # re-probes the same endpoint
+```
+
+`--activate` re-sends the probe instead of registering again, which would leave a second endpoint
+behind and count against the workspace's limit of ten.
 
 `--events` (repeatable, comma- or space-separated; or `BASE44_WEBHOOK_EVENT_TYPES`) defaults to every
 type the receiver handles. Narrowing it is the useful case, because the **subscription is what makes
@@ -131,45 +142,35 @@ Four ways to get this wrong, each of which breaks every signature:
    that only ever handled one breaks on the first rotation.
 4. **base64url.** The wire format is *standard* base64 — it contains `+` and `/`.
 
-### Pinned or fetched
+### Where the keys come from
 
-`BASE44_WEBHOOK_PUBLIC_KEYS` picks between two ways of holding the verification material, and the
-choice is a real one.
+`BASE44_WEBHOOK_PUBLIC_KEYS`, and nowhere else. `npm run webhook:register` prints the `whpk_` keys
+once; they are deployed like any other config, and verification is local — no network call on the
+request path. A receiver that fetched the key set per delivery would spend part of Base44's 15s
+budget on a second round trip, and could verify nothing whenever it could not reach the platform —
+answering non-2xx and putting itself on the retry ladder for an outage that was not its own.
 
-**Pinned.** Copy the `whpk_` keys once — `npm run webhook:register` prints them — and verification
-makes no network call at all. Worth more than it sounds: the fetch otherwise sits on the delivery
-request path inside Base44's 15s budget, and a receiver that cannot reach the platform for a minute
-can verify nothing for that minute, answers non-2xx, and puts itself on the retry ladder. Pinning
-also drops the requirement that the receiver can reach Base44 *at all*, which is the difference
-between a deployment that can verify and one that cannot — a shell whose `BASE44_PLATFORM_HOST` is a
-machine the receiver cannot route to (a laptop, a private network) has no working fetch and a
-perfectly working pin.
+Unset, the receiver answers **500** and logs why. That is deliberate: the event is fine and this
+deployment is not, so it stays on Base44's retry ladder until the key is deployed rather than being
+refused as a forgery.
 
-Note what pinning is *not*: a secret. It is a public key. It verifies signatures and cannot produce
-one, so it is the single `BASE44_*` value whose leak costs nothing.
+It is not a secret. It is a public key: it verifies signatures and cannot produce one, so it is the
+single `BASE44_*` value whose leak costs nothing.
 
-**Fetched** (leave it unset). The published set, cached five minutes.
-
-**What pinning costs is automatic rotation, and it is not free.** `v1a` carries no key id, so Base44
-rotates by publishing both keys and signing with both through an overlap window — `valid_until` on
-the retiring one. A fetching receiver picks that up by itself; a pinned one stops verifying when the
-old key retires unless the new one was deployed inside the window. The variable takes a list, so pin
-both while a rotation is in flight and drop the old one afterwards.
-
-On the fetched path only: a rotated key is indistinguishable from a forgery until you refetch, so the
-verifier refetches **once** on a mismatch. That is the documented recovery, not an optimisation — and
-it is deliberately skipped when pinned, where there is no newer answer to get.
+**Rotation is applied by hand.** `v1a` carries no key id, so Base44 rotates by publishing a second
+key and signing with both through an overlap window — `valid_until` on the retiring one. Deploy the
+new key alongside the old one inside that window (the variable takes a list), then drop the old one.
+A receiver still holding only the retiring key stops verifying when it retires.
 
 Signatures older than 300 seconds are refused even when they verify, which bounds replay of a
 captured request to a window rather than forever.
 
-`npm run webhook:smoke` drives all of that against a freshly minted keypair, both key sources
-included. The negative controls are the point — a tampered body, a relabelled replay, an unknown key
-and a stale timestamp each have to be refused, and refused for the stated reason. Two of the checks
-count fetches rather than outcomes: a pinned deployment that quietly still reached the network would
-pass every correctness assertion while keeping the dependency pinning exists to remove. One asserts
-that a key truncated by a bad paste **throws**, because a silently invalid key verifies nothing for
-ever, which looks identical to every event being forged.
+`npm run webhook:smoke` drives all of that against a freshly minted keypair. The negative controls
+are the point — a tampered body, a relabelled replay, an unknown key and a stale timestamp each have
+to be refused, and refused for the stated reason. `fetch` is replaced with one that fails the suite,
+so a verifier that quietly reached the network cannot pass. A key truncated by a bad paste has to
+**throw**, and so does a missing one: a silently invalid key verifies nothing for ever, which looks
+identical to every event being forged.
 
 ## Acting on a deletion
 
@@ -215,8 +216,11 @@ be a cacheable mutation.
 
 `src/components/AppNotices.tsx` claims on mount, whenever the tab becomes visible, and on a slow
 timer. It sits inside `ToastProvider` above the pages, so a deletion reaches its owner on whatever
-screen they are on — then fires `widgets-updated` (the dashboard re-reads; its pin is gone) and
-`APP_REMOVED` (the apps list drops the card, and closes it if that app is the one on screen).
+screen they are on — then fires three events for the pages already open. `widgets-updated`: the
+dashboard re-reads, since its pin is gone. `APP_REMOVED`: the builder drawer and My apps drop the
+card at once, and close it if it is the app on screen. `APPS_CHANGED`, for a deletion or a restore:
+both read `listAppsForUser` again. That last one is what keeps an open list honest — a list is a copy
+taken when the page loaded, and a restored app can only come back into view by being read again.
 
 Losing a notice to a tab that closes mid-flight is accepted by design. A notice is a courtesy; the
 removal it describes already happened and is durable. `GET /api/base44/webhooks` reports

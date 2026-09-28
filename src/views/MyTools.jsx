@@ -7,7 +7,7 @@ import * as platform from "@/lib/base44Platform";
 import { AppOwnership } from "@/lib/entityClient";
 import { useAppFrameAuth } from "@/lib/appFrameAuth";
 import { useEmbedSrc } from "@/lib/embedFrame";
-import { useAppRebuildNonce, useAppRemoved } from "@/lib/appRefresh";
+import { useAppRebuildNonce, useAppRemoved, useAppsChanged } from "@/lib/appRefresh";
 import { useAuth } from "@/lib/AuthContext";
 import { useMarketChanges } from "@/lib/marketEvents";
 import { marketPublishState } from "@/lib/marketPublishState";
@@ -146,6 +146,15 @@ export default function MyTools() {
     setApps((current) => current.filter((app) => app.id !== appId));
     if (selected?.id === appId) backToApps();
   });
+  useAppsChanged(() => {
+    platform.listAppsForUser({ limit: 50 })
+      .then((list) => {
+        setApps(list);
+        setSelected((current) => current ? list.find((app) => app.id === current.id) || current : null);
+      })
+      .catch(() => {});
+  });
+
   const openApp = useCallback((app = null) => {
     setSelected(app);
     setBuilderAppId(app?.id || null);
