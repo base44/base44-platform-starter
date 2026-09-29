@@ -1,11 +1,8 @@
-import type { AppUpdate, ChatMessage, ImageReady } from "@base44/sdk/platform/client";
+import type { ChatMessage, ImageResolved } from "@base44/sdk/platform/client";
 import type { Message } from "../types";
 
-export function applyMessageUpdate(messages: Message[], update: AppUpdate): Message[] {
-  const message = update._last_msg;
-  if (!message) return messages;
-  if ("is_deleted" in message) return messages.filter(current => current.id !== message.id);
-  return mergeMessages(messages, [message]);
+export function removeMessage(messages: Message[], id: string): Message[] {
+  return messages.filter(current => current.id !== id);
 }
 
 // Replaces by id and appends the rest, so a snapshot can land before or after live updates.
@@ -21,21 +18,17 @@ export function mergeMessages(messages: Message[], incoming: ChatMessage[]): Mes
   return merged;
 }
 
-export function resolveImage(messages: Message[], image: ImageReady): Message[] {
+export function resolveImage(messages: Message[], image: ImageResolved): Message[] {
+  const placeholder = image.placeholder_url;
+  if (!placeholder) return messages;
   const resolvedUrl = image.status === "completed" ? image.image_url : null;
   const replace = (text: string | null | undefined) =>
-    resolvedUrl ? text?.split(image.placeholder_url).join(resolvedUrl) ?? text : text;
+    resolvedUrl ? text?.split(placeholder).join(resolvedUrl) ?? text : text;
   return messages.map(message => ({
     ...message,
     content: replace(message.content),
-    tool_calls: message.tool_calls?.map(tool => ({
-      ...tool,
-      arguments_string: replace(tool.arguments_string),
-      results: typeof tool.results === "string"
-        ? replace(tool.results)
-        : tool.results && "placeholder_url" in tool.results && tool.results.placeholder_url === image.placeholder_url
-          ? { ...tool.results, status: image.status, image_url: image.image_url ?? null }
-          : tool.results,
-    })),
+    tool_calls: message.tool_calls?.map(tool => tool.results?.placeholder_url === placeholder
+      ? { ...tool, results: { ...tool.results, status: image.status, image_url: image.image_url ?? null } }
+      : tool),
   }));
 }

@@ -162,13 +162,17 @@ ends or rejects the current one. One socket per session: a second tab opens its 
 
 **State.** The first snapshot after joining loads full history over HTTP. After a
 reconnect, the socket's snapshot (status plus the last 50 messages) is merged by
-message id, with no HTTP read. Live `update_model` replacements, message removals
-(`{id, is_deleted: true}`) and image resolutions apply directly. Directives and
-completed HTTP mutations trigger an HTTP reload. Ready-state updates refresh preview
-metadata. Queue and task events have no UI in this minimal example.
+message id, with no HTTP read. `message.updated`, `message.removed`,
+`app.status_changed` and `image.resolved` apply directly. Re-read signals
+(`conversation.changed`, `files.changed`, `branch.deleted`, `repository.changed`,
+`pull_request.changed`) and completed HTTP mutations trigger an HTTP reload. Ready
+states refresh preview metadata. Queue, task and preview events have no UI in this
+minimal example.
 
-Question forms keep using the existing conversation projection through the partner
-backend, and all writes still go through the partner backend.
+Tool calls render from their public parts: `arguments`, `display`, `user_input`,
+media `results` and a parked call's `approval`. The server maps HTTP conversation
+reads into the same shape, so both paths share the widgets. All writes still go
+through the partner backend.
 
 **Errors.** Delivery stops, with **Reconnect live updates**, when another tab takes
 the session, when the app's access is revoked, or when a handler fails. A missing

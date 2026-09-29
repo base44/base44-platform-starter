@@ -13,9 +13,9 @@ export function toAssistantMessage(message: Message): ThreadMessageLike {
         type: "tool-call" as const,
         toolCallId: tool.id || `${message.id}:tool:${index}`,
         toolName: tool.name || "Agent action",
-        argsText: tool.arguments_string || "",
+        argsText: tool.arguments ? JSON.stringify(tool.arguments) : "",
         artifact: { tool, messageId: message.id },
-        ...(tool.results != null ? { result: tool.results } : {}),
+        ...(tool.results ? { result: tool.results } : {}),
         isError: tool.status === "error" || tool.status === "stopped",
         ...(tool.status === "waiting_for_user_input"
           ? { interrupt: { type: "human" as const, payload: tool.waiting_on } }

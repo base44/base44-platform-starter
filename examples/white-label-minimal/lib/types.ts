@@ -1,4 +1,4 @@
-import type { ToolGuardApproval, ToolMediaResult } from "@base44/sdk/platform/client";
+import type { ToolCall as PublicToolCall } from "@base44/sdk/platform/client";
 
 export type App = {
   id: string;
@@ -10,30 +10,10 @@ export type App = {
   user_description?: string;
   status?: { state?: string; error_source?: string };
 };
-export type ToolCall = {
-  id?: string | null;
-  name?: string | null;
+// The socket's public tool shape; the server maps HTTP reads into it too.
+export type ToolCall = Omit<PublicToolCall, "status" | "waiting_on"> & {
   status?: string | null;
   waiting_on?: { kind?: string | null } | null;
-  arguments_string?: string | null;
-  results?: string | ToolMediaResult | ToolGuardApproval | null;
-  auto_approved?: boolean | null;
-  mutation_applied?: boolean | null;
-  display_projection?: {
-    file_paths?: string[];
-    content_empty?: boolean;
-    summary?: string;
-    writes_entities?: boolean;
-    entity_name?: string;
-    record_count?: number;
-  } | null;
-  user_input?: {
-    answers?: Array<{
-      question_index?: number;
-      selected_labels?: string[];
-      custom_text?: string;
-    }>;
-  } | null;
 };
 export type Message = {
   id: string;

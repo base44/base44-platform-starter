@@ -1,6 +1,6 @@
 import "server-only";
 import { customInstructions } from "./custom-instructions";
-import type { App, Message, ToolInput } from "../types";
+import type { App, Message, ToolCall, ToolInput } from "../types";
 import { Base44Error } from "./error";
 import { getBase44Config } from "./config";
 
@@ -127,7 +127,40 @@ export function createBase44Client(accessToken: string) {
     return appSummary(app);
   }
 
-  const getApp = async (id: string) => appSummary(await request(`/api/apps/${id}`));
+  // HTTP reads return the builder's own tool calls; the browser renders the socket's public shape.
+type RawToolCall = {
+  id?: string; name?: string; status?: string | null; waiting_on?: ToolCall["waiting_on"];
+  auto_approved?: boolean; mutation_applied?: boolean | null; arguments_string?: string | null;
+  results?: unknown; display_projection?: ToolCall["display"] | null; user_input?: ToolCall["user_input"] | null;
+};
+type RawMessage = { tool_calls?: RawToolCall[] | null };
+
+function jsonObject(value: unknown): Record<string, unknown> | undefined {
+  try {
+    const parsed: unknown = typeof value === "string" ? JSON.parse(value) : value;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function publicTool(t: RawToolCall): ToolCall {
+  const results = jsonObject(t.results);
+  const parked = t.status === "waiting_for_user_input";
+  return {
+    id: t.id, name: t.name, status: t.status, waiting_on: t.waiting_on,
+    auto_approved: t.auto_approved, mutation_applied: t.mutation_applied,
+    arguments: jsonObject(t.arguments_string),
+    display: t.display_projection ?? undefined,
+    user_input: t.user_input ?? undefined,
+    results: !parked && typeof results?.placeholder_url === "string" ? results : undefined,
+    approval: parked && typeof results?.guard === "string"
+      ? { guard: results.guard, ...(typeof results.reason === "string" ? { reason: results.reason } : {}) }
+      : undefined,
+  };
+}
+
+const getApp = async (id: string) => appSummary(await request(`/api/apps/${id}`));
   async function getConversation(id: string, skip: number) {
     const data = await request(`/api/apps/${id}/chat/full-conversation?limit=20&skip=${skip}`, {
       timeout: 60_000,
@@ -144,18 +177,7 @@ export function createBase44Client(accessToken: string) {
         role: m.role,
         content: m.content,
         hidden: m.hidden,
-        tool_calls: m.tool_calls?.map((t) => ({
-          id: t.id,
-          name: t.name,
-          status: t.status,
-          waiting_on: t.waiting_on,
-          arguments_string: t.arguments_string,
-          results: typeof t.results === "string" ? t.results : undefined,
-          auto_approved: t.auto_approved,
-          mutation_applied: t.mutation_applied,
-          display_projection: t.display_projection,
-          user_input: t.user_input,
-        })),
+        tool_calls: (m as unknown as RawMessage).tool_calls?.map(publicTool),
       };
     });
     return { messages };

@@ -114,6 +114,23 @@ test('missing configuration makes no network call; conversation uses newest-rela
   assert.equal(result.status, 200); assert.match(reads[0].url, /limit=20&skip=20$/);
 });
 
+test('conversation reads return tool calls in the socket\'s public shape', async () => {
+  setup({ messages: [{ id: 'm1', role: 'assistant', tool_calls: [
+    { id: 't1', name: 'install_npm_package', status: 'success', arguments_string: '{"packages":[{"name":"zod"}]}', display_projection: { summary: 'Installing' } },
+    { id: 't2', name: 'exec_tool', status: 'waiting_for_user_input', results: '{"guard":"exec_tool_send_email","reason":"Sends email"}' },
+    { id: 't3', name: 'generate_image', status: 'success', arguments_string: '{', results: { placeholder_url: '/p', status: 'completed', image_url: '/i' } },
+  ] }] });
+  const { messages } = await (await request({ action: 'getConversation', appId: 'app_1', skip: 0 })).json();
+  const [install, guarded, image] = messages[0].tool_calls;
+  assert.deepEqual(install.arguments, { packages: [{ name: 'zod' }] });
+  assert.deepEqual(install.display, { summary: 'Installing' });
+  assert.equal(install.arguments_string, undefined);
+  assert.deepEqual(guarded.approval, { guard: 'exec_tool_send_email', reason: 'Sends email' });
+  assert.equal(guarded.results, undefined);
+  assert.equal(image.arguments, undefined);
+  assert.deepEqual(image.results, { placeholder_url: '/p', status: 'completed', image_url: '/i' });
+});
+
 test('requires a session and exact origin before calling Base44', async () => {
   const calls = setup();
   process.env.BUILDER_ORIGIN = 'https://tiny.sunny44.com';

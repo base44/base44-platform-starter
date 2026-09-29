@@ -26,12 +26,8 @@ test.beforeEach(async ({ page }) => {
       const [event, joinedRoom] = JSON.parse(packet.slice(2));
       if (event !== 'join') return;
       room = joinedRoom;
-      liveSockets.set(page, (name, data) => {
-        const wrapped = ['update_model', 'task_update', 'image_ready'].includes(name);
-        const payload = wrapped ? { room, data: JSON.stringify(data) } : { room, ...data };
-        socket.send('42' + JSON.stringify([name, payload]));
-      });
-      socket.send('42' + JSON.stringify(['joined', { room, status: null, messages: [] }]));
+      liveSockets.set(page, (name, data) => socket.send('42' + JSON.stringify([name, { room, data }])));
+      socket.send('42' + JSON.stringify(['app.snapshot', { room, data: { status: null, messages: [] } }]));
     });
   });
 });
@@ -76,7 +72,7 @@ async function openBuilder(page: Page) {
   if (await cta.count()) await cta.click();
   else await page.getByRole('button', { name: 'New app', exact: true }).click();
 }
-const question = (kind: string, args: object): ToolCall => ({ id: 'tool_1', name: 'Agent question', waiting_on: { kind }, arguments_string: JSON.stringify(args) });
+const question = (kind: string, args: object): ToolCall => ({ id: 'tool_1', name: 'Agent question', waiting_on: { kind }, arguments: args });
 
 test('choice retry freezes original payload, prevents duplicates, then unlocks composer', async ({ page }) => {
   const f = await fixture(page, question('choice', { questions: [{ question: 'Which color?', options: ['Blue', 'Green'] }] }), true);
@@ -139,7 +135,7 @@ test('snapshot failure pauses live updates, reconnect restores them', async ({ p
     if (route.request().postDataJSON().action === 'getApp') return route.fulfill({ status: 503, json: { error: 'Temporary read failure' } });
     return route.fallback();
   });
-  pushEvent(page, "directive", { type: "conversation_changed" });
+  pushEvent(page, "conversation.changed", {});
   await expect(page.getByText('Live updates paused. Reconnect to continue.')).toBeVisible();
   await page.unroute('**/api/base44');
   await page.route('**/api/base44', route => route.fulfill({ json: route.request().postDataJSON().action === 'getApp'
@@ -188,7 +184,7 @@ test('slow snapshot reads do not overlap and no polling timer runs', async ({ pa
     await pending;
     return route.fulfill({ json: { messages: [] } });
   });
-  pushEvent(page, "directive", { type: "conversation_changed" });
+  pushEvent(page, "conversation.changed", {});
   await expect.poll(() => reads).toBe(1);
   await page.clock.fastForward(40_000);
   expect(reads).toBe(1);
@@ -270,7 +266,7 @@ test('My apps shows owned cards and opens the editor without marketplace feature
  test('ordinary tool activity is collapsed and assistant messages render Markdown', async ({ page }) => {
   await page.route('**/api/base44', route => {
     const { action } = route.request().postDataJSON();
-    return route.fulfill({ json: action === 'listApps' ? { apps: [], hasMore: false, nextSkip: 0 } : action === 'getConversation' ? { messages: [{ id: 'm1', role: 'assistant', content: '## Your app is ready\n- **Hello world**', tool_calls: [{ id: 't1', name: 'find_replace', status: 'success', display_projection: { file_paths: ['src/index.css'] } }] }] } : { id: 'aaaaaaaaaaaaaaaaaaaaaaaa', name: 'Hello World', status: { state: 'ready' } } });
+    return route.fulfill({ json: action === 'listApps' ? { apps: [], hasMore: false, nextSkip: 0 } : action === 'getConversation' ? { messages: [{ id: 'm1', role: 'assistant', content: '## Your app is ready\n- **Hello world**', tool_calls: [{ id: 't1', name: 'find_replace', status: 'success', display: { file_paths: ['src/index.css'] } }] }] } : { id: 'aaaaaaaaaaaaaaaaaaaaaaaa', name: 'Hello World', status: { state: 'ready' } } });
   });
   await openBuilder(page);
   await page.getByLabel('What would you like to build?').fill('Hello world app');
@@ -296,8 +292,8 @@ test('assistant-ui preserves inline tools across live invalidation and hides int
     if (p.action === 'getConversation') return route.fulfill({ json: { messages: [
       { id: 'hidden', hidden: true, role: 'assistant', content: 'Internal instructions' },
       { id: 'm1', role: 'assistant', content: '**Working on your app**', tool_calls: [
-        { id: 't1', name: 'write_file', status: complete ? 'success' : 'running', display_projection: { file_paths: ['app.tsx'] }, results: complete ? 'Plan updated.' : null },
-        { name: 'unknown_question', status: 'waiting_for_user_input', waiting_on: { kind: 'choice' }, arguments_string: '{' },
+        { id: 't1', name: 'write_file', status: complete ? 'success' : 'running', display: { file_paths: ['app.tsx'] } },
+        { name: 'unknown_question', status: 'waiting_for_user_input', waiting_on: { kind: 'choice' }, arguments: {} },
       ] },
     ] } });
     return route.fulfill({ json: { id: 'aaaaaaaaaaaaaaaaaaaaaaaa', status: { state: 'ready' } } });
@@ -314,7 +310,7 @@ test('assistant-ui preserves inline tools across live invalidation and hides int
   await page.locator('.tool-activity summary').click();
   await expect(page.locator('.tool-activity')).toContainText('Working');
   complete = true;
-  pushEvent(page, "directive", { type: "conversation_changed" });
+  pushEvent(page, "conversation.changed", {});
   await expect(page.locator('.tool-activity')).toContainText('Done');
   await expect(page.locator('.tool-activity')).toHaveAttribute('open', '');
   expect(sent).toEqual([]);
@@ -367,7 +363,7 @@ test('preview card waits for build completion and hides during follow-up submiss
   await expect(card).toHaveCount(0);
 
   state = 'ready';
-  pushEvent(page, "directive", { type: "conversation_changed" });
+  pushEvent(page, "conversation.changed", {});
   await expect(card).toBeVisible();
   await page.getByLabel('What should change?').fill('Add a reset button');
   await page.getByRole('button', { name: 'Send prompt', exact: true }).click();
@@ -378,7 +374,7 @@ test('preview card waits for build completion and hides during follow-up submiss
   await expect(card).toHaveCount(0);
 
   state = 'ready';
-  pushEvent(page, "directive", { type: "conversation_changed" });
+  pushEvent(page, "conversation.changed", {});
   await expect(card).toBeVisible();
 });
 
@@ -406,7 +402,7 @@ test('first prompt stays visible through creation and an empty snapshot, then me
   await expect(page.getByText(prompt, { exact: true })).toBeVisible();
   await expect(page.getByText('No messages yet.', { exact: true })).toHaveCount(0);
   includeMessage = true;
-  pushEvent(page, "directive", { type: "conversation_changed" });
+  pushEvent(page, "conversation.changed", {});
   await expect(page.locator('.from-user')).toHaveCount(1);
   await expect(page.getByText(prompt, { exact: true })).toHaveCount(1);
 });
@@ -607,7 +603,7 @@ test('streamed chat replaces a message without periodic HTTP reads', async ({ pa
     if (['getApp', 'getConversation'].includes(route.request().postDataJSON().action)) reads++;
     return route.fallback();
   });
-  pushEvent(page, 'update_model', { _last_msg: { id: 'm1', role: 'assistant', content: 'This text arrived through the socket.' } });
+  pushEvent(page, 'message.updated', { message: { id: 'm1', role: 'assistant', content: 'This text arrived through the socket.' } });
   await expect(page.getByText('This text arrived through the socket.')).toBeVisible();
   await expect(page.getByText('Your app is taking shape.')).toHaveCount(0);
   await page.clock.fastForward(45_000);
@@ -623,7 +619,7 @@ test('leaving the page ends the socket session instead of leaving it to expire',
     closes.push(body);
     return route.fulfill({ json: {} });
   });
-  pushEvent(page, 'update_model', { _last_msg: { id: 'm1', role: 'assistant', content: 'Connected.' } });
+  pushEvent(page, 'message.updated', { message: { id: 'm1', role: 'assistant', content: 'Connected.' } });
   await expect(page.getByText('Connected.')).toBeVisible();
   // Playwright stops routing a page's requests once it unloads, so fire the unload event itself.
   await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide')));

@@ -3,7 +3,7 @@ import type { App, Message } from "../types";
 import { getApp, getConversation } from "./builder-api";
 import { createBuilderConnection } from "./builder-connection";
 import { refreshConversation } from "./conversation";
-import { applyMessageUpdate, mergeMessages, resolveImage } from "./socket-messages";
+import { mergeMessages, removeMessage, resolveImage } from "./socket-messages";
 
 export interface BuildState { app: App | null; messages: Message[] }
 export interface BuildStreamDependencies {
@@ -79,25 +79,32 @@ export function watchBuild(
       async onEvent(event) {
         if (flight) await flight;
         if (stopped) return;
-        if (event.type === "update_model") {
-          const update = event.data;
-          if (state.app && "status" in update) state = {
-            ...state, app: { ...state.app, status: update.status ?? undefined },
-          };
-          state = { ...state, messages: applyMessageUpdate(state.messages, update) };
-          publish();
-          if (update.status?.state === "ready") {
-            const app = await dependencies.readApp(appId, controller.signal);
-            state = { ...state, app };
+        switch (event.type) {
+          case "message.updated":
+            state = { ...state, messages: mergeMessages(state.messages, [event.data.message]) };
+            return publish();
+          case "message.removed":
+            state = { ...state, messages: removeMessage(state.messages, event.data.message_id) };
+            return publish();
+          case "app.status_changed": {
+            const { status } = event.data;
+            if (state.app) state = { ...state, app: { ...state.app, status: status ?? undefined } };
             publish();
+            if (status?.state === "ready") {
+              const app = await dependencies.readApp(appId, controller.signal);
+              state = { ...state, app };
+              publish();
+            }
+            return;
           }
-        } else if (event.type === "directive") {
-          await reload();
-        } else if (event.type === "image_ready") {
-          state = { ...state, messages: resolveImage(state.messages, event.data) };
-          publish();
+          case "image.resolved":
+            state = { ...state, messages: resolveImage(state.messages, event.data) };
+            return publish();
+          case "conversation.changed": case "files.changed": case "branch.deleted":
+          case "repository.changed": case "pull_request.changed":
+            return reload();
         }
-        // Queue/task events have no UI here; this minimal example renders progress from messages.
+        // Queue, task and preview events have no UI here; progress renders from messages.
       },
     });
     await builder.connect();

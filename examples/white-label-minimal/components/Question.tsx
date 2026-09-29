@@ -10,17 +10,17 @@ export function parseQuestion(
 ):
   | { kind: "choice"; choices: Choice[] }
   | { kind: "input"; fields: Field[] }
-  | { kind: "approval"; packages: Package[] }
+  | { kind: "approval"; packages: Package[]; reason?: string }
   | { kind: "unknown" } {
   try {
-    const args = JSON.parse(tool.arguments_string || "{}");
+    const args = (tool.arguments ?? {}) as Record<string, unknown>;
     if (tool.waiting_on?.kind === "approval") {
       const packages = tool.name === "install_npm_package" && Array.isArray(args.packages)
         ? args.packages.flatMap((pkg: Record<string, unknown>) => typeof pkg?.name === "string" && pkg.name
           ? [{ name: pkg.name, action: pkg.action === "uninstall" ? "uninstall" as const : "install" as const }]
           : [])
         : [];
-      return { kind: "approval", packages };
+      return { kind: "approval", packages, reason: tool.approval?.reason };
     }
     if (
       tool.waiting_on?.kind === "choice" &&
@@ -128,13 +128,14 @@ export default function Question({
       <strong>{tool.name || "Agent action"}</strong>{" "}
       <small>{submitted ? "Answer sent" : tool.status}</small>
       {(question.kind === "unknown" || question.kind === "approval") && (
-        <details open={question.kind === "approval" && question.packages.length > 0}>
+        <details open={question.kind === "approval" && (question.packages.length > 0 || !!question.reason)}>
           <summary>
             {question.kind === "unknown" ? "Unsupported question / tool details" : "Review proposed action"}
           </summary>
+          {question.kind === "approval" && question.reason && <p>{question.reason}</p>}
           {question.kind === "approval" && question.packages.length ? (
             <ul className="tool-list">{question.packages.map(pkg => <li key={`${pkg.action}:${pkg.name}`}>{pkg.action === "uninstall" ? "Remove" : "Install"} <code>{pkg.name}</code></li>)}</ul>
-          ) : <p>This action needs input that this example cannot render.</p>}
+          ) : !(question.kind === "approval" && question.reason) && <p>This action needs input that this example cannot render.</p>}
         </details>
       )}
       {waiting && !submitted && (

@@ -10,12 +10,7 @@ type ToolArguments = {
 };
 
 function argumentsFor(tool: ToolCall): ToolArguments {
-  try {
-    const parsed: unknown = JSON.parse(tool.arguments_string || "{}");
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as ToolArguments : {};
-  } catch {
-    return {};
-  }
+  return (tool.arguments ?? {}) as ToolArguments;
 }
 
 function packagesFor(args: ToolArguments) {
@@ -27,7 +22,7 @@ function packagesFor(args: ToolArguments) {
 }
 
 function activityLabel(tool: ToolCall) {
-  const activity = tool.display_projection;
+  const activity = tool.display;
   if (activity?.file_paths?.length) {
     const verb = tool.name === "delete_file" ? "Deleting" : "Editing";
     return `${verb} ${activity.file_paths.join(", ")}`;
@@ -57,7 +52,7 @@ function ToolDetails({ tool }: { tool: ToolCall }) {
         : "Plan";
     return typeof update.text === "string" && update.text ? [{ label, text: update.text }] : [];
   });
-  const media = typeof tool.results === "object" && tool.results && "placeholder_url" in tool.results ? tool.results : null;
+  const media = tool.results?.placeholder_url ? tool.results : null;
   const mediaLabel = typeof args.label === "string" && args.label ? args.label : "Generated media";
   const mediaPending = media?.status === "pending" || (!media && tool.status === "running");
 
@@ -74,18 +69,19 @@ function ToolDetails({ tool }: { tool: ToolCall }) {
     return <div className="tool-widget"><div className="tool-widget-heading"><Package size={14} /> <strong>Package changes</strong></div><ul className="tool-list">{packages.map(pkg => <li key={`${pkg.action}:${pkg.name}`}>{pkg.action === "uninstall" ? "Remove" : "Install"} <code>{pkg.name}</code></li>)}</ul></div>;
   }
   if (plans.length || (args.sections_with_enough || []).some((item) => typeof item === "string")) {
-    return <div className="tool-widget"><div className="tool-widget-heading"><PencilLine size={14} /> <strong>Plan update</strong></div><ul className="tool-list">{plans.map(plan => <li key={`${plan.label}:${plan.text}`}><strong>{plan.label}</strong> {plan.text}</li>)}</ul>{typeof tool.results === "string" && <small>{tool.results}</small>}</div>;
+    return <div className="tool-widget"><div className="tool-widget-heading"><PencilLine size={14} /> <strong>Plan update</strong></div><ul className="tool-list">{plans.map(plan => <li key={`${plan.label}:${plan.text}`}><strong>{plan.label}</strong> {plan.text}</li>)}</ul></div>;
   }
-  if (tool.display_projection?.file_paths?.length) {
-    return <div className="tool-widget"><div className="tool-widget-heading"><FileCode2 size={14} /> <strong>Files</strong></div><ul className="tool-list">{tool.display_projection.file_paths.map(path => <li key={path}><code>{path}</code>{tool.display_projection?.content_empty ? " (empty file)" : ""}</li>)}</ul></div>;
+  const display = tool.display;
+  if (display?.file_paths?.length) {
+    return <div className="tool-widget"><div className="tool-widget-heading"><FileCode2 size={14} /> <strong>Files</strong></div><ul className="tool-list">{display.file_paths.map(path => <li key={path}><code>{path}</code>{display.content_empty ? " (empty file)" : ""}</li>)}</ul></div>;
   }
-  if (tool.display_projection?.entity_name || tool.display_projection?.summary) {
-    return <div className="tool-widget"><div className="tool-widget-heading"><Terminal size={14} /> <strong>{tool.display_projection.summary || "Entity activity"}</strong></div>{tool.display_projection.entity_name && <small>{tool.display_projection.record_count ?? ""} {tool.display_projection.entity_name} records</small>}{tool.display_projection.writes_entities && <small>Updated app data</small>}</div>;
+  if (display?.entity_name || display?.summary) {
+    return <div className="tool-widget"><div className="tool-widget-heading"><Terminal size={14} /> <strong>{display.summary || "Entity activity"}</strong></div>{display.entity_name && <small>{display.record_count ?? ""} {display.entity_name} records</small>}{display.writes_entities && <small>Updated app data</small>}</div>;
   }
   if (tool.user_input?.answers?.length) {
     return <div className="tool-widget"><strong>Answer received</strong><ul className="tool-list">{tool.user_input.answers.map((answer, index) => <li key={answer.question_index ?? index}>{[...(answer.selected_labels || []), answer.custom_text].filter(Boolean).join(", ")}</li>)}</ul></div>;
   }
-  return typeof tool.results === "string" ? <div className="tool-widget"><strong>{tool.results}</strong></div> : null;
+  return null;
 }
 
 export default function ToolActivity({ tool }: { tool: ToolCall }) {
