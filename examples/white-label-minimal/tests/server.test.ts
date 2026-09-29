@@ -3,10 +3,11 @@ import { afterEach, test } from 'node:test';
 import { createHandler } from '../lib/server/api-handler';
 import { createBase44Client } from '../lib/base44/client';
 import { Base44Error } from '../lib/base44/error';
+import { openSocketSession } from '../lib/base44/socket-session';
 let signedIn = true;
 const POST = createHandler(async () => {
   if (!signedIn) throw new Base44Error('Sign in to continue.', 401);
-  return { ...createBase44Client('user-token-canary'), authorize: async (id: string) => {
+  return { ...createBase44Client('user-token-canary'), openBuilderSession: openSocketSession, authorize: async (id: string) => {
     if (id === 'other_app') throw new Base44Error('App not found.', 404);
   }, removeApp: async () => ({}), listApps: async () => ({ apps: [], hasMore: false, nextSkip: 0 }) };
 });
@@ -191,18 +192,36 @@ test('remove requires ownership and never calls the upstream app deletion API', 
   assert.equal((await (await request({ action: 'getApp', appId: 'app_2' })).json()).static_preview_url, undefined);
 });
 
-test('builder connection returns the current token only after session and app authorization', async () => {
-  setup();
-  const request = (appId: string, origin = 'http://127.0.0.1:3001') => new Request('http://127.0.0.1:3001/api/base44/socket-token', {
+test('the socket session opens with the watch key only after session and app authorization', async () => {
+  const calls = setup({ session_id: 'wls_1', session_token: 'wlst_canary', socket_url: 'https://platform.example', socket_path: '/ws/socket.io/', expires_in: 3600 });
+  process.env.BASE44_SVC_KEY = 'b44k_mint';
+  process.env.BASE44_WATCH_KEY = 'b44k_watch';
+  const request = (appId: string, origin = 'http://127.0.0.1:3001') => new Request('http://127.0.0.1:3001/api/base44/socket-session', {
     method: 'POST', headers: { host: '127.0.0.1:3001', origin, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'getBuilderConnection', appId }),
+    body: JSON.stringify({ action: 'openBuilderSession', appId }),
   });
   const response = await POST(request('app_1'));
   assert.equal(response.status, 200);
   assert.match(response.headers.get('cache-control')!, /no-store/);
-  assert.equal((await response.json()).token, 'user-token-canary');
+  assert.deepEqual(await response.json(), { serverUrl: 'https://platform.example', sessionToken: 'wlst_canary' });
+  assert.equal(calls[0].url, 'https://platform.example/api/service/socket-sessions');
+  assert.equal(new Headers(calls[0].init!.headers).get('authorization'), 'b44k_watch');
+  assert.deepEqual(JSON.parse(String(calls[0].init!.body)), { app_ids: ['app_1'] });
   assert.equal((await POST(request('other_app'))).status, 404);
   assert.equal((await POST(request('app_1', 'https://foreign.example'))).status, 403);
   signedIn = false;
   assert.equal((await POST(request('app_1'))).status, 401);
+  assert.equal(calls.length, 1);
+});
+
+test('the socket session falls back to the mint key and reports a missing watch scope as configuration', async () => {
+  const calls = setup({ error: { code: 'scope_required' } }, 403);
+  process.env.BASE44_SVC_KEY = 'b44k_mint';
+  const response = await POST(new Request('http://127.0.0.1:3001/api/base44/socket-session', {
+    method: 'POST', headers: { host: '127.0.0.1:3001', origin: 'http://127.0.0.1:3001', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'openBuilderSession', appId: 'app_1' }),
+  }));
+  assert.equal(response.status, 503);
+  assert.match((await response.json()).error, /apps:watch/);
+  assert.equal(new Headers(calls[0].init!.headers).get('authorization'), 'b44k_mint');
 });

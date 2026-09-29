@@ -57,7 +57,7 @@ function ToolDetails({ tool }: { tool: ToolCall }) {
         : "Plan";
     return typeof update.text === "string" && update.text ? [{ label, text: update.text }] : [];
   });
-  const media = typeof tool.results === "object" && tool.results ? tool.results : null;
+  const media = typeof tool.results === "object" && tool.results && "placeholder_url" in tool.results ? tool.results : null;
   const mediaLabel = typeof args.label === "string" && args.label ? args.label : "Generated media";
   const mediaPending = media?.status === "pending" || (!media && tool.status === "running");
 

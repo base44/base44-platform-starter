@@ -3,7 +3,7 @@ import type { App, Message } from "../types";
 import { getApp, getConversation } from "./builder-api";
 import { createBuilderConnection } from "./builder-connection";
 import { refreshConversation } from "./conversation";
-import { applyMessageUpdate, resolveImage } from "./socket-messages";
+import { applyMessageUpdate, mergeMessages, resolveImage } from "./socket-messages";
 
 export interface BuildState { app: App | null; messages: Message[] }
 export interface BuildStreamDependencies {
@@ -33,12 +33,14 @@ export function watchBuild(
     stopped = true;
     controller.abort();
     const code = (error as { code?: string })?.code;
-    onError(code === "resync_required"
-      ? "Live history expired. Reconnect to load the conversation again."
-      : "Live updates paused. Reconnect to continue.");
+    onError(code === "session_replaced"
+      ? "Live updates moved to another tab. Reconnect to continue here."
+      : code === "access_denied" || code === "access_revoked"
+        ? "Live updates for this app are no longer available."
+        : "Live updates paused. Reconnect to continue.");
     builder?.close();
   }
-  function snapshot(): Promise<void> {
+  function reload(): Promise<void> {
     if (flight) return flight;
     flight = (async () => {
       const [app, messages] = await Promise.all([
@@ -57,10 +59,22 @@ export function watchBuild(
     builder = await dependencies.connect(appId, fail, controller.signal);
     if (stopped) { builder.close(); return; }
     builder.subscribe(appId, {
-      onError: fail,
-      async onJoined() {
-        // Subscribe first: the SDK buffers live events while the initial snapshot loads.
-        if (!loaded) await snapshot();
+      onError(error) {
+        // The join held and live events still flow; only the socket snapshot is missing.
+        if (error.code === "snapshot_unavailable") { if (!loaded) void reload().catch(fail); }
+        else fail(error);
+      },
+      async onSnapshot(snapshot) {
+        // The first load reads full history over HTTP; later snapshots (reconnect, rewrite)
+        // cover what the socket missed while it was away.
+        if (flight) await flight;
+        if (!loaded) return reload();
+        if (stopped) return;
+        state = {
+          app: state.app && { ...state.app, status: snapshot.status ?? undefined },
+          messages: mergeMessages(state.messages, snapshot.messages),
+        };
+        publish();
       },
       async onEvent(event) {
         if (flight) await flight;
@@ -78,12 +92,12 @@ export function watchBuild(
             publish();
           }
         } else if (event.type === "directive") {
-          await snapshot();
+          await reload();
         } else if (event.type === "image_ready") {
           state = { ...state, messages: resolveImage(state.messages, event.data) };
           publish();
         }
-        // Queue/task events advance the SDK cursor; this minimal UI renders progress from messages.
+        // Queue/task events have no UI here; this minimal example renders progress from messages.
       },
     });
     await builder.connect();
@@ -95,7 +109,7 @@ export function watchBuild(
       // Mutation-triggered reads must start after any earlier read has settled.
       try {
         if (flight) await flight;
-        if (!stopped) await snapshot();
+        if (!stopped) await reload();
       } catch (error) { fail(error); }
     },
     close() {

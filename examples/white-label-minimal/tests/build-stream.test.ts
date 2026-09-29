@@ -14,7 +14,7 @@ function fixture() {
     async connect() {
       order.push('initialize');
       return {
-        subscribe(_id, options) { subscription = options; order.push('subscribe'); return { appId, cursor: undefined, active: true, unsubscribe() {} }; },
+        subscribe(_id, options) { subscription = options; order.push('subscribe'); return { appId, active: true, unsubscribe() {} }; },
         async connect() { order.push('connect'); },
         close() { closes++; },
       };
@@ -25,16 +25,37 @@ function fixture() {
   return { stream, states, errors, order, subscription: () => subscription, reads: () => reads, closes: () => closes };
 }
 
+const room = `/apps/${appId}`;
+
 test('subscribes before loading history and streamed messages require no HTTP refresh', async () => {
   const f = fixture(); await turn();
   assert.deepEqual(f.order, ['initialize', 'subscribe', 'connect']);
-  await f.subscription().onJoined!({ room: `/apps/${appId}`, seq: 'one', max_entries: 2000, inactivity_expiry_seconds: 3600 });
+  await f.subscription().onSnapshot({ room, status: { state: 'processing' }, messages: [] });
   assert.equal(f.reads(), 1);
-  await f.subscription().onEvent({ type: 'update_model', appId, seq: 'two', data: { _last_msg: { id: 'm', role: 'assistant', content: 'Streaming' } } });
+  await f.subscription().onEvent({ type: 'update_model', appId, data: { _last_msg: { id: 'm', role: 'assistant', content: 'Streaming' } } });
   assert.equal(f.reads(), 1);
   assert.deepEqual((f.states.at(-1) as any).messages, [{ id: 'm', role: 'assistant', content: 'Streaming' }]);
-  await f.subscription().onJoined!({ room: `/apps/${appId}`, seq: 'two', max_entries: 2000, inactivity_expiry_seconds: 3600 });
-  assert.equal(f.reads(), 1, 'reconnect replay must not fetch a fresh snapshot');
+  f.stream.close();
+});
+
+test('a reconnect snapshot merges what the socket missed without an HTTP read', async () => {
+  const f = fixture(); await turn();
+  await f.subscription().onSnapshot({ room, status: { state: 'processing' }, messages: [] });
+  await f.subscription().onSnapshot({ room, status: { state: 'ready' }, messages: [
+    { id: 'm', role: 'assistant', content: 'Finished while away' }, { id: 'n', role: 'user', content: 'Next' },
+  ] });
+  assert.equal(f.reads(), 1);
+  const state = f.states.at(-1) as any;
+  assert.equal(state.app.status.state, 'ready');
+  assert.deepEqual(state.messages.map((m: any) => m.content), ['Finished while away', 'Next']);
+  f.stream.close();
+});
+
+test('a missing socket snapshot still loads history and keeps the session', async () => {
+  const f = fixture(); await turn();
+  f.subscription().onError({ code: 'snapshot_unavailable' } as PlatformSocketError);
+  await turn();
+  assert.equal(f.reads(), 1); assert.equal(f.closes(), 0); assert.deepEqual(f.errors, []);
   f.stream.close();
 });
 
@@ -43,29 +64,29 @@ test('question updates render from the socket while invalidations refresh throug
   for (const event of [
     { type: 'update_model', data: { _last_msg: { id: 'm', tool_calls: [{ status: 'waiting_for_user_input' }] } } },
     { type: 'directive', data: { room: `/apps/${appId}`, type: 'conversation_changed' } },
-  ]) await f.subscription().onEvent({ ...event, appId, seq: 'event' } as PlatformEvent);
+  ]) await f.subscription().onEvent({ ...event, appId } as PlatformEvent);
   assert.equal(f.reads(), 1);
   f.stream.close();
 });
 
-test('resync errors stop the session and cannot silently restart a fresh cursor', async () => {
+test('a session claimed by another tab stops delivery until the user reconnects', async () => {
   const f = fixture(); await turn();
-  f.subscription().onError({ code: 'resync_required' } as PlatformSocketError);
-  assert.equal(f.closes(), 1); assert.match(f.errors[0], /expired/);
+  f.subscription().onError({ code: 'session_replaced' } as PlatformSocketError);
+  assert.equal(f.closes(), 1); assert.match(f.errors[0], /another tab/);
   await f.stream.refresh(); assert.equal(f.reads(), 0);
 });
 
 test('cleanup prevents an in-flight snapshot from publishing into another app', async () => {
   let release!: () => void;
-  let onJoined!: SubscriptionOptions['onJoined'];
+  let onSnapshot!: SubscriptionOptions['onSnapshot'];
   const states: unknown[] = [];
   const stream = watchBuild(appId, state => states.push(state), () => {}, {
-    async connect() { return { subscribe(_id, options) { onJoined = options.onJoined; return { appId, cursor: undefined, active: true, unsubscribe() {} }; }, async connect() {}, close() {} }; },
+    async connect() { return { subscribe(_id, options) { onSnapshot = options.onSnapshot; return { appId, active: true, unsubscribe() {} }; }, async connect() {}, close() {} }; },
     async readApp() { await new Promise<void>(resolve => { release = resolve; }); return { id: appId }; },
     async readConversation() { return { messages: [] }; },
   });
   await turn();
-  const pending = onJoined!({ room: `/apps/${appId}`, seq: 'start', max_entries: 2000, inactivity_expiry_seconds: 3600 });
+  const pending = onSnapshot({ room: `/apps/${appId}`, status: null, messages: [] });
   stream.close(); release(); await pending; assert.deepEqual(states, []);
 });
 
@@ -75,4 +96,5 @@ test('message replacement preserves omission/null and image completion resolves 
   assert.equal(resolveImage(previous, { placeholder_url: '/placeholder', status: 'completed', image_url: '/image' })[0].content, '/image');
   assert.deepEqual(resolveImage(previous, { placeholder_url: '/placeholder', status: 'completed', image_url: '/image' })[0].tool_calls?.[0].results, { placeholder_url: '/placeholder', status: 'completed', image_url: '/image' });
   assert.equal(previous[0].content, '/placeholder');
+  assert.deepEqual(applyMessageUpdate(previous, { _last_msg: { id: 'm', is_deleted: true } }), []);
 });

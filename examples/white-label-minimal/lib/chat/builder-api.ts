@@ -59,7 +59,7 @@ export const listApps = (skip = 0) => call<AppPage>("listApps", { skip });
 
 export const removeApp = (appId: string) => call("removeApp", { appId });
 
-export const getBuilderConnection = (appId: string, signal?: AbortSignal) =>
-  call<{ serverUrl: string; token: string }>(
-    "getBuilderConnection", { appId }, signal, "/api/base44/socket-token",
+export const openBuilderSession = (appId: string, signal?: AbortSignal) =>
+  call<{ serverUrl: string; sessionToken: string }>(
+    "openBuilderSession", { appId }, signal, "/api/base44/socket-session",
   );

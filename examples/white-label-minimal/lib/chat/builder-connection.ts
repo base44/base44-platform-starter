@@ -1,18 +1,19 @@
 import { Base44PlatformClient, type PlatformSocketError } from "@base44/sdk/platform/client";
-import { getBuilderConnection } from "./builder-api";
+import { openBuilderSession } from "./builder-api";
 
 export async function createBuilderConnection(
   appId: string,
   onError: (error: PlatformSocketError) => void,
   signal: AbortSignal,
 ) {
-  const initial = await getBuilderConnection(appId, signal);
-  let firstToken: string | undefined = initial.token;
+  const initial = await openBuilderSession(appId, signal);
+  let first: string | undefined = initial.sessionToken;
   const client = new Base44PlatformClient({
     serverUrl: initial.serverUrl,
-    async refreshToken() {
-      const token = firstToken ?? (await getBuilderConnection(appId, signal)).token;
-      firstToken = undefined;
+    // The SDK reuses the token across reconnects and asks again only once the session has ended.
+    async getSessionToken() {
+      const token = first ?? (await openBuilderSession(appId, signal)).sessionToken;
+      first = undefined;
       return token;
     },
   });

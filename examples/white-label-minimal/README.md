@@ -144,41 +144,33 @@ Builder.tsx → useBuilderSocket.ts → lib/chat/build-stream.ts
   → lib/chat/builder-connection.ts → @base44/sdk/platform/client
 ```
 
-`builder-connection.ts` constructs the platform client and calls `client.builder.init`.
-Its `refreshToken` callback calls the same-origin `POST /api/base44/socket-token`
-endpoint on each reconnect. The endpoint requires a valid session, verifies the
-request origin and app ownership, refreshes the existing server credential if
-needed, and returns `{ serverUrl, token }` with `Cache-Control: no-store, private`.
-The browser keeps the token in memory and supplies it only through Socket.IO
-CONNECT `auth.token`. API keys and refresh tokens never go to the browser.
+**Credential.** The browser never holds a Base44 user token. `builder-connection.ts`
+calls the same-origin `POST /api/base44/socket-session`, which requires a signed-in
+user, checks the request origin and that the user owns the app, then opens a socket
+session with a workspace key (`POST /api/service/socket-sessions`, one app per
+session). It returns only `{ serverUrl, sessionToken }` with
+`Cache-Control: no-store, private`. The session token can watch that one app for an
+hour, cannot write, and carries no Base44 identity.
 
-**Temporary credential decision:** this uses the existing service-user access token,
-as requested, until the browser-specific token solution is available. This token
-can authorize HTTP operations too; the read-only socket does not narrow its powers.
-The app-ownership check protects token retrieval but does not make the token itself
-app-scoped. Replace this exchange when the dedicated browser credential lands.
-The backend must accept this credential at `/ws-whitelabel/socket.io/` and enable
-the workspace's white-label socket flag. The pending verifier in the backend PR
-still blocks deployed connections until integrated; there is no legacy-socket fallback.
+The key needs the `apps:watch` scope and access to the apps. Set `BASE44_WATCH_KEY`,
+or grant `apps:watch` to `BASE44_SVC_KEY`, which is used when `BASE44_WATCH_KEY` is
+unset. The workspace also needs the white-label sockets flag.
 
-The client subscribes before fetching initial history. The SDK buffers ordered
-updates while that snapshot loads and resumes from applied cursors after transport
-reconnects. App/message replacements and image resolutions are applied directly.
-There are no periodic conversation or app reads. Invalidation events and completed
-HTTP mutations trigger reconciliation; ready-state updates refresh preview metadata.
-Queue/task events advance the cursor but have no separate UI in this minimal example.
+**Connection.** The SDK connects to the platform socket (`/ws`), keeps the token in
+memory, and reuses it across reconnects. It asks for a new session only when Base44
+ends or rejects the current one. One socket per session: a second tab opens its own.
 
-Reviewed question and secret-form schemas arrive in the socket update that opens the
-tool card. The browser renders those schemas directly and posts any answer through
-the existing partner-backend mutation route. Tool cards use reviewed file paths,
-activity summaries, entity counts, package names, plan fields, and generated-media
-labels, state, and approved asset URLs; they never render source, diffs, commands,
-execution output, secret values or raw results.
-The partner backend remains responsible for applying the same filtering policy to
-its existing HTTP history responses.
+**State.** The first snapshot after joining loads full history over HTTP. After a
+reconnect, the socket's snapshot (status plus the last 50 messages) is merged by
+message id, with no HTTP read. Live `update_model` replacements, message removals
+(`{id, is_deleted: true}`) and image resolutions apply directly. Directives and
+completed HTTP mutations trigger an HTTP reload. Ready-state updates refresh preview
+metadata. Queue and task events have no UI in this minimal example.
 
-When retained history expires or an event cannot be applied, delivery stops and
-**Reconnect live updates** starts a new session and snapshot. Snapshot recovery is
-not an atomic history API; buffered events may briefly repeat newer snapshot state.
-Switching apps/unmounting cancels reads and closes the builder session. Production
-verification with the real token verifier remains a prerequisite for rollout.
+Question forms keep using the existing conversation projection through the partner
+backend, and all writes still go through the partner backend.
+
+**Errors.** Delivery stops, with **Reconnect live updates**, when another tab takes
+the session, when the app's access is revoked, or when a handler fails. A missing
+socket snapshot is not an error: the example loads history over HTTP and keeps the
+live connection. Switching apps or unmounting closes the session.

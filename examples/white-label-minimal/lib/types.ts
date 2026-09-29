@@ -1,3 +1,5 @@
+import type { ToolGuardApproval, ToolMediaResult } from "@base44/sdk/platform/client";
+
 export type App = {
   id: string;
   name?: string;
@@ -14,11 +16,7 @@ export type ToolCall = {
   status?: string | null;
   waiting_on?: { kind?: string | null } | null;
   arguments_string?: string | null;
-  results?: string | {
-    placeholder_url: string;
-    status: "pending" | "completed" | "failed";
-    image_url: string | null;
-  } | null;
+  results?: string | ToolMediaResult | ToolGuardApproval | null;
   auto_approved?: boolean | null;
   mutation_applied?: boolean | null;
   display_projection?: {
@@ -55,7 +53,7 @@ export type ToolInput = {
 export type AppPage = { apps: App[]; hasMore: boolean; nextSkip: number };
 
 export interface AppClient {
-  getBuilderConnection(appId: string): Promise<{ serverUrl: string; token: string }>;
+  openBuilderSession(appId: string): Promise<{ serverUrl: string; sessionToken: string }>;
   createApp(prompt: string): Promise<App>;
   getApp(appId: string): Promise<App>;
   getConversation(appId: string, skip: number): Promise<{ messages: Message[] }>;

@@ -9,25 +9,28 @@ function pushEvent(page: Page, event: string, data: object) {
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.route('**/api/base44/socket-token', route => route.fulfill({
-    json: { serverUrl: 'https://socket.example', token: 'fixture-browser-token' },
+  await page.route('**/api/base44/socket-session', route => route.fulfill({
+    json: { serverUrl: 'https://socket.example', sessionToken: 'wlst_fixture' },
   }));
-  await page.routeWebSocket('**/ws-whitelabel/socket.io/**', socket => {
-    let room = '', seq = 0;
+  await page.routeWebSocket('**/ws/socket.io/**', socket => {
+    let room = '';
     socket.send('0' + JSON.stringify({ sid: 'fixture', upgrades: [], pingInterval: 3600000, pingTimeout: 3600000 }));
     socket.onMessage(raw => {
       const packet = raw.toString();
-      if (packet.startsWith('40/partner,')) socket.send('40/partner,{"sid":"fixture"}');
-      if (!packet.startsWith('42/partner,')) return;
-      const [event, joinedRoom] = JSON.parse(packet.slice('42/partner,'.length));
+      if (packet.startsWith('40')) {
+        if (JSON.parse(packet.slice(2) || '{}').session_token !== 'wlst_fixture') throw new Error('Unexpected socket auth');
+        socket.send('40{"sid":"fixture"}');
+      }
+      if (!packet.startsWith('42')) return;
+      const [event, joinedRoom] = JSON.parse(packet.slice(2));
       if (event !== 'join') return;
       room = joinedRoom;
       liveSockets.set(page, (name, data) => {
         const wrapped = ['update_model', 'task_update', 'image_ready'].includes(name);
         const payload = wrapped ? { room, data: JSON.stringify(data) } : { room, ...data };
-        socket.send('42/partner,' + JSON.stringify([name, { ...payload, seq: String(++seq) }]));
+        socket.send('42' + JSON.stringify([name, payload]));
       });
-      socket.send('42/partner,' + JSON.stringify(['joined', { room, seq: String(++seq), max_entries: 2000, inactivity_expiry_seconds: 3600 }]));
+      socket.send('42' + JSON.stringify(['joined', { room, status: null, messages: [] }]));
     });
   });
 });
@@ -311,7 +314,7 @@ test('assistant-ui preserves inline tools across live invalidation and hides int
   await expect(page.locator('.tool-activity')).toContainText('Working');
   complete = true;
   pushEvent(page, "directive", { type: "conversation_changed" });
-  await expect(page.locator('.tool-activity')).toContainText('Plan updated.');
+  await expect(page.locator('.tool-activity')).toContainText('Done');
   await expect(page.locator('.tool-activity')).toHaveAttribute('open', '');
   expect(sent).toEqual([]);
   expect(errors).toEqual([]);
