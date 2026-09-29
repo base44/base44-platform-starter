@@ -363,7 +363,7 @@ test('preview card waits for build completion and hides during follow-up submiss
   await expect(card).toHaveCount(0);
 
   state = 'ready';
-  pushEvent(page, "conversation.changed", {});
+  pushEvent(page, "app.status_changed", { status: { state: 'ready' } });
   await expect(card).toBeVisible();
   await page.getByLabel('What should change?').fill('Add a reset button');
   await page.getByRole('button', { name: 'Send prompt', exact: true }).click();
@@ -374,7 +374,7 @@ test('preview card waits for build completion and hides during follow-up submiss
   await expect(card).toHaveCount(0);
 
   state = 'ready';
-  pushEvent(page, "conversation.changed", {});
+  pushEvent(page, "app.status_changed", { status: { state: 'ready' } });
   await expect(card).toBeVisible();
 });
 
