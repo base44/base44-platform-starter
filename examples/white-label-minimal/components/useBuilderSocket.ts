@@ -21,7 +21,10 @@ export function useBuilderSocket(appId: string | null) {
       setSettled(`${appId}:${revision}`);
     });
     current.current = stream;
-    return () => { stream.close(); current.current = null; };
+    // Unmount cleanup does not run when the tab closes.
+    const close = () => stream.close();
+    window.addEventListener("pagehide", close);
+    return () => { window.removeEventListener("pagehide", close); close(); current.current = null; };
   }, [appId, revision]);
 
   const refresh = useCallback(async () => { await current.current?.refresh(); }, []);

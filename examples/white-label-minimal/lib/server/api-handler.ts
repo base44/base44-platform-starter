@@ -96,6 +96,10 @@ export function createHandler(resolveClient: () => Promise<AppClient>, allowedAc
           fields("appId");
           result = await execute(client.openBuilderSession, id("appId"));
           break;
+        case "closeBuilderSession":
+          fields("appId", "sessionHandle");
+          result = await execute(client.closeBuilderSession, id("appId"), string("sessionHandle", 200));
+          break;
         case "listApps": {
           fields("skip");
           result = await execute(client.listApps, skip());

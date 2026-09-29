@@ -3,11 +3,11 @@ import { afterEach, test } from 'node:test';
 import { createHandler } from '../lib/server/api-handler';
 import { createBase44Client } from '../lib/base44/client';
 import { Base44Error } from '../lib/base44/error';
-import { openSocketSession } from '../lib/base44/socket-session';
+import { closeSocketSession, openSocketSession } from '../lib/base44/socket-session';
 let signedIn = true;
 const POST = createHandler(async () => {
   if (!signedIn) throw new Base44Error('Sign in to continue.', 401);
-  return { ...createBase44Client('user-token-canary'), openBuilderSession: openSocketSession, authorize: async (id: string) => {
+  return { ...createBase44Client('user-token-canary'), openBuilderSession: (appId: string) => openSocketSession('user@example.com', appId), closeBuilderSession: (appId: string, handle: string) => closeSocketSession('user@example.com', appId, handle), authorize: async (id: string) => {
     if (id === 'other_app') throw new Base44Error('App not found.', 404);
   }, removeApp: async () => ({}), listApps: async () => ({ apps: [], hasMore: false, nextSkip: 0 }) };
 });
@@ -17,6 +17,7 @@ const originalFetch = globalThis.fetch;
 const originalEnv = { ...process.env };
 afterEach(() => { signedIn = true; globalThis.fetch = originalFetch; process.env = { ...originalEnv }; });
 function setup(reply: unknown = { id: 'app_1' }, status = 200) {
+  process.env.NEXTAUTH_SECRET = 'test-secret';
   process.env.BASE44_ORG_ID = 'workspace_1';
   process.env.BASE44_PLATFORM_HOST = 'https://platform.example';
   const calls: { url: string; init?: RequestInit }[] = [];
@@ -193,7 +194,7 @@ test('remove requires ownership and never calls the upstream app deletion API', 
 });
 
 test('the socket session opens with the watch key only after session and app authorization', async () => {
-  const calls = setup({ session_id: 'wls_1', session_token: 'wlst_canary', socket_url: 'https://platform.example', socket_path: '/ws/socket.io/', expires_in: 3600 });
+  const calls = setup({ session_id: 'f'.repeat(32), session_token: 'wlst_canary', socket_url: 'https://platform.example', socket_path: '/ws/socket.io/', expires_in: 3600 });
   process.env.BASE44_SVC_KEY = 'b44k_mint';
   process.env.BASE44_WATCH_KEY = 'b44k_watch';
   const request = (appId: string, origin = 'http://127.0.0.1:3001') => new Request('http://127.0.0.1:3001/api/base44/socket-session', {
@@ -203,7 +204,9 @@ test('the socket session opens with the watch key only after session and app aut
   const response = await POST(request('app_1'));
   assert.equal(response.status, 200);
   assert.match(response.headers.get('cache-control')!, /no-store/);
-  assert.deepEqual(await response.json(), { serverUrl: 'https://platform.example', sessionToken: 'wlst_canary' });
+  const opened = await response.json();
+  assert.deepEqual({ ...opened, sessionHandle: undefined }, { serverUrl: 'https://platform.example', sessionToken: 'wlst_canary', sessionHandle: undefined });
+  assert.match(opened.sessionHandle, /^f{32}\./);
   assert.equal(calls[0].url, 'https://platform.example/api/service/socket-sessions');
   assert.equal(new Headers(calls[0].init!.headers).get('authorization'), 'b44k_watch');
   assert.deepEqual(JSON.parse(String(calls[0].init!.body)), { app_ids: ['app_1'] });
@@ -224,4 +227,25 @@ test('the socket session falls back to the mint key and reports a missing watch 
   assert.equal(response.status, 503);
   assert.match((await response.json()).error, /apps:watch/);
   assert.equal(new Headers(calls[0].init!.headers).get('authorization'), 'b44k_mint');
+});
+
+test('closing a socket session ends it at Base44 only for the handle this user and app were given', async () => {
+  const calls = setup({ session_id: 'f'.repeat(32), session_token: 'wlst_canary', socket_url: 'https://platform.example' });
+  process.env.BASE44_SVC_KEY = 'b44k_mint';
+  const { sessionHandle } = await openSocketSession('user@example.com', 'app_1');
+  const close = (body: object) => POST(new Request('http://127.0.0.1:3001/api/base44/socket-session', {
+    method: 'POST', headers: { host: '127.0.0.1:3001', origin: 'http://127.0.0.1:3001', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'closeBuilderSession', ...body }),
+  }));
+
+  assert.equal((await close({ appId: 'app_2', sessionHandle })).status, 400, 'bound to the app');
+  assert.equal((await close({ appId: 'app_1', sessionHandle: sessionHandle.slice(0, -1) + 'A' })).status, 400);
+  await assert.rejects(closeSocketSession('someone@example.com', 'app_1', sessionHandle), /Invalid/);
+  assert.equal(calls.length, 1, 'rejected handles never reach Base44');
+
+  globalThis.fetch = async (url, init) => { calls.push({ url: String(url), init }); return new Response(null, { status: 404 }); };
+  assert.equal((await close({ appId: 'app_1', sessionHandle })).status, 200, 'an already-ended session is fine');
+  assert.equal(calls[1].url, `https://platform.example/api/service/socket-sessions/${'f'.repeat(32)}`);
+  assert.equal(calls[1].init!.method, 'DELETE');
+  assert.equal(new Headers(calls[1].init!.headers).get('authorization'), 'b44k_mint');
 });

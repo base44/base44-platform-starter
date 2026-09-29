@@ -4,7 +4,7 @@ import { getBase44AccessToken } from "../base44/identity";
 import { createAppRepository } from "../storage/app-repository";
 import { resolveAppPage } from "../storage/app-list";
 import { createBase44Client } from "../base44/client";
-import { openSocketSession } from "../base44/socket-session";
+import { closeSocketSession, openSocketSession } from "../base44/socket-session";
 import type { AppClient } from "../types";
 
 export async function getAppClient(): Promise<AppClient> {
@@ -15,7 +15,8 @@ export async function getAppClient(): Promise<AppClient> {
   return {
     ...client,
     authorize: apps.authorize,
-    openBuilderSession: openSocketSession,
+    openBuilderSession: (appId) => openSocketSession(actor.email, appId),
+    closeBuilderSession: (appId, handle) => closeSocketSession(actor.email, appId, handle),
     removeApp: apps.remove,
     async createApp(prompt) {
       const app = await client.createApp(prompt);

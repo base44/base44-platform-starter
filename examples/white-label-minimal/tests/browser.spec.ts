@@ -10,7 +10,8 @@ function pushEvent(page: Page, event: string, data: object) {
 
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/base44/socket-session', route => route.fulfill({
-    json: { serverUrl: 'https://socket.example', sessionToken: 'wlst_fixture' },
+    json: route.request().postDataJSON().action === 'closeBuilderSession' ? {}
+      : { serverUrl: 'https://socket.example', sessionToken: 'wlst_fixture', sessionHandle: 'handle-1' },
   }));
   await page.routeWebSocket('**/ws/socket.io/**', socket => {
     let room = '';
@@ -611,4 +612,20 @@ test('streamed chat replaces a message without periodic HTTP reads', async ({ pa
   await expect(page.getByText('Your app is taking shape.')).toHaveCount(0);
   await page.clock.fastForward(45_000);
   expect(reads).toBe(0);
+});
+
+test('leaving the page ends the socket session instead of leaving it to expire', async ({ page }) => {
+  await fixture(page);
+  const closes: unknown[] = [];
+  await page.route('**/api/base44/socket-session', route => {
+    const body = route.request().postDataJSON();
+    if (body.action !== 'closeBuilderSession') return route.fallback();
+    closes.push(body);
+    return route.fulfill({ json: {} });
+  });
+  pushEvent(page, 'update_model', { _last_msg: { id: 'm1', role: 'assistant', content: 'Connected.' } });
+  await expect(page.getByText('Connected.')).toBeVisible();
+  // Playwright stops routing a page's requests once it unloads, so fire the unload event itself.
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide')));
+  await expect.poll(() => closes).toEqual([{ action: 'closeBuilderSession', appId: 'aaaaaaaaaaaaaaaaaaaaaaaa', sessionHandle: 'handle-1' }]);
 });

@@ -148,7 +148,7 @@ Builder.tsx → useBuilderSocket.ts → lib/chat/build-stream.ts
 calls the same-origin `POST /api/base44/socket-session`, which requires a signed-in
 user, checks the request origin and that the user owns the app, then opens a socket
 session with a workspace key (`POST /api/service/socket-sessions`, one app per
-session). It returns only `{ serverUrl, sessionToken }` with
+session). It returns only `{ serverUrl, sessionToken, sessionHandle }` with
 `Cache-Control: no-store, private`. The session token can watch that one app for an
 hour, cannot write, and carries no Base44 identity.
 
@@ -173,4 +173,11 @@ backend, and all writes still go through the partner backend.
 **Errors.** Delivery stops, with **Reconnect live updates**, when another tab takes
 the session, when the app's access is revoked, or when a handler fails. A missing
 socket snapshot is not an error: the example loads history over HTTP and keeps the
-live connection. Switching apps or unmounting closes the session.
+live connection.
+
+**Ending.** Switching apps, unmounting or closing the tab (`pagehide`) closes the
+socket and ends the Base44 session through `closeBuilderSession` (a `keepalive`
+request), so it stops counting against the key's 5,000 live sessions instead of
+waiting out its hour. `sessionHandle` is the session id signed with
+`NEXTAUTH_SECRET` for this user and app, so a user can end only their own sessions.
+A close that never arrives (a crash or lost network) still expires after the hour.
