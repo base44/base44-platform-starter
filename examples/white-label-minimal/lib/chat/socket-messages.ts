@@ -27,8 +27,13 @@ export function resolveImage(messages: Message[], image: ImageResolved): Message
   return messages.map(message => ({
     ...message,
     content: replace(message.content),
-    tool_calls: message.tool_calls?.map(tool => tool.results?.placeholder_url === placeholder
-      ? { ...tool, results: { ...tool.results, status: image.status, image_url: image.image_url ?? null } }
-      : tool),
+    tool_calls: message.tool_calls?.map(tool => {
+      if (typeof tool.results === "string") {
+        return tool.results === placeholder && resolvedUrl ? { ...tool, results: resolvedUrl } : tool;
+      }
+      return tool.results?.placeholder_url === placeholder
+        ? { ...tool, results: { ...tool.results, status: image.status, image_url: image.image_url ?? null } }
+        : tool;
+    }),
   }));
 }

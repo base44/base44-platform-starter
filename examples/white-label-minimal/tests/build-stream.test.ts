@@ -97,4 +97,6 @@ test('message replacement preserves omission/null and image completion resolves 
   assert.deepEqual(resolveImage(previous, { placeholder_url: '/placeholder', status: 'completed', image_url: '/image' })[0].tool_calls?.[0].results, { placeholder_url: '/placeholder', status: 'completed', image_url: '/image' });
   assert.equal(previous[0].content, '/placeholder');
   assert.deepEqual(removeMessage(previous, 'm'), []);
+  const game = [{ id: 'g', tool_calls: [{ id: 't', results: '/placeholder' }] }];
+  assert.equal(resolveImage(game, { placeholder_url: '/placeholder', status: 'completed', image_url: '/image' })[0].tool_calls?.[0].results, '/image');
 });

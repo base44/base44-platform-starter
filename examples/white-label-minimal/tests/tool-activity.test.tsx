@@ -31,6 +31,14 @@ test("renders reviewed file, package, and plan activity as tool widgets", () => 
   assert.match(plan, /Add accounts/);
 });
 
+test("renders a URL-only game asset as pending until it resolves", () => {
+  const pending = render({ name: "generate_game_image", status: "success", results: "/__generating__/hero.png" });
+  const done = render({ name: "generate_game_image", status: "success", results: "https://images.example/hero.png" });
+  assert.match(pending, /Generating/);
+  assert.doesNotMatch(pending, /<img/);
+  assert.match(done, /images.example/);
+});
+
 test("renders a reviewed generated-media result without raw prompt data", () => {
   const html = render({
     name: "generate_image",

@@ -119,9 +119,13 @@ test('conversation reads return tool calls in the socket\'s public shape', async
     { id: 't1', name: 'install_npm_package', status: 'success', arguments_string: '{"packages":[{"name":"zod"}]}', display_projection: { summary: 'Installing' } },
     { id: 't2', name: 'exec_tool', status: 'waiting_for_user_input', results: '{"guard":"exec_tool_send_email","reason":"Sends email"}' },
     { id: 't3', name: 'generate_image', status: 'success', arguments_string: '{', results: { placeholder_url: '/p', status: 'completed', image_url: '/i' } },
+    { id: 't4', name: 'generate_video', status: 'success', results: 'https://media.example/v.mp4' },
+    { id: 't5', name: 'run_shell_command', status: 'success', results: 'private output' },
   ] }] });
   const { messages } = await (await request({ action: 'getConversation', appId: 'app_1', skip: 0 })).json();
-  const [install, guarded, image] = messages[0].tool_calls;
+  const [install, guarded, image, video, shell] = messages[0].tool_calls;
+  assert.equal(video.results, 'https://media.example/v.mp4');
+  assert.equal(shell.results, undefined);
   assert.deepEqual(install.arguments, { packages: [{ name: 'zod' }] });
   assert.deepEqual(install.display, { summary: 'Installing' });
   assert.equal(install.arguments_string, undefined);

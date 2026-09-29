@@ -1,4 +1,5 @@
 import { CircleAlert, FileCode2, ImageIcon, Loader2, Package, PencilLine, Terminal, ChevronDown } from "lucide-react";
+import type { ToolMediaResult } from "@base44/sdk/platform/client";
 import type { ToolCall } from "../lib/types";
 
 type ToolArguments = {
@@ -8,6 +9,17 @@ type ToolArguments = {
   label?: unknown;
   aspect_ratio?: unknown;
 };
+
+// Game assets and videos return a URL alone: a placeholder until image.resolved replaces it, or the finished asset.
+function mediaFor(tool: ToolCall): ToolMediaResult | null {
+  const results = tool.results;
+  if (typeof results === "string") {
+    return results.startsWith("/__generating__/")
+      ? { placeholder_url: results, status: "pending" }
+      : { status: "completed", image_url: results };
+  }
+  return results?.placeholder_url ? results : null;
+}
 
 function argumentsFor(tool: ToolCall): ToolArguments {
   return (tool.arguments ?? {}) as ToolArguments;
@@ -52,7 +64,7 @@ function ToolDetails({ tool }: { tool: ToolCall }) {
         : "Plan";
     return typeof update.text === "string" && update.text ? [{ label, text: update.text }] : [];
   });
-  const media = tool.results?.placeholder_url ? tool.results : null;
+  const media = mediaFor(tool);
   const mediaLabel = typeof args.label === "string" && args.label ? args.label : "Generated media";
   const mediaPending = media?.status === "pending" || (!media && tool.status === "running");
 
@@ -61,7 +73,9 @@ function ToolDetails({ tool }: { tool: ToolCall }) {
       <div className="tool-widget tool-media">
         <div className="tool-widget-heading"><ImageIcon size={14} /> <strong>{mediaPending ? "Generating" : media?.status === "failed" ? "Couldn’t generate" : "Generated"} {mediaLabel}</strong></div>
         {typeof args.aspect_ratio === "string" && <small>{args.aspect_ratio}</small>}
-        {media?.image_url && <img src={media.image_url} alt={mediaLabel} />}
+        {media?.image_url && (tool.name === "generate_video"
+          ? <video src={media.image_url} controls aria-label={mediaLabel} />
+          : <img src={media.image_url} alt={mediaLabel} />)}
       </div>
     );
   }

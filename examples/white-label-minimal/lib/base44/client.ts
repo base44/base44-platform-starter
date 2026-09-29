@@ -134,6 +134,8 @@ type RawToolCall = {
   results?: unknown; display_projection?: ToolCall["display"] | null; user_input?: ToolCall["user_input"] | null;
 };
 type RawMessage = { tool_calls?: RawToolCall[] | null };
+// Tools whose result is a URL alone, as the socket sends it.
+const URL_RESULT_TOOLS = new Set(["generate_game_image", "generate_game_background", "generate_video"]);
 
 function jsonObject(value: unknown): Record<string, unknown> | undefined {
   try {
@@ -153,7 +155,9 @@ function publicTool(t: RawToolCall): ToolCall {
     arguments: jsonObject(t.arguments_string),
     display: t.display_projection ?? undefined,
     user_input: t.user_input ?? undefined,
-    results: !parked && typeof results?.placeholder_url === "string" ? results : undefined,
+    results: parked ? undefined
+      : typeof results?.placeholder_url === "string" ? results
+        : typeof t.results === "string" && URL_RESULT_TOOLS.has(t.name ?? "") ? t.results : undefined,
     approval: parked && typeof results?.guard === "string"
       ? { guard: results.guard, ...(typeof results.reason === "string" ? { reason: results.reason } : {}) }
       : undefined,
