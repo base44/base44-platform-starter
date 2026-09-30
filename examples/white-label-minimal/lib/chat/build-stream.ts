@@ -35,7 +35,7 @@ export function watchBuild(
     const code = (error as { code?: string })?.code;
     onError(code === "session_replaced"
       ? "Live updates moved to another tab. Reconnect to continue here."
-      : code === "access_denied" || code === "access_revoked"
+      : code === "session_revoked" || code === "access_denied" || code === "access_revoked"
         ? "Live updates for this app are no longer available."
         : "Live updates paused. Reconnect to continue.");
     builder?.close();

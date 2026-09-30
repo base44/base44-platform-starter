@@ -76,6 +76,12 @@ test('a session claimed by another tab stops delivery until the user reconnects'
   await f.stream.refresh(); assert.equal(f.reads(), 0);
 });
 
+test('a revoked session stops delivery and says live updates are gone', async () => {
+  const f = fixture(); await turn();
+  f.subscription().onError({ code: 'session_revoked' } as unknown as PlatformSocketError);
+  assert.equal(f.closes(), 1); assert.match(f.errors[0], /no longer available/);
+});
+
 test('cleanup prevents an in-flight snapshot from publishing into another app', async () => {
   let release!: () => void;
   let onSnapshot!: SubscriptionOptions['onSnapshot'];
