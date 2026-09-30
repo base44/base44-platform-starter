@@ -3,10 +3,11 @@ import { afterEach, test } from 'node:test';
 import { createHandler } from '../lib/server/api-handler';
 import { createBase44Client } from '../lib/base44/client';
 import { Base44Error } from '../lib/base44/error';
+import { closeSocketSession, openSocketSession } from '../lib/base44/socket-session';
 let signedIn = true;
 const POST = createHandler(async () => {
   if (!signedIn) throw new Base44Error('Sign in to continue.', 401);
-  return { ...createBase44Client('user-token-canary'), authorize: async (id: string) => {
+  return { ...createBase44Client('user-token-canary'), openBuilderSession: (appId: string) => openSocketSession('user@example.com', appId), closeBuilderSession: (appId: string, handle: string) => closeSocketSession('user@example.com', appId, handle), authorize: async (id: string) => {
     if (id === 'other_app') throw new Base44Error('App not found.', 404);
   }, removeApp: async () => ({}), listApps: async () => ({ apps: [], hasMore: false, nextSkip: 0 }) };
 });
@@ -16,6 +17,7 @@ const originalFetch = globalThis.fetch;
 const originalEnv = { ...process.env };
 afterEach(() => { signedIn = true; globalThis.fetch = originalFetch; process.env = { ...originalEnv }; });
 function setup(reply: unknown = { id: 'app_1' }, status = 200) {
+  process.env.NEXTAUTH_SECRET = 'test-secret';
   process.env.BASE44_ORG_ID = 'workspace_1';
   process.env.BASE44_PLATFORM_HOST = 'https://platform.example';
   const calls: { url: string; init?: RequestInit }[] = [];
@@ -112,6 +114,27 @@ test('missing configuration makes no network call; conversation uses newest-rela
   assert.equal(result.status, 200); assert.match(reads[0].url, /limit=20&skip=20$/);
 });
 
+test('conversation reads return tool calls in the socket\'s public shape', async () => {
+  setup({ messages: [{ id: 'm1', role: 'assistant', tool_calls: [
+    { id: 't1', name: 'install_npm_package', status: 'success', arguments_string: '{"packages":[{"name":"zod"}]}', display_projection: { summary: 'Installing' } },
+    { id: 't2', name: 'exec_tool', status: 'waiting_for_user_input', results: '{"guard":"exec_tool_send_email","reason":"Sends email"}' },
+    { id: 't3', name: 'generate_image', status: 'success', arguments_string: '{', results: { placeholder_url: '/p', status: 'completed', image_url: '/i' } },
+    { id: 't4', name: 'generate_video', status: 'success', results: 'https://media.example/v.mp4' },
+    { id: 't5', name: 'run_shell_command', status: 'success', results: 'private output' },
+  ] }] });
+  const { messages } = await (await request({ action: 'getConversation', appId: 'app_1', skip: 0 })).json();
+  const [install, guarded, image, video, shell] = messages[0].tool_calls;
+  assert.equal(video.results, 'https://media.example/v.mp4');
+  assert.equal(shell.results, undefined);
+  assert.deepEqual(install.arguments, { packages: [{ name: 'zod' }] });
+  assert.deepEqual(install.display, { summary: 'Installing' });
+  assert.equal(install.arguments_string, undefined);
+  assert.deepEqual(guarded.approval, { guard: 'exec_tool_send_email', reason: 'Sends email' });
+  assert.equal(guarded.results, undefined);
+  assert.equal(image.arguments, undefined);
+  assert.deepEqual(image.results, { placeholder_url: '/p', status: 'completed', image_url: '/i' });
+});
+
 test('requires a session and exact origin before calling Base44', async () => {
   const calls = setup();
   process.env.BUILDER_ORIGIN = 'https://tiny.sunny44.com';
@@ -189,4 +212,61 @@ test('remove requires ownership and never calls the upstream app deletion API', 
     ? new Response('{"message":"Preview not available yet"}', { status: 404, headers: { 'content-type': 'application/json' } })
     : Response.json({ id: 'app_2', slug: 'other' });
   assert.equal((await (await request({ action: 'getApp', appId: 'app_2' })).json()).static_preview_url, undefined);
+});
+
+test('the socket session opens with the watch key only after session and app authorization', async () => {
+  const calls = setup({ session_id: 'f'.repeat(32), session_token: 'wlst_canary', socket_url: 'https://platform.example', socket_path: '/ws/socket.io/', expires_in: 3600 });
+  process.env.BASE44_SVC_KEY = 'b44k_mint';
+  process.env.BASE44_WATCH_KEY = 'b44k_watch';
+  const request = (appId: string, origin = 'http://127.0.0.1:3001') => new Request('http://127.0.0.1:3001/api/base44/socket-session', {
+    method: 'POST', headers: { host: '127.0.0.1:3001', origin, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'openBuilderSession', appId }),
+  });
+  const response = await POST(request('app_1'));
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('cache-control')!, /no-store/);
+  const opened = await response.json();
+  assert.deepEqual({ ...opened, sessionHandle: undefined }, { serverUrl: 'https://platform.example', sessionToken: 'wlst_canary', sessionHandle: undefined });
+  assert.match(opened.sessionHandle, /^f{32}\./);
+  assert.equal(calls[0].url, 'https://platform.example/api/service/socket-sessions');
+  assert.equal(new Headers(calls[0].init!.headers).get('authorization'), 'b44k_watch');
+  assert.deepEqual(JSON.parse(String(calls[0].init!.body)), { app_ids: ['app_1'] });
+  assert.equal((await POST(request('other_app'))).status, 404);
+  assert.equal((await POST(request('app_1', 'https://foreign.example'))).status, 403);
+  signedIn = false;
+  assert.equal((await POST(request('app_1'))).status, 401);
+  assert.equal(calls.length, 1);
+});
+
+test('the socket session falls back to the mint key and reports a missing watch scope as configuration', async () => {
+  const calls = setup({ error: { code: 'scope_required' } }, 403);
+  process.env.BASE44_SVC_KEY = 'b44k_mint';
+  const response = await POST(new Request('http://127.0.0.1:3001/api/base44/socket-session', {
+    method: 'POST', headers: { host: '127.0.0.1:3001', origin: 'http://127.0.0.1:3001', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'openBuilderSession', appId: 'app_1' }),
+  }));
+  assert.equal(response.status, 503);
+  assert.match((await response.json()).error, /apps:watch/);
+  assert.equal(new Headers(calls[0].init!.headers).get('authorization'), 'b44k_mint');
+});
+
+test('closing a socket session ends it at Base44 only for the handle this user and app were given', async () => {
+  const calls = setup({ session_id: 'f'.repeat(32), session_token: 'wlst_canary', socket_url: 'https://platform.example' });
+  process.env.BASE44_SVC_KEY = 'b44k_mint';
+  const { sessionHandle } = await openSocketSession('user@example.com', 'app_1');
+  const close = (body: object) => POST(new Request('http://127.0.0.1:3001/api/base44/socket-session', {
+    method: 'POST', headers: { host: '127.0.0.1:3001', origin: 'http://127.0.0.1:3001', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'closeBuilderSession', ...body }),
+  }));
+
+  assert.equal((await close({ appId: 'app_2', sessionHandle })).status, 400, 'bound to the app');
+  assert.equal((await close({ appId: 'app_1', sessionHandle: sessionHandle.slice(0, -1) + 'A' })).status, 400);
+  await assert.rejects(closeSocketSession('someone@example.com', 'app_1', sessionHandle), /Invalid/);
+  assert.equal(calls.length, 1, 'rejected handles never reach Base44');
+
+  globalThis.fetch = async (url, init) => { calls.push({ url: String(url), init }); return new Response(null, { status: 404 }); };
+  assert.equal((await close({ appId: 'app_1', sessionHandle })).status, 200, 'an already-ended session is fine');
+  assert.equal(calls[1].url, `https://platform.example/api/service/socket-sessions/${'f'.repeat(32)}`);
+  assert.equal(calls[1].init!.method, 'DELETE');
+  assert.equal(new Headers(calls[1].init!.headers).get('authorization'), 'b44k_mint');
 });

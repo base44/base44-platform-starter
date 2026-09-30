@@ -1,6 +1,37 @@
 import { test, expect, type Page } from '@playwright/test';
 import type { ToolCall } from '../lib/types';
 
+const liveSockets = new WeakMap<Page, (event: string, data: object) => void>();
+function pushEvent(page: Page, event: string, data: object) {
+  const send = liveSockets.get(page);
+  if (!send) throw new Error("Builder socket has not connected");
+  send(event, data);
+}
+
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/base44/socket-session', route => route.fulfill({
+    json: route.request().postDataJSON().action === 'closeBuilderSession' ? {}
+      : { serverUrl: 'https://socket.example', sessionToken: 'wlst_fixture', sessionHandle: 'handle-1' },
+  }));
+  await page.routeWebSocket('**/ws/socket.io/**', socket => {
+    let room = '';
+    socket.send('0' + JSON.stringify({ sid: 'fixture', upgrades: [], pingInterval: 3600000, pingTimeout: 3600000 }));
+    socket.onMessage(raw => {
+      const packet = raw.toString();
+      if (packet.startsWith('40')) {
+        if (JSON.parse(packet.slice(2) || '{}').session_token !== 'wlst_fixture') throw new Error('Unexpected socket auth');
+        socket.send('40{"sid":"fixture"}');
+      }
+      if (!packet.startsWith('42')) return;
+      const [event, joinedRoom] = JSON.parse(packet.slice(2));
+      if (event !== 'join') return;
+      room = joinedRoom;
+      liveSockets.set(page, (name, data) => socket.send('42' + JSON.stringify([name, { room, data }])));
+      socket.send('42' + JSON.stringify(['app.snapshot', { room, data: { status: null, messages: [] } }]));
+    });
+  });
+});
+
 async function fixture(page: Page, tool?: ToolCall, failFirst = false) {
   const submissions: Record<string, unknown>[] = [];
   let previews = 0, deployments = 0, creates = 0;
@@ -11,8 +42,8 @@ async function fixture(page: Page, tool?: ToolCall, failFirst = false) {
     let json: unknown = {};
     if (p.action === 'listApps') return route.fulfill({ json: { apps: [], hasMore: false } });
     switch (p.action) {
-      case 'createApp': creates++; json = { id: 'app_1' }; break;
-      case 'getApp': json = { id: 'app_1', status: { state: 'ready' } }; break;
+      case 'createApp': creates++; json = { id: 'aaaaaaaaaaaaaaaaaaaaaaaa' }; break;
+      case 'getApp': json = { id: 'aaaaaaaaaaaaaaaaaaaaaaaa', status: { state: 'ready' } }; break;
       case 'getConversation': json = { messages: [{ id: 'm1', role: 'assistant', content: 'Your app is taking shape.',
         tool_calls: [{ id: "built-file", name: "write_file", status: "success" }, ...(tool ? [{ ...tool, status }] : [])] }] }; break;
       case 'submitToolCallInput':
@@ -41,7 +72,7 @@ async function openBuilder(page: Page) {
   if (await cta.count()) await cta.click();
   else await page.getByRole('button', { name: 'New app', exact: true }).click();
 }
-const question = (kind: string, args: object): ToolCall => ({ id: 'tool_1', name: 'Agent question', waiting_on: { kind }, arguments_string: JSON.stringify(args) });
+const question = (kind: string, args: object): ToolCall => ({ id: 'tool_1', name: 'Agent question', waiting_on: { kind }, arguments: args });
 
 test('choice retry freezes original payload, prevents duplicates, then unlocks composer', async ({ page }) => {
   const f = await fixture(page, question('choice', { questions: [{ question: 'Which color?', options: ['Blue', 'Green'] }] }), true);
@@ -97,20 +128,20 @@ test('uncertain create never retries automatically and offers existing-app recov
   await expect(page.getByRole('button', { name: 'Create app', exact: true })).toBeDisabled();
   expect(creates).toBe(1);
 });
-test('read failure pauses polling, resume restores it', async ({ page }) => {
+test('snapshot failure pauses live updates, reconnect restores them', async ({ page }) => {
   await page.clock.install();
   await fixture(page);
   await page.route('**/api/base44', async route => {
     if (route.request().postDataJSON().action === 'getApp') return route.fulfill({ status: 503, json: { error: 'Temporary read failure' } });
     return route.fallback();
   });
-  await page.clock.fastForward(11_000);
-  await expect(page.getByText('Temporary read failure')).toBeVisible();
+  pushEvent(page, "conversation.changed", {});
+  await expect(page.getByText('Live updates paused. Reconnect to continue.')).toBeVisible();
   await page.unroute('**/api/base44');
   await page.route('**/api/base44', route => route.fulfill({ json: route.request().postDataJSON().action === 'getApp'
-    ? { id: 'app_1', status: { state: 'ready' } } : { messages: [] } }));
-  await page.getByRole('button', { name: 'Resume polling' }).click();
-  await expect(page.getByText('Temporary read failure')).toHaveCount(0);
+    ? { id: 'aaaaaaaaaaaaaaaaaaaaaaaa', status: { state: 'ready' } } : { messages: [] } }));
+  await page.getByRole('button', { name: 'Reconnect live updates' }).click();
+  await expect(page.getByText('Live updates paused. Reconnect to continue.')).toHaveCount(0);
 });
 
 test('live preview stays stable and recovers only from its own expiry message', async ({ page }) => {
@@ -141,7 +172,7 @@ test('real Next route requires authentication for local browser origins and reje
   expect(foreign.status()).toBe(403);
 });
 
-test('slow conversation reads do not overlap later polling intervals', async ({ page }) => {
+test('slow snapshot reads do not overlap and no polling timer runs', async ({ page }) => {
   await page.clock.install();
   await fixture(page);
   let reads = 0;
@@ -153,7 +184,7 @@ test('slow conversation reads do not overlap later polling intervals', async ({ 
     await pending;
     return route.fulfill({ json: { messages: [] } });
   });
-  await page.clock.fastForward(11_000);
+  pushEvent(page, "conversation.changed", {});
   await expect.poll(() => reads).toBe(1);
   await page.clock.fastForward(40_000);
   expect(reads).toBe(1);
@@ -173,11 +204,31 @@ test('rejected access preserves prompt and allows retry without uncertain creati
   await expect(page.getByText('Creation may have succeeded.', { exact: false })).toHaveCount(0);
 });
 
+test('rejected Base44 token reconnects before reloading apps', async ({ page }) => {
+  let connected = false;
+  let connections = 0;
+  await page.route('**/api/base44', route => route.fulfill(connected
+    ? { json: { apps: [], hasMore: false } }
+    : { status: 401, json: { error: 'Base44 returned 401. Reconnect your workspace.', outcome: 'unknown' } }));
+  await page.route('**/api/base44/connection', route => {
+    expect(route.request().postDataJSON()).toEqual({ action: 'connect' });
+    connections++;
+    connected = true;
+    return route.fulfill({ json: { linked: true } });
+  });
+  await page.goto('/');
+  await expect(page.getByRole('main').getByRole('alert')).toContainText('Reconnect your workspace.');
+  await page.getByRole('button', { name: 'Reconnect workspace', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Make room for your first idea' })).toBeVisible();
+  await expect(page.getByRole('main').getByRole('alert')).toHaveCount(0);
+  expect(connections).toBe(1);
+});
+
 test('My apps shows owned cards and opens the editor without marketplace features', async ({ page }) => {
   await page.route('**/api/base44', route => {
     const { action, appId } = route.request().postDataJSON();
     if (action === 'listApps') return route.fulfill({ json: { apps: [
-      { id: 'reading', name: 'Reading list', user_description: 'A home for your next great read' },
+      { id: 'bbbbbbbbbbbbbbbbbbbbbbbb', name: 'Reading list', user_description: 'A home for your next great read' },
       { id: 'habits', name: 'Daily habits', user_description: 'Small steps, every day' },
       { id: 'recipes', name: 'Recipe book', user_description: 'Keep your favorites close' },
     ], hasMore: false } });
@@ -215,20 +266,20 @@ test('My apps shows owned cards and opens the editor without marketplace feature
  test('ordinary tool activity is collapsed and assistant messages render Markdown', async ({ page }) => {
   await page.route('**/api/base44', route => {
     const { action } = route.request().postDataJSON();
-    return route.fulfill({ json: action === 'listApps' ? { apps: [], hasMore: false, nextSkip: 0 } : action === 'getConversation' ? { messages: [{ id: 'm1', role: 'assistant', content: '## Your app is ready\n- **Hello world**', tool_calls: [{ id: 't1', name: 'find_replace', status: 'success', arguments_string: JSON.stringify({ file_path: 'src/index.css', find: 'old', replace: 'new' }) }] }] } : { id: 'app_1', name: 'Hello World', status: { state: 'ready' } } });
+    return route.fulfill({ json: action === 'listApps' ? { apps: [], hasMore: false, nextSkip: 0 } : action === 'getConversation' ? { messages: [{ id: 'm1', role: 'assistant', content: '## Your app is ready\n- **Hello world**', tool_calls: [{ id: 't1', name: 'find_replace', status: 'success', display: { file_paths: ['src/index.css'] } }] }] } : { id: 'aaaaaaaaaaaaaaaaaaaaaaaa', name: 'Hello World', status: { state: 'ready' } } });
   });
   await openBuilder(page);
   await page.getByLabel('What would you like to build?').fill('Hello world app');
   await page.getByRole('button', { name: 'Create app', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Your app is ready' })).toBeVisible();
   await expect(page.getByText('Unsupported question / tool details')).toHaveCount(0);
-  await expect(page.locator('.tool-activity pre')).not.toBeVisible();
+  await expect(page.getByText('Editing src/index.css')).toBeVisible();
   await page.locator('.tool-activity summary').click();
-  await expect(page.locator('.tool-activity pre')).toContainText('"file_path": "src/index.css"');
+  await expect(page.getByText('Editing src/index.css')).toBeVisible();
   await page.screenshot({ path: 'test-results/chat-desktop.png', fullPage: true });
 });
 
-test('assistant-ui preserves inline tools across polling and hides internal messages', async ({ page }) => {
+test('assistant-ui preserves inline tools across live invalidation and hides internal messages', async ({ page }) => {
   await page.clock.install();
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -241,11 +292,11 @@ test('assistant-ui preserves inline tools across polling and hides internal mess
     if (p.action === 'getConversation') return route.fulfill({ json: { messages: [
       { id: 'hidden', hidden: true, role: 'assistant', content: 'Internal instructions' },
       { id: 'm1', role: 'assistant', content: '**Working on your app**', tool_calls: [
-        { id: 't1', name: 'write_file', status: complete ? 'success' : 'running', arguments_string: '{"path":"app.tsx"}', results: complete ? 'File saved' : null },
-        { name: 'unknown_question', status: 'waiting_for_user_input', waiting_on: { kind: 'choice' }, arguments_string: '{' },
+        { id: 't1', name: 'write_file', status: complete ? 'success' : 'running', display: { file_paths: ['app.tsx'] } },
+        { name: 'unknown_question', status: 'waiting_for_user_input', waiting_on: { kind: 'choice' }, arguments: {} },
       ] },
     ] } });
-    return route.fulfill({ json: { id: 'app_1', status: { state: 'ready' } } });
+    return route.fulfill({ json: { id: 'aaaaaaaaaaaaaaaaaaaaaaaa', status: { state: 'ready' } } });
   });
   await openBuilder(page);
   await page.getByLabel('What would you like to build?').fill('Build a notes app');
@@ -259,8 +310,8 @@ test('assistant-ui preserves inline tools across polling and hides internal mess
   await page.locator('.tool-activity summary').click();
   await expect(page.locator('.tool-activity')).toContainText('Working');
   complete = true;
-  await page.clock.fastForward(11_000);
-  await expect(page.locator('.tool-activity')).toContainText('File saved');
+  pushEvent(page, "conversation.changed", {});
+  await expect(page.locator('.tool-activity')).toContainText('Done');
   await expect(page.locator('.tool-activity')).toHaveAttribute('open', '');
   expect(sent).toEqual([]);
   expect(errors).toEqual([]);
@@ -301,7 +352,7 @@ test('preview card waits for build completion and hides during follow-up submiss
     if (action === 'getConversation') return route.fulfill({ json: { messages: [
       { id: 'm1', role: 'assistant', content: 'Your scoreboard is live.', tool_calls: [{ id: 'write', name: 'write_file', status: 'success' }] },
     ] } });
-    return route.fulfill({ json: { id: 'app_1', name: 'Scoreboard', status: { state } } });
+    return route.fulfill({ json: { id: 'aaaaaaaaaaaaaaaaaaaaaaaa', name: 'Scoreboard', status: { state } } });
   });
   await openBuilder(page);
   await page.getByLabel('What would you like to build?').fill('Build a scoreboard');
@@ -312,7 +363,7 @@ test('preview card waits for build completion and hides during follow-up submiss
   await expect(card).toHaveCount(0);
 
   state = 'ready';
-  await page.clock.fastForward(2_100);
+  pushEvent(page, "app.status_changed", { status: { state: 'ready' } });
   await expect(card).toBeVisible();
   await page.getByLabel('What should change?').fill('Add a reset button');
   await page.getByRole('button', { name: 'Send prompt', exact: true }).click();
@@ -323,11 +374,11 @@ test('preview card waits for build completion and hides during follow-up submiss
   await expect(card).toHaveCount(0);
 
   state = 'ready';
-  await page.clock.fastForward(2_100);
+  pushEvent(page, "app.status_changed", { status: { state: 'ready' } });
   await expect(card).toBeVisible();
 });
 
-test('first prompt stays visible through creation and empty polls, then merges once', async ({ page }) => {
+test('first prompt stays visible through creation and an empty snapshot, then merges once', async ({ page }) => {
   await page.clock.install();
   let releaseCreate: (() => void) | undefined;
   let includeMessage = false;
@@ -338,7 +389,7 @@ test('first prompt stays visible through creation and empty polls, then merges o
     if (action === 'createApp') await new Promise<void>(resolve => { releaseCreate = resolve; });
     if (action === 'getConversation') return route.fulfill({ json: { messages: includeMessage
       ? [{ id: 'server-user', role: 'user', content: prompt }] : [] } });
-    return route.fulfill({ json: { id: 'app_1', status: { state: 'processing' } } });
+    return route.fulfill({ json: { id: 'aaaaaaaaaaaaaaaaaaaaaaaa', status: { state: 'processing' } } });
   });
   await openBuilder(page);
   await page.getByLabel('What would you like to build?').fill(prompt);
@@ -351,7 +402,7 @@ test('first prompt stays visible through creation and empty polls, then merges o
   await expect(page.getByText(prompt, { exact: true })).toBeVisible();
   await expect(page.getByText('No messages yet.', { exact: true })).toHaveCount(0);
   includeMessage = true;
-  await page.clock.fastForward(2_100);
+  pushEvent(page, "conversation.changed", {});
   await expect(page.locator('.from-user')).toHaveCount(1);
   await expect(page.getByText(prompt, { exact: true })).toHaveCount(1);
 });
@@ -381,7 +432,7 @@ test('failed creation removes the optimistic bubble and restores the draft', asy
     const { action } = route.request().postDataJSON();
     return route.fulfill({ json: action === 'listApps' ? { apps: [], hasMore: false } : action === 'getConversation'
       ? { messages: [{ id: 'u1', role: 'user', content: 'say hello world' }, { id: 'a1', role: 'assistant', content: 'Hello world! What would you like to build?' }] }
-      : { id: 'app_1', name: 'say hello world', status: { state: 'ready' } } });
+      : { id: 'aaaaaaaaaaaaaaaaaaaaaaaa', name: 'say hello world', status: { state: 'ready' } } });
   });
   await openBuilder(page);
   await page.getByLabel('What would you like to build?').fill('say hello world');
@@ -399,7 +450,7 @@ test('the empty state owns its CTA and app cards render their build', async ({ p
   await page.route('**/api/base44', route => {
     const { action } = route.request().postDataJSON();
     return route.fulfill({ json: action === 'listApps'
-      ? { apps: populated ? [{ id: 'reading', name: 'Reading list', static_preview_url: 'https://preview.example/static' }] : [], hasMore: false }
+      ? { apps: populated ? [{ id: 'bbbbbbbbbbbbbbbbbbbbbbbb', name: 'Reading list', static_preview_url: 'https://preview.example/static' }] : [], hasMore: false }
       : { url: `https://preview.example/?token=${++previews}` } });
   });
   await page.goto('/');
@@ -423,7 +474,7 @@ test('the empty state owns its CTA and app cards render their build', async ({ p
 
 test('the card, the chat thumbnail and the stage show the same app', async ({ page }) => {
   const screenshot = 'https://preview.example/thumbnail.svg';
-  const app = { id: 'reading', name: 'Reading list', static_preview_url: 'https://preview.example/static', preview_screenshot_url: screenshot, status: { state: 'ready' } };
+  const app = { id: 'bbbbbbbbbbbbbbbbbbbbbbbb', name: 'Reading list', static_preview_url: 'https://preview.example/static', preview_screenshot_url: screenshot, status: { state: 'ready' } };
   await page.route('https://preview.example/**', route => route.fulfill({ contentType: 'text/html', body: '<h1>Reading app</h1>' }));
   await page.route(screenshot, route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="skyblue"/></svg>' }));
   await page.route('**/api/base44', route => {
@@ -440,10 +491,11 @@ test('the card, the chat thumbnail and the stage show the same app', async ({ pa
 });
 
 test('remove persists, handles failures, and New app lives in the topbar', async ({ page }) => {
-  let apps = [{ id: 'reading', name: 'Reading list', status: { state: 'ready' } }];
+  let apps = [{ id: 'bbbbbbbbbbbbbbbbbbbbbbbb', name: 'Reading list', status: { state: 'ready' } }];
   let fail = true;
   await page.route('**/api/base44', route => {
     const { action } = route.request().postDataJSON();
+    if (action === 'getPreviewUrl') return route.fulfill({ json: { url: 'https://preview.example/static' } });
     if (action === 'removeApp') {
       if (fail) return route.fulfill({ status: 500, json: { error: 'Removal failed' } });
       apps = [];
@@ -501,7 +553,7 @@ test('remove persists, handles failures, and New app lives in the topbar', async
     await new Promise<void>(resolve => { release = resolve; });
     await route.fulfill({ contentType: 'text/html', body: '<h1>Live build</h1>' });
   });
-  const app = { id: 'reading', name: 'Reading list', static_preview_url: 'https://static.example/app', status: { state: 'ready' } };
+  const app = { id: 'bbbbbbbbbbbbbbbbbbbbbbbb', name: 'Reading list', static_preview_url: 'https://static.example/app', status: { state: 'ready' } };
   await page.route('**/api/base44', route => {
     const { action } = route.request().postDataJSON();
     if (action === 'getPreviewUrl') { requests++; return route.fulfill({ json: { url: 'https://live.example/app' } }); }
@@ -523,7 +575,7 @@ test('remove persists, handles failures, and New app lives in the topbar', async
 test('editing shows a loader until the conversation arrives', async ({ page }) => {
   let release!: () => void;
   const conversationReady = new Promise<void>(resolve => { release = resolve; });
-  const app = { id: 'app_1', name: 'Reading list', status: { state: 'ready' } };
+  const app = { id: 'aaaaaaaaaaaaaaaaaaaaaaaa', name: 'Reading list', status: { state: 'ready' } };
   await page.route('**/api/base44', async route => {
     const { action } = route.request().postDataJSON();
     if (action === 'getConversation') {
@@ -541,4 +593,35 @@ test('editing shows a loader until the conversation arrives', async ({ page }) =
   await expect(page.getByText('Your reading list is ready.', { exact: true })).toBeVisible();
   await expect(page.getByText('Loading conversation…', { exact: true })).toHaveCount(0);
   await expect(page.getByLabel('What should change?')).toBeEnabled();
+});
+
+test('streamed chat replaces a message without periodic HTTP reads', async ({ page }) => {
+  await page.clock.install();
+  await fixture(page);
+  let reads = 0;
+  await page.route('**/api/base44', route => {
+    if (['getApp', 'getConversation'].includes(route.request().postDataJSON().action)) reads++;
+    return route.fallback();
+  });
+  pushEvent(page, 'message.updated', { message: { id: 'm1', role: 'assistant', content: 'This text arrived through the socket.' } });
+  await expect(page.getByText('This text arrived through the socket.')).toBeVisible();
+  await expect(page.getByText('Your app is taking shape.')).toHaveCount(0);
+  await page.clock.fastForward(45_000);
+  expect(reads).toBe(0);
+});
+
+test('leaving the page ends the socket session instead of leaving it to expire', async ({ page }) => {
+  await fixture(page);
+  const closes: unknown[] = [];
+  await page.route('**/api/base44/socket-session', route => {
+    const body = route.request().postDataJSON();
+    if (body.action !== 'closeBuilderSession') return route.fallback();
+    closes.push(body);
+    return route.fulfill({ json: {} });
+  });
+  pushEvent(page, 'message.updated', { message: { id: 'm1', role: 'assistant', content: 'Connected.' } });
+  await expect(page.getByText('Connected.')).toBeVisible();
+  // Playwright stops routing a page's requests once it unloads, so fire the unload event itself.
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide')));
+  await expect.poll(() => closes).toEqual([{ action: 'closeBuilderSession', appId: 'aaaaaaaaaaaaaaaaaaaaaaaa', sessionHandle: 'handle-1' }]);
 });

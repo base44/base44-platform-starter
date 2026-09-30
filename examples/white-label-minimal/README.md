@@ -6,14 +6,15 @@ chat with the builder, answer its questions, preview, and publish.
 This example uses the [service-user tenancy model](https://base44-docs-white-label-rewrite.mintlify.site/white-label/tenancy-and-credentials#service-users).
 Each builder gets a Base44 service user that owns their apps. Your backend provisions
 that identity using a workspace API key, then uses the service user's access token
-to create and manage apps. Both credentials stay on the server.
+to create and manage apps. The API key stays on the server. For this socket integration, the current service-user
+access token is sent to the signed-in browser after an app-ownership check.
 
 ## Run locally
 
 Use Node.js 24. From the repository root:
 
 ```sh
-npm install
+npm ci
 cp examples/white-label-minimal/.env.example examples/white-label-minimal/.env.local
 ```
 
@@ -67,12 +68,12 @@ on install and build; run `npm run db:generate` from the example after schema ed
 
 Google login and Base44 connection are separate. `/api/base44/connection`
 provisions a service principal using the workspace key. Builder requests use its
-stored token; they do not provision identities or send credentials to the browser.
+stored token; they do not provision identities during ordinary app operations.
 The API handler validates requests and checks app ownership before app operations.
 
 For the chat UI, copy `components/`, `lib/chat/builder-api.ts`, `lib/chat/conversation.ts`,
 and `lib/chat/assistant-messages.ts`. The chat uses assistant-ui's external-store runtime
-with Base44's polled conversation as its source of truth. `Question.tsx` handles
+with an initial conversation snapshot followed by SDK builder socket updates. `Question.tsx` handles
 approvals, choices, and secrets; retries preserve the original answer and request ID.
 Preview URLs stay in page memory and remain stable during normal use. A timed-out
 creation may still succeed, so the UI asks users to check before creating again.
@@ -132,3 +133,55 @@ build-status, runtime-auth, or heartbeat endpoints are used.
 `loadPreview(appId)` calls your authenticated backend and returns `{ url }`. Reject with an error carrying `status: 401` or `403` to stop automatic recovery on authorization failures. Keep platform credentials on the backend. Changing the app or live mode starts a new preview session; changing the callback does not reload the iframe.
 
 When copying the component, include the `preview-frame`, `preview-loading-frame`, `preview-fallback`, `preview-controls`, `preview-spinner`, `widget-placeholder`, and `secondary` styles from `app/globals.css`, or provide equivalent styles and a sized parent container.
+
+## Live builder updates
+
+The example pins the preview of [SDK PR #286](https://github.com/base44/javascript-sdk/pull/286)
+under the `@base44/sdk` alias. Update that exact version when adopting a released SDK.
+
+```text
+Builder.tsx → useBuilderSocket.ts → lib/chat/build-stream.ts
+  → lib/chat/builder-connection.ts → @base44/sdk/platform/client
+```
+
+**Credential.** The browser never holds a Base44 user token. `builder-connection.ts`
+calls the same-origin `POST /api/base44/socket-session`, which requires a signed-in
+user, checks the request origin and that the user owns the app, then opens a socket
+session with a workspace key (`POST /api/service/socket-sessions`, one app per
+session). It returns only `{ serverUrl, sessionToken, sessionHandle }` with
+`Cache-Control: no-store, private`. The session token can watch that one app for an
+hour, cannot write, and carries no Base44 identity.
+
+The key needs the `apps:watch` scope and access to the apps. Set `BASE44_WATCH_KEY`,
+or grant `apps:watch` to `BASE44_SVC_KEY`, which is used when `BASE44_WATCH_KEY` is
+unset. The workspace also needs the white-label sockets flag.
+
+**Connection.** The SDK connects to the platform socket (`/ws`), keeps the token in
+memory, and reuses it across reconnects. It asks for a new session only when Base44
+ends or rejects the current one. One socket per session: a second tab opens its own.
+
+**State.** The first snapshot after joining loads full history over HTTP. After a
+reconnect, the socket's snapshot (status plus the last 50 messages) is merged by
+message id, with no HTTP read. `message.updated`, `message.removed`,
+`app.status_changed` and `image.resolved` apply directly. Re-read signals
+(`conversation.changed`, `files.changed`, `branch.deleted`, `repository.changed`,
+`pull_request.changed`) and completed HTTP mutations trigger an HTTP reload. Ready
+states refresh preview metadata. Queue, task and preview events have no UI in this
+minimal example.
+
+Tool calls render from their public parts: `arguments`, `display`, `user_input`,
+media `results` and a parked call's `approval`. The server maps HTTP conversation
+reads into the same shape, so both paths share the widgets. All writes still go
+through the partner backend.
+
+**Errors.** Delivery stops, with **Reconnect live updates**, when another tab takes
+the session, when the app's access is revoked, or when a handler fails. A missing
+socket snapshot is not an error: the example loads history over HTTP and keeps the
+live connection.
+
+**Ending.** Switching apps, unmounting or closing the tab (`pagehide`) closes the
+socket and ends the Base44 session through `closeBuilderSession` (a `keepalive`
+request), so it stops counting against the key's 5,000 live sessions instead of
+waiting out its hour. `sessionHandle` is the session id signed with
+`NEXTAUTH_SECRET` for this user and app, so a user can end only their own sessions.
+A close that never arrives (a crash or lost network) still expires after the hour.

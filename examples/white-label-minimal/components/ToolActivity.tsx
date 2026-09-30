@@ -1,13 +1,106 @@
-import { CircleAlert, Loader2, ChevronDown } from "lucide-react";
+import { CircleAlert, FileCode2, ImageIcon, Loader2, Package, PencilLine, Terminal, ChevronDown } from "lucide-react";
+import type { ToolMediaResult } from "@base44/sdk/platform/client";
 import type { ToolCall } from "../lib/types";
+
+type ToolArguments = {
+  packages?: Array<{ name?: unknown; action?: unknown }>;
+  updates?: Array<{ action?: unknown; section_label?: unknown; section?: unknown; text?: unknown }>;
+  sections_with_enough?: unknown[];
+  label?: unknown;
+  aspect_ratio?: unknown;
+};
+
+// Game assets and videos return a URL alone: a placeholder until image.resolved replaces it, or the finished asset.
+function mediaFor(tool: ToolCall): ToolMediaResult | null {
+  const results = tool.results;
+  if (typeof results === "string") {
+    return results.startsWith("/__generating__/")
+      ? { placeholder_url: results, status: "pending" }
+      : { status: "completed", image_url: results };
+  }
+  return results?.placeholder_url ? results : null;
+}
+
+function argumentsFor(tool: ToolCall): ToolArguments {
+  return (tool.arguments ?? {}) as ToolArguments;
+}
+
+function packagesFor(args: ToolArguments) {
+  return (args.packages || []).flatMap((pkg) =>
+    typeof pkg?.name === "string" && pkg.name
+      ? [{ name: pkg.name, action: pkg.action === "uninstall" ? "uninstall" : "install" }]
+      : [],
+  );
+}
+
+function activityLabel(tool: ToolCall) {
+  const activity = tool.display;
+  if (activity?.file_paths?.length) {
+    const verb = tool.name === "delete_file" ? "Deleting" : "Editing";
+    return `${verb} ${activity.file_paths.join(", ")}`;
+  }
+  if (activity?.entity_name) {
+    const count = activity.record_count == null ? "" : `${activity.record_count} `;
+    return `${tool.name?.replaceAll("_", " ") || "Updating"} ${count}${activity.entity_name}`;
+  }
+  return activity?.summary || tool.name?.replaceAll("_", " ") || "Agent action";
+}
+
+function statusLabel(tool: ToolCall) {
+  if (["error", "stopped"].includes(tool.status || "")) return "Failed";
+  if (["running", "pending"].includes(tool.status || "")) return "Working";
+  if (tool.auto_approved) return "Auto-approved";
+  return "Done";
+}
+
+function ToolDetails({ tool }: { tool: ToolCall }) {
+  const args = argumentsFor(tool);
+  const packages = packagesFor(args);
+  const plans = (args.updates || []).flatMap((update) => {
+    const label = typeof update.section_label === "string"
+      ? update.section_label
+      : typeof update.section === "string"
+        ? update.section
+        : "Plan";
+    return typeof update.text === "string" && update.text ? [{ label, text: update.text }] : [];
+  });
+  const media = mediaFor(tool);
+  const mediaLabel = typeof args.label === "string" && args.label ? args.label : "Generated media";
+  const mediaPending = media?.status === "pending" || (!media && tool.status === "running");
+
+  if (media || typeof args.label === "string") {
+    return (
+      <div className="tool-widget tool-media">
+        <div className="tool-widget-heading"><ImageIcon size={14} /> <strong>{mediaPending ? "Generating" : media?.status === "failed" ? "Couldn’t generate" : "Generated"} {mediaLabel}</strong></div>
+        {typeof args.aspect_ratio === "string" && <small>{args.aspect_ratio}</small>}
+        {media?.image_url && (tool.name === "generate_video"
+          ? <video src={media.image_url} controls aria-label={mediaLabel} />
+          : <img src={media.image_url} alt={mediaLabel} />)}
+      </div>
+    );
+  }
+  if (packages.length) {
+    return <div className="tool-widget"><div className="tool-widget-heading"><Package size={14} /> <strong>Package changes</strong></div><ul className="tool-list">{packages.map(pkg => <li key={`${pkg.action}:${pkg.name}`}>{pkg.action === "uninstall" ? "Remove" : "Install"} <code>{pkg.name}</code></li>)}</ul></div>;
+  }
+  if (plans.length || (args.sections_with_enough || []).some((item) => typeof item === "string")) {
+    return <div className="tool-widget"><div className="tool-widget-heading"><PencilLine size={14} /> <strong>Plan update</strong></div><ul className="tool-list">{plans.map(plan => <li key={`${plan.label}:${plan.text}`}><strong>{plan.label}</strong> {plan.text}</li>)}</ul></div>;
+  }
+  const display = tool.display;
+  if (display?.file_paths?.length) {
+    return <div className="tool-widget"><div className="tool-widget-heading"><FileCode2 size={14} /> <strong>Files</strong></div><ul className="tool-list">{display.file_paths.map(path => <li key={path}><code>{path}</code>{display.content_empty ? " (empty file)" : ""}</li>)}</ul></div>;
+  }
+  if (display?.entity_name || display?.summary) {
+    return <div className="tool-widget"><div className="tool-widget-heading"><Terminal size={14} /> <strong>{display.summary || "Entity activity"}</strong></div>{display.entity_name && <small>{display.record_count ?? ""} {display.entity_name} records</small>}{display.writes_entities && <small>Updated app data</small>}</div>;
+  }
+  if (tool.user_input?.answers?.length) {
+    return <div className="tool-widget"><strong>Answer received</strong><ul className="tool-list">{tool.user_input.answers.map((answer, index) => <li key={answer.question_index ?? index}>{[...(answer.selected_labels || []), answer.custom_text].filter(Boolean).join(", ")}</li>)}</ul></div>;
+  }
+  return null;
+}
 
 export default function ToolActivity({ tool }: { tool: ToolCall }) {
   const pending = ["running", "pending"].includes(tool.status || "");
   const failed = ["error", "stopped"].includes(tool.status || "");
-  let argumentsText = tool.arguments_string || "";
-  try {
-    argumentsText = JSON.stringify(JSON.parse(argumentsText), null, 2);
-  } catch {}
   return (
     <details className="tool-activity">
       <summary>
@@ -18,26 +111,11 @@ export default function ToolActivity({ tool }: { tool: ToolCall }) {
         ) : (
           <span className="tool-dot" />
         )}
-        <span>{tool.name || "Agent action"}</span>
-        <span className="sr-only">{pending ? "Working" : failed ? "Failed" : "Done"}</span>
+        <span>{activityLabel(tool)}</span>
+        <span className="sr-only">{statusLabel(tool)}</span>
         <ChevronDown size={12} className="tool-chevron" />
       </summary>
-      {argumentsText && (
-        <div>
-          <strong>Arguments</strong>
-          <pre>{argumentsText}</pre>
-        </div>
-      )}
-      {tool.results && (
-        <div>
-          <strong>Result</strong>
-          <pre>
-            {typeof tool.results === "string"
-              ? tool.results
-              : JSON.stringify(tool.results, null, 2)}
-          </pre>
-        </div>
-      )}
+      <ToolDetails tool={tool} />
     </details>
   );
 }

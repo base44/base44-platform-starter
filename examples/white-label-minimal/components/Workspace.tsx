@@ -23,6 +23,7 @@ export default function Workspace({ name }: { name: string }) {
   // What the stage shows. Kept apart from `editor` so an app created mid-chat
   // can appear beside the conversation without remounting the Builder.
   const [stageApp, setStageApp] = useState<App | null>(null);
+  const [needsReconnect, setNeedsReconnect] = useState(false);
   const [editor, setEditor] = useState<{ app: App | null; version: number }>({
     app: null,
     version: 0,
@@ -80,8 +81,10 @@ export default function Workspace({ name }: { name: string }) {
         setError("");
         setApps(result);
         setNeedsConnection(false);
+        setNeedsReconnect(false);
       })
       .catch((err) => {
+        setNeedsReconnect(err instanceof api.ApiError && err.status === 401 && !err.notStarted);
         if (err instanceof api.ApiError && err.status === 428) setNeedsConnection(true);
         else setError(err instanceof Error ? err.message : "Could not load your apps.");
       })
@@ -149,8 +152,8 @@ export default function Workspace({ name }: { name: string }) {
               {error && (
                 <div role="alert" className="error">
                   <p>{error}</p>
-                  <button className="secondary" onClick={() => load()}>
-                    Try again
+                  <button className="secondary" disabled={loading} onClick={() => needsReconnect ? connect() : load()}>
+                    {needsReconnect ? (loading ? "Reconnecting…" : "Reconnect workspace") : "Try again"}
                   </button>
                 </div>
               )}

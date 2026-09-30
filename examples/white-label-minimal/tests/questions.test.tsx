@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import Question, { parseQuestion } from '../components/Question';
 import type { ToolCall } from '../lib/types';
-const tool = (kind: string, args: object): ToolCall => ({ id: 'tool_1', status: 'waiting_for_user_input', waiting_on: { kind }, arguments_string: JSON.stringify(args) });
+const tool = (kind: string, args: object): ToolCall => ({ id: 'tool_1', status: 'waiting_for_user_input', waiting_on: { kind }, arguments: args });
 const render = (t: ToolCall) => renderToStaticMarkup(<Question tool={t} appId="app_1" messageId="m1" disabled={false} onSubmit={async () => {}} />);
 test('choice accepts string and object options, including multiple selection', () => {
   const t = tool('choice', { questions: [{ question: 'Colors?', multi_select: true, options: ['Blue', { label: 'Green' }] }] });
@@ -15,12 +15,17 @@ test('input displays declared secret fields as password inputs', () => {
   assert.equal(parseQuestion(t).kind, 'input');
   const html = render(t); assert.match(html, /type="password"/); assert.match(html, /Weather provider key/);
 });
-test('approval shows arguments, approve, and reject', () => {
-  const html = render(tool('approval', { packages: [{ name: 'example' }] }));
+test('approval keeps unreviewed arguments out of the card', () => {
+  const html = render(tool('approval', { packages: [{ name: 'private-package' }] }));
   assert.match(html, /Review proposed action/); assert.match(html, />Approve</); assert.match(html, />Reject</);
+  assert.doesNotMatch(html, /private-package/);
+});
+test('package approval shows only the reviewed package names and operations', () => {
+  const html = render({ ...tool('approval', { packages: [{ name: 'zod', action: 'install', semver: 'private' }] }), name: 'install_npm_package' });
+  assert.match(html, /Install/); assert.match(html, /zod/); assert.doesNotMatch(html, /private/);
 });
 test('unknown or malformed questions remain visible and cannot be blindly approved', () => {
-  for (const t of [tool('future', {}), tool('input', { fields: [] }), { ...tool('choice', {}), arguments_string: '{bad' }]) {
+  for (const t of [tool('future', {}), tool('input', { fields: [] }), { ...tool('choice', {}), arguments: { questions: 'bad' } as never }]) {
     assert.equal(parseQuestion(t).kind, 'unknown');
     const html = render(t); assert.match(html, /Unsupported/); assert.doesNotMatch(html, />Approve</); assert.match(html, />Reject</);
   }

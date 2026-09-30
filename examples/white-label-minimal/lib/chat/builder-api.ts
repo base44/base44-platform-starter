@@ -10,15 +10,18 @@ export class ApiError extends Error {
   }
 }
 
-async function call<T>(action: string, params: object, signal?: AbortSignal): Promise<T> {
+async function call<T>(
+  action: string, params: object, signal?: AbortSignal, path = "/api/base44", keepalive = false,
+): Promise<T> {
   let response: Response;
   try {
-    response = await fetch("/api/base44", {
+    response = await fetch(path, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action, ...params }),
       cache: "no-store",
       signal,
+      keepalive,
     });
   } catch (error) {
     if (signal?.aborted) throw error;
@@ -58,3 +61,11 @@ export const getPublishedUrl = (appId: string) =>
 export const listApps = (skip = 0) => call<AppPage>("listApps", { skip });
 
 export const removeApp = (appId: string) => call("removeApp", { appId });
+
+export const openBuilderSession = (appId: string, signal?: AbortSignal) =>
+  call<{ serverUrl: string; sessionToken: string; sessionHandle: string }>(
+    "openBuilderSession", { appId }, signal, "/api/base44/socket-session",
+  );
+// keepalive: the request must outlive the page when the tab closes.
+export const closeBuilderSession = (appId: string, sessionHandle: string) =>
+  call("closeBuilderSession", { appId, sessionHandle }, undefined, "/api/base44/socket-session", true);

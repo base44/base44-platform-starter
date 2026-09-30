@@ -1,3 +1,5 @@
+import type { ToolCall as PublicToolCall } from "@base44/sdk/platform/client";
+
 export type App = {
   id: string;
   name?: string;
@@ -8,13 +10,10 @@ export type App = {
   user_description?: string;
   status?: { state?: string; error_source?: string };
 };
-export type ToolCall = {
-  id?: string | null;
-  name?: string | null;
+// The socket's public tool shape; the server maps HTTP reads into it too.
+export type ToolCall = Omit<PublicToolCall, "status" | "waiting_on"> & {
   status?: string | null;
-  waiting_on?: { kind?: string } | null;
-  arguments_string?: string | null;
-  results?: string | null;
+  waiting_on?: { kind?: string | null } | null;
 };
 export type Message = {
   id: string;
@@ -34,6 +33,8 @@ export type ToolInput = {
 export type AppPage = { apps: App[]; hasMore: boolean; nextSkip: number };
 
 export interface AppClient {
+  openBuilderSession(appId: string): Promise<{ serverUrl: string; sessionToken: string; sessionHandle: string }>;
+  closeBuilderSession(appId: string, sessionHandle: string): Promise<object>;
   createApp(prompt: string): Promise<App>;
   getApp(appId: string): Promise<App>;
   getConversation(appId: string, skip: number): Promise<{ messages: Message[] }>;
