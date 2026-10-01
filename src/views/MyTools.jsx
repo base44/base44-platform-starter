@@ -1,19 +1,21 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Loader2, Pencil, Plus, Store, Trash2 } from "lucide-react";
+import { ArrowLeft, History, Loader2, Pencil, Plus, Store, Trash2 } from "lucide-react";
 import Link from "next/link";
 import * as platform from "@/lib/base44Platform";
 import { AppOwnership } from "@/lib/entityClient";
 import { useAppFrameAuth } from "@/lib/appFrameAuth";
 import { useEmbedSrc } from "@/lib/embedFrame";
-import { useAppRebuildNonce, useAppRemoved, useAppsChanged } from "@/lib/appRefresh";
+import { announceAppRebuilt, useAppRebuildNonce, useAppRemoved, useAppsChanged } from "@/lib/appRefresh";
+import { versionTitle } from "@/lib/appVersions";
 import { useAuth } from "@/lib/AuthContext";
 import { useMarketChanges } from "@/lib/marketEvents";
 import { marketPublishState } from "@/lib/marketPublishState";
 import { useSandboxPreview } from "@/lib/useSandboxPreview";
 import { useBuilderPanel } from "@/components/BuilderPanelContext";
 import PublishDialog from "@/components/market/PublishDialog";
+import VersionHistoryPanel from "@/components/apps/VersionHistoryPanel";
 
 function LivePreview({ app }) {
   const [version, setVersion] = useState(0);
@@ -33,6 +35,26 @@ function LivePreview({ app }) {
     <div className="sunny-apps-preview-controls">
       <span>{url ? "Live preview" : error || "Starting live preview…"}</span>
       <button onClick={() => setVersion((value) => value + 1)}>Refresh preview</button>
+    </div>
+  </div>;
+}
+
+/**
+ * A saved version, shown where the live preview was. Its `preview_url` is a
+ * static build Base44 made when the version was saved, so there is no sandbox
+ * to boot and nothing to sign into; the viewer-token handshake still runs so
+ * the version can read the viewer's boards like any other frame.
+ */
+function VersionPreview({ app, version, onBackToLive }) {
+  const frameRef = useRef(null);
+  const url = version.preview_url;
+  useAppFrameAuth(frameRef, app.id, url);
+
+  return <div className="sunny-apps-live is-version" aria-label={`${versionTitle(version)} version preview`}>
+    <iframe ref={frameRef} key={url} src={url} title={`${versionTitle(version)} version preview`} allow="fullscreen" />
+    <div className="sunny-apps-preview-controls is-version">
+      <span>Viewing “{versionTitle(version)}”. This is a saved version, not what the assistant is working on.</span>
+      <button onClick={onBackToLive}>Back to live</button>
     </div>
   </div>;
 }
@@ -79,6 +101,9 @@ export default function MyTools() {
   const [publishing, setPublishing] = useState(null);
   const [listings, setListings] = useState({});
   const [removing, setRemoving] = useState(null);
+  const [versionsOpen, setVersionsOpen] = useState(false);
+  // The saved version shown in place of the live preview, or null for live.
+  const [previewVersion, setPreviewVersion] = useState(null);
 
   const loadApps = useCallback(async () => {
     setLoading(true);
@@ -140,6 +165,36 @@ export default function MyTools() {
   const backToApps = useCallback(() => {
     setInApp(false);
   }, [setInApp]);
+  // A version belongs to one app; moving to another app, or leaving the stage,
+  // drops it and the panel.
+  useEffect(() => {
+    setPreviewVersion(null);
+    setVersionsOpen(false);
+  }, [selected?.id, inApp]);
+  const mergeApp = useCallback((fresh) => {
+    if (!fresh?.id) return;
+    setApps((current) => current.map((app) => app.id === fresh.id ? { ...app, ...fresh } : app));
+  }, []);
+  /**
+   * After a restore the builder is on a different build, so the two things
+   * that show it are reloaded: the chat (through `openApp`, which re-reads the
+   * conversation) and the live preview (through the rebuild announcement and the
+   * new commit hash). The restored app comes back in the response, so nothing
+   * has to be polled first.
+   */
+  const handleRestored = useCallback((restored) => {
+    setPreviewVersion(null);
+    const fresh = { ...(selected || {}), ...(restored || {}) };
+    mergeApp(fresh);
+    openBuilderApp(fresh);
+    announceAppRebuilt(fresh.id);
+  }, [selected, mergeApp, openBuilderApp]);
+  /** Publishing a version changes what production serves, not the editor, so only the app row moves. */
+  const handlePublished = useCallback(() => {
+    if (!selected?.id) return;
+    announceAppRebuilt(selected.id);
+    platform.getApp(selected.id).then(mergeApp).catch(() => {});
+  }, [selected?.id, mergeApp]);
   useAppRemoved((appId) => {
     setApps((current) => current.filter((app) => app.id !== appId));
     if (selected?.id === appId) backToApps();
@@ -177,11 +232,29 @@ export default function MyTools() {
         <header>
           <button className="sunny-apps-secondary" onClick={backToApps}><ArrowLeft size={16} /> All apps</button>
           <strong>{selected?.name || "New app"}</strong>
+          {selected && <button
+            className={`sunny-apps-secondary sunny-apps-versions-toggle ${versionsOpen ? "is-open" : ""}`}
+            onClick={() => setVersionsOpen((open) => !open)}
+            aria-pressed={versionsOpen}
+            aria-label={versionsOpen ? "Hide version history" : "Show version history"}
+          ><History size={16} /> Versions</button>}
         </header>
-        <div className="sunny-apps-stage-content">
-          {selected
-            ? <LivePreview key={selected.id} app={selected} />
-            : <div className="sunny-apps-placeholder">Describe what you want to build. The preview appears here once the app exists.</div>}
+        <div className={`sunny-apps-stage-content ${versionsOpen ? "has-versions" : ""}`}>
+          <div className="sunny-apps-stage-main">
+            {selected && previewVersion
+              ? <VersionPreview key={previewVersion.id} app={selected} version={previewVersion} onBackToLive={() => setPreviewVersion(null)} />
+              : selected
+                ? <LivePreview key={selected.id} app={selected} />
+                : <div className="sunny-apps-placeholder">Describe what you want to build. The preview appears here once the app exists.</div>}
+          </div>
+          {selected && versionsOpen && <VersionHistoryPanel
+            app={selected}
+            selectedId={previewVersion?.id || null}
+            onSelect={(version) => setPreviewVersion(version)}
+            onClose={() => { setVersionsOpen(false); setPreviewVersion(null); }}
+            onRestored={handleRestored}
+            onPublished={handlePublished}
+          />}
         </div>
       </main> : <main className="sunny-apps-list">
         {error && <div role="alert" className="sunny-apps-error">{error} <button onClick={loadApps}>Try again</button></div>}

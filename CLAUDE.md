@@ -89,6 +89,7 @@ npm run auth:smoke       # boundary 1: session → actor
 npm run entities:smoke   # boundary 1: whitelisting, scoping, wire shape
 npm run base44:smoke     # boundaries 2–3: token containment, allow-list, session keying
 npm run embed:smoke      # the embed gate: authored-or-installed, and a refusal is an answer
+npm run versions:smoke   # boundary 3: the version actions are allow-listed, ids stay clean, rows label by hash
 npm run sunny:smoke     # boundary 4: the public contract, action by action
 npm run webhook:register # boundary 5: register the endpoint, print the key to pin (deploy-time)
 npm run webhook:smoke    # boundary 5: the inbound signature, both key sources, negative controls
@@ -103,7 +104,7 @@ needs neither (it mints its own keypair and stubs the key-set fetch), and
 ## Docs
 
 - `docs/base44-identity.md` — service principals, minting, refresh, revocation, offboarding
-- `docs/base44-platform-api.md` — the platform REST endpoints
+- `docs/base44-platform-api.md` — the platform REST endpoints, including the version history ones
 - `docs/base44-built-apps.md` — builder instructions, skills, and the callback API
 - `docs/sunny-platform-skill.md` — the skill text a built app reads, as a worked example
 - `docs/base44-webhooks.md` — inbound events: registration, signature, delivery semantics
