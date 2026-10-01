@@ -294,6 +294,35 @@ control.
 
 → Instructions, skills, the callback contract and CORS: **[docs/base44-built-apps.md](docs/base44-built-apps.md)**
 
+### 4d. Version history and rollback
+
+Base44 saves a version (a *checkpoint*) at the end of every builder turn, and the editor's version
+history is just those rows. My apps shows the same history behind a **Versions** button on an app's
+stage (`src/components/apps/VersionHistoryPanel.jsx`), built on four allow-listed actions:
+
+```ts
+const versions = await listCheckpoints(appId, { limit: 25 });     // newest first
+// select a row whose preview_status is "ready" → its preview_url replaces the live preview
+await retryCheckpointBuild(appId, version.id);                    // when preview_status is "failed"
+await restoreCheckpoint(appId, version.id);                       // editor goes back; publishes nothing
+await deployApp(appId, { checkpointId: version.id });             // production goes back; editor untouched
+```
+
+Three things worth copying:
+
+1. **Label rows by commit hash, not by date.** `git_commit_hash === app.last_git_commit_hash` is
+   the version the editor is on; `=== app.last_deployed_git_commit_hash` is the one production
+   serves. A checkpoint's `last_deployed_at` only says it was live once.
+2. **Restore is slow and publishes nothing.** It rolls the code forward, redeploys functions,
+   restores schemas and drops the chat messages after the version, all before it answers — so it
+   gets the builder timeout, the confirmation says *nothing is published*, and Restore is disabled
+   while the app is `processing` (upstream answers `409` otherwise). Afterwards the chat and the
+   preview are reloaded, because both changed underneath.
+3. **Publishing a version is a different button.** It changes what production serves and leaves
+   the builder's draft alone, which is what a production rollback should do.
+
+→ Endpoints, fields and failure modes: **[docs/base44-platform-api.md § Versions](docs/base44-platform-api.md#versions)**
+
 ---
 
 ## Step 5 — Let Base44 tell you what happened
@@ -380,6 +409,7 @@ npm run rls:smoke        # step 1: the owner predicate, including the traps
 npm run auth:smoke       # step 1: session → actor
 npm run entities:smoke   # step 1: whitelisting, scoping, wire shape
 npm run base44:smoke     # steps 2–3: token containment, allow-list, session keying
+npm run versions:smoke   # step 4: the version actions stay allow-listed, ids stay clean, rows are labelled by hash
 npm run sunny:smoke     # step 4: the public contract, action by action
 npm run webhook:smoke    # step 5: the inbound signature, both key sources, negative controls
 npm run webhook:projection:smoke   # step 5: what a verified event does to the shell's own rows
@@ -397,6 +427,9 @@ npm run webhook:projection:smoke   # step 5: what a verified event does to the s
 | `403 "scoped to MCP"` | The minted token's `client_id` has an MCP prefix; it's then valid only at `/mcp`, not REST |
 | `sendMessage` times out at ~30s | Your own timeout, not Base44's. Build turns need ~120s |
 | A new app doesn't appear in the list | It was created but never filed into the folder |
+| Restore answers `409` | A builder turn is running, or the version is from another branch. Wait for `status.state` to leave `processing` |
+| Restore times out | It is doing real work (rollback, redeploys, schema sync). Poll `getApp` until `status.state` leaves `processing`; don't send it again |
+| A version can't be selected | Its `preview_status` isn't `ready`. `failed` offers a retry; `pending`/`building` settle on their own |
 
 ## Where to read next
 

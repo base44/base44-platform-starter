@@ -204,7 +204,50 @@ export const sendMessage = (appId: string, content: string) =>
 /** Boots or reuses a dev sandbox. `preview_token` has a 300s TTL — never cache. */
 export const getPreviewUrl = (appId: string) => call("getPreviewUrl", { appId });
 
-export const deployApp = (appId: string) => call("deployApp", { appId });
+/**
+ * Publishes the app. Pass `checkpointId` to publish a saved version instead of
+ * the current build: production serves that version while the builder's draft
+ * stays where it is, which is how a rollback ships without touching the chat.
+ */
+export const deployApp = (appId: string, { checkpointId }: { checkpointId?: string } = {}) =>
+  call("deployApp", checkpointId ? { appId, checkpointId } : { appId }) as Promise<Json>;
+
+// --- versions ----------------------------------------------------------------
+
+/** One saved version of an app, as `listCheckpoints` returns it. */
+export type Checkpoint = {
+  id: string;
+  name?: string | null;
+  changes?: string | null;
+  created_date?: string | null;
+  created_by?: string | null;
+  git_commit_hash?: string | null;
+  preview_status?: "pending" | "building" | "ready" | "failed" | null;
+  preview_url?: string | null;
+  build_error?: { message?: string } | null;
+  last_deployed_at?: string | null;
+  is_github_sync?: boolean | null;
+};
+
+/** The app's saved versions, newest first. Bare array upstream, no total. */
+export const listCheckpoints = (appId: string, { limit = 25, skip = 0 } = {}) =>
+  call("listCheckpoints", { appId, limit, skip }) as Promise<Checkpoint[]>;
+
+/**
+ * Returns the builder to a saved version. Code, functions, entity schemas and
+ * the chat all go back; nothing is published. Resolves with the restored app
+ * once upstream is done, which can take a while — on a timeout, poll `getApp`
+ * until `status.state` leaves `processing` rather than calling this again.
+ */
+export const restoreCheckpoint = (appId: string, checkpointId: string) =>
+  call("restoreCheckpoint", { appId, checkpointId }) as Promise<App>;
+
+/** Starts a new preview build for a version whose preview failed to build. */
+export const retryCheckpointBuild = (appId: string, checkpointId: string) =>
+  call("retryCheckpointBuild", { appId, checkpointId }) as Promise<{
+    status: "building" | "ready" | "skipped";
+    git_commit_hash: string;
+  }>;
 
 /**
  * The request id a submit travels under. Derived, never passed in: it must be

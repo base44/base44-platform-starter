@@ -152,14 +152,50 @@ const OPS: Record<string, Op> = {
     method: "GET",
     path: (p) => `/api/apps/${str(p.appId)}/sandbox/preview-url`,
   },
+  /**
+   * Publishes the app. With `checkpointId`, publishes that saved version
+   * instead of the current build and leaves the builder's draft where it is —
+   * a production rollback that touches nothing in the chat.
+   */
   deployApp: {
     method: "POST",
     path: (p) => `/api/apps/${str(p.appId)}/deploy`,
-    body: () => ({}),
+    body: (p) => (p.checkpointId ? { checkpoint_id: str(p.checkpointId) } : {}),
     // Precautionary: deploy answers well inside 30s for a small app, but it
     // bundles, so a large one could exceed it. The cost of a too-long timeout is
     // a slow failure; of a too-short one, a spurious error on a working deploy.
     timeoutMs: BUILDER_TIMEOUT_MS,
+  },
+  /**
+   * The app's saved versions, newest first. Every builder turn saves one, so
+   * this is the version history the editor shows. Bare array upstream.
+   */
+  listCheckpoints: {
+    method: "GET",
+    path: (p) =>
+      `/api/apps/${str(p.appId)}/app-checkpoints?${new URLSearchParams({
+        limit: num(p.limit, 25),
+        skip: String(Number(p.skip) || 0),
+      })}`,
+  },
+  /**
+   * Returns the builder to a saved version: code rolled forward to that tree as
+   * a new commit, functions redeployed, entity schemas restored, and the chat
+   * rewound to that point. Publishes nothing. Upstream does all of it before
+   * answering, so it waits like a builder turn; a 409 means a turn is running.
+   */
+  restoreCheckpoint: {
+    method: "POST",
+    path: (p) => `/api/apps/${str(p.appId)}/app-checkpoints/${str(p.checkpointId)}/load`,
+    body: () => ({}),
+    timeoutMs: BUILDER_TIMEOUT_MS,
+  },
+  /** Starts a new preview build for a version whose `preview_status` is `failed`. */
+  retryCheckpointBuild: {
+    method: "POST",
+    path: (p) =>
+      `/api/apps/${str(p.appId)}/app-checkpoints/${str(p.checkpointId)}/retry-build`,
+    body: () => ({}),
   },
   /**
    * Resume a builder turn paused on a `requires_user_input` tool call. `approve`
@@ -196,7 +232,13 @@ const APP_SCOPED = [
   "getPreviewUrl",
   "deployApp",
   "submitToolCallInput",
+  "listCheckpoints",
+  "restoreCheckpoint",
+  "retryCheckpointBuild",
 ];
+
+/** Actions that interpolate a checkpoint id into the path. */
+const CHECKPOINT_SCOPED = ["restoreCheckpoint", "retryCheckpointBuild"];
 
 const CLEAN_ID = /^[A-Za-z0-9_-]+$/;
 
@@ -230,6 +272,14 @@ const reauthorize = () =>
 function validate(action: string, params: Params): string | null {
   if (APP_SCOPED.includes(action) && !CLEAN_ID.test(str(params.appId))) {
     return `Action "${action}" needs a valid appId.`;
+  }
+  if (CHECKPOINT_SCOPED.includes(action) && !CLEAN_ID.test(str(params.checkpointId))) {
+    return `Action "${action}" needs a valid checkpointId.`;
+  }
+  // Optional here, but when present it lands in the body as the version to
+  // publish, so it is held to the same shape as a path id.
+  if (action === "deployApp" && params.checkpointId !== undefined && !CLEAN_ID.test(str(params.checkpointId))) {
+    return 'Action "deployApp" needs "checkpointId" to be a valid id when given.';
   }
   if (action === "fileAppsInFolder") {
     const ids = params.appIds;

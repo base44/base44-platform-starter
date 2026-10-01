@@ -166,7 +166,84 @@ Boots or reuses a dev sandbox. The returned `preview_token` has a **300s TTL** �
 
 ### `POST /api/apps/{appId}/deploy`
 
-Empty body. Publishes the app.
+Empty body publishes the app's current build. With a body it publishes a saved version instead:
+
+```json
+{ "checkpoint_id": "68a1f0c2b7e4d9a3c5f21e07" }
+```
+
+Production then serves that version while the builder's draft is untouched — a rollback for the
+people using the app that rewinds nobody's work. `409` while the app is `processing` or when the
+version belongs to a branch; `400` with `error.code = checkpoint_source_no_longer_compiles` when
+its functions no longer build. The documented response is `{app_id, checkpoint_id,
+git_commit_hash, deployed_at}`; a personal access token currently gets the full app instead, so
+this repo reads `last_deployed_git_commit_hash` off `getApp` rather than relying on either shape.
+
+---
+
+## Versions
+
+Base44 saves a **checkpoint** at the end of every builder turn (and on imports, remixes and
+manual saves — never on publish). The editor's version history is these rows, and the same four
+endpoints are what `src/components/apps/VersionHistoryPanel.jsx` is built on. All of them take
+the full-access personal token the rest of this page uses; a read-only token and a workspace key
+are refused.
+
+### `GET /api/apps/{appId}/app-checkpoints?limit=25&skip=0` — list
+
+Newest first, bare array, no total. Send a `limit`: without one you get every checkpoint the app
+has. The fields this repo renders:
+
+| Field | Used for |
+| --- | --- |
+| `id` | the id to restore or publish |
+| `name`, `changes`, `created_date` | the row |
+| `git_commit_hash` | `=== app.last_git_commit_hash` → **Current**; `=== app.last_deployed_git_commit_hash` → **Live**. Never label from `last_deployed_at`: it says a version was live once, not that it is live now |
+| `preview_status`, `preview_url` | `ready` → the row is selectable and `preview_url` loads in place of the live preview; `pending`/`building` → poll; `failed` → offer a retry |
+| `build_error.message` | why a preview build failed |
+
+`preview_url` is a static build Base44 made when the version was saved. It needs no sandbox and
+no preview token, and it is on its own host, so the embed sign-in (`/api/embed`) does not apply —
+the frame loads signed out and the viewer-token handshake still runs.
+
+### `POST /api/apps/{appId}/app-checkpoints/{checkpointId}/load` — restore
+
+Empty body. Returns the restored app (same shape as `GET /api/apps/{appId}`). Upstream rolls the
+code forward to that tree as a new commit, redeploys the backend functions, re-applies the entity
+schemas and runtime config, and rewinds the chat — messages after the version are dropped. **It
+publishes nothing**, which is the one sentence the confirmation must say.
+
+It does all of that before answering, so it gets `BUILDER_TIMEOUT_MS`, not the CRUD default. The
+app's `status.state` is `processing` for the duration (`details: "Restoring checkpoint"`); on a
+timeout, poll `getApp` until it leaves `processing` rather than calling restore again. `409` when
+a turn is running (`"This app is working. Wait for it to finish, then restore."`), when the version
+is from another branch, or when main is protected. `src/lib/appVersions.ts` maps those to the
+sentence the panel shows, and disables Restore while the app is `processing` so the user never
+meets the first one.
+
+After a restore this repo reloads the two things that show the build: the chat, by re-opening the
+app in the builder (which re-reads the conversation), and the live preview, through
+`announceAppRebuilt` plus the new commit hash.
+
+### `POST /api/apps/{appId}/app-checkpoints/{checkpointId}/retry-build` — retry a preview
+
+Empty body. Starts a new preview build in the background and returns
+`{ status: "building" | "ready" | "skipped", git_commit_hash }` — `ready` means the commit already
+had a build. Poll the list until `preview_status` settles.
+
+### Publish a version
+
+`POST /api/apps/{appId}/deploy` with `{ checkpoint_id }`, above. The allow-list exposes it as
+`deployApp` with an optional `checkpointId`, held to the same `/^[A-Za-z0-9_-]+$/` shape as a
+path id even though it travels in the body.
+
+### Restore vs publish a version vs undo
+
+| The user wants to | Call | Changes |
+| --- | --- | --- |
+| go back to a version they picked | restore (`load`) | the editor: code, functions, schemas, chat. Production unchanged |
+| make the live app an earlier version | deploy with `checkpoint_id` | production only. Editor unchanged |
+| take back the last thing the agent did | `POST /chat/message/{id}/undo` | same as restore, to that message's version (not wired here) |
 
 ---
 
