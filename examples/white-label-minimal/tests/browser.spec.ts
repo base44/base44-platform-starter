@@ -138,20 +138,6 @@ test('approval rejection is an answer and removes the waiting state', async ({ p
   expect(f.submissions[0].approve).toBe(false);
   expect(f.submissions[0].extraUserInput).toEqual({});
 });
-test('uncertain create never retries automatically and offers existing-app recovery', async ({ page }) => {
-  let creates = 0;
-  await page.route('**/api/base44', route => {
-    if (route.request().postDataJSON().action === 'listApps') return route.fulfill({ json: { apps: [], hasMore: false } });
-    creates++; return route.abort('failed');
-  });
-  await page.goto('/');
-  await page.getByRole('button', { name: 'Create an app', exact: true }).click();
-  await page.getByLabel('What would you like to build?').fill('Reading list');
-  await page.getByRole('button', { name: 'Create app', exact: true }).click();
-  await expect(page.getByLabel('Existing app ID')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Create app', exact: true })).toBeDisabled();
-  expect(creates).toBe(1);
-});
 test('an ended live session pauses updates, reconnect restores them', async ({ page }) => {
   await fixture(page);
   const socket = sockets.get(page)!;

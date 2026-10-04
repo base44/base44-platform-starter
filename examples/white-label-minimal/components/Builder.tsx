@@ -1,45 +1,43 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, Check, ExternalLink, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import * as api from "../lib/chat/builder-api";
 import { hasCompletedBuild } from "../lib/chat/build-readiness";
 import { mergeOptimisticMessages, type OptimisticMessage } from "../lib/chat/optimistic-messages";
 import type { App, ToolInput } from "../lib/types";
 import BuilderChat from "./BuilderChat";
+import ReadyCard from "./ReadyCard";
 import { useLiveUpdates } from "./useLiveUpdates";
 
-export default function Builder({
-  initialAppId,
-  onCreated,
-  onUpdated,
-  onGoHome,
-}: {
+const busyLabels = { create: "Creating app…", send: "Sending prompt…", answer: "Answering question…" };
+type Busy = keyof typeof busyLabels | null;
+
+// One build turn: create the app or send a prompt, watch it build, answer the
+// agent's questions, and offer to publish when it is ready.
+export default function Builder({ initialAppId, onCreated, onUpdated, onGoHome }: {
   initialAppId?: string;
   onCreated?: (app: App) => void;
   onUpdated?: (app: App) => void;
   onGoHome?: () => void;
 }) {
   const [appId, setAppId] = useState<string | null>(initialAppId || null);
-  const [busy, setBusy] = useState("");
+  const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState("");
-  const [creationUncertain, setCreationUncertain] = useState(false);
-  const [resumeId, setResumeId] = useState("");
+  // The builder's prompt, shown until Base44 sends it back.
   const [optimistic, setOptimistic] = useState<OptimisticMessage[]>([]);
-  const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
   const lock = useRef(false);
   const { app, messages, error: liveError, loading, refresh, reconnect } = useLiveUpdates(appId);
   const displayedMessages = useMemo(() => mergeOptimisticMessages(messages, optimistic), [messages, optimistic]);
   useEffect(() => {
     if (app) onUpdated?.(app);
   }, [app, onUpdated]);
+
   const waiting = messages.some((m) => m.tool_calls?.some((t) => t.status === "waiting_for_user_input"));
   const processing = app?.status?.state === "processing";
-  const composerDisabled = loading || !!busy || waiting || processing || !!liveError || creationUncertain;
-  // A prompt/answer invalidates the previous ready state before live updates catch up.
-  // Preview and deploy operations themselves should keep the card mounted.
-  const submittingBuild = busy === "Sending prompt…" || busy === "Answering question…";
-  const canDeliver = app?.id === appId && app?.status?.state === "ready" &&
-    !waiting && !liveError && !submittingBuild && hasCompletedBuild(messages);
+  // Base44 ignores new prompts while a question is open or a build runs.
+  const composerDisabled = loading || !!busy || waiting || processing || !!liveError;
+  const ready = app?.id === appId && app?.status?.state === "ready" &&
+    !busy && !waiting && !liveError && hasCompletedBuild(messages);
 
   async function send(prompt: string) {
     if (lock.current || composerDisabled || !prompt.trim()) return false;
@@ -49,7 +47,7 @@ export default function Builder({
       message: { id: optimisticId, role: "user", content: prompt },
       knownIds: messages.map((message) => message.id),
     }]);
-    setBusy(appId ? "Sending prompt…" : "Creating app…");
+    setBusy(appId ? "send" : "create");
     setError("");
     try {
       if (appId) {
@@ -64,42 +62,27 @@ export default function Builder({
     } catch (err) {
       setOptimistic((current) => current.filter(({ message }) => message.id !== optimisticId));
       setError(err instanceof Error ? err.message : "Request failed.");
-      if (!appId) setCreationUncertain(!(err instanceof api.ApiError && err.notStarted));
-      else await refresh();
+      if (appId) await refresh();
       return false;
     } finally {
       lock.current = false;
-      setBusy("");
+      setBusy(null);
     }
   }
-  // Step 6 of the build turn: deploy, then read back the address to link to.
-  async function publish() {
-    if (lock.current || !appId) return;
-    lock.current = true;
-    setBusy("Publishing…");
-    setError("");
-    try {
-      await api.deployApp(appId);
-      setPublishedUrl((await api.getPublishedUrl(appId)).url);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not publish the app.");
-    } finally {
-      lock.current = false;
-      setBusy("");
-    }
-  }
+
   async function answer(input: ToolInput) {
     if (lock.current) throw new Error("Another action is still running.");
     lock.current = true;
-    setBusy("Answering question…");
+    setBusy("answer");
     try {
       await api.submitToolCallInput(input);
     } finally {
       await refresh();
       lock.current = false;
-      setBusy("");
+      setBusy(null);
     }
   }
+
   return (
     <div className="builder">
       {app?.status?.state === "error" && (
@@ -112,52 +95,11 @@ export default function Builder({
         <aside role="alert">
           <p>{error || liveError}</p>
           {appId && (
-            <button
-              className="secondary"
-              disabled={!!busy}
-              onClick={() => {
-                setError("");
-                reconnect();
-              }}
-            >
+            <button className="secondary" disabled={!!busy} onClick={() => { setError(""); reconnect(); }}>
               Reconnect live updates
             </button>
           )}
         </aside>
-      )}
-      {!appId && creationUncertain && (
-        <details open>
-          <summary>Resume an existing app</summary>
-          <p>
-            Creation may have succeeded. Check your Base44 workspace before creating another app.
-            Only apps already saved to your account can be resumed here.
-          </p>
-          <label>
-            Existing app ID
-            <input value={resumeId} onChange={(e) => setResumeId(e.target.value)} />
-          </label>
-          <div className="actions">
-            <button
-              disabled={!/^[A-Za-z0-9_-]{1,200}$/.test(resumeId)}
-              onClick={() => {
-                setAppId(resumeId);
-                setCreationUncertain(false);
-                setError("");
-              }}
-            >
-              Resume this app
-            </button>
-            <button
-              className="secondary"
-              onClick={() => {
-                setCreationUncertain(false);
-                setError("");
-              }}
-            >
-              I checked — allow a new creation
-            </button>
-          </div>
-        </details>
       )}
       <BuilderChat
         appId={appId}
@@ -171,30 +113,11 @@ export default function Builder({
         onSend={send}
         onAnswer={answer}
       >
-        {canDeliver && (
-          <section className="delivery" aria-label="App ready">
-            <p className="ready-badge">
-              <Check size={13} aria-hidden="true" /> Ready
-            </p>
-            <strong>{app?.name || "Your app"}</strong>
-            {publishedUrl ? (
-              <a className="button" href={publishedUrl} target="_blank" rel="noopener noreferrer">
-                Open the published app <ExternalLink size={14} />
-              </a>
-            ) : (
-              <button disabled={!!busy} onClick={publish}>Publish</button>
-            )}
-            {onGoHome && (
-              <button onClick={onGoHome}>
-                See it in the home page <ArrowRight size={14} />
-              </button>
-            )}
-          </section>
-        )}
+        {ready && appId && <ReadyCard appId={appId} name={app?.name} onGoHome={onGoHome} />}
         {(busy || waiting || processing || liveError) && (
           <div className="build-progress" role="status">
             {(busy || processing) && <Loader2 size={12} className="spin" />}
-            {busy || (liveError ? "Connection paused" : waiting ? "Waiting for your answer" : "Building…")}
+            {busy ? busyLabels[busy] : liveError ? "Connection paused" : waiting ? "Waiting for your answer" : "Building…"}
           </div>
         )}
       </BuilderChat>

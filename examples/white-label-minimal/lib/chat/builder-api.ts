@@ -1,16 +1,14 @@
 import type { App, AppPage, ToolInput } from "../types";
 
+// status lets callers tell an authorization failure from the rest.
 export class ApiError extends Error {
-  constructor(
-    message: string,
-    public status = 0,
-    public notStarted = false,
-  ) {
+  constructor(message: string, public status = 0) {
     super(message);
   }
 }
 
-async function call<T>(action: string, params: object, signal?: AbortSignal): Promise<T> {
+// Every Base44 operation goes through Tiny's own server, never to Base44 directly.
+async function call<T>(action: string, params: object): Promise<T> {
   let response: Response;
   try {
     response = await fetch("/api/base44", {
@@ -18,33 +16,19 @@ async function call<T>(action: string, params: object, signal?: AbortSignal): Pr
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action, ...params }),
       cache: "no-store",
-      signal,
     });
-  } catch (error) {
-    if (signal?.aborted) throw error;
+  } catch {
     throw new ApiError("Connection lost. The operation may still be running.");
   }
-  let data;
-  try {
-    data = await response.json();
-  } catch {
-    throw new ApiError(
-      "The server returned an unreadable response. The outcome is uncertain.",
-      502,
-    );
-  }
-  if (!response.ok)
-    throw new ApiError(
-      data.error || "The request failed.",
-      response.status,
-      data.outcome === "not_started",
-    );
+  const data = await response.json().catch(() => {
+    throw new ApiError("The server returned an unreadable response. The outcome is uncertain.", 502);
+  });
+  if (!response.ok) throw new ApiError(data.error || "The request failed.", response.status);
   return data as T;
 }
 
 export const createApp = (prompt: string) => call<App>("createApp", { prompt });
-export const getApp = (appId: string, signal?: AbortSignal) =>
-  call<App>("getApp", { appId }, signal);
+export const getApp = (appId: string) => call<App>("getApp", { appId });
 export const sendMessage = (appId: string, content: string) =>
   call("sendMessage", { appId, content });
 export const submitToolCallInput = (input: ToolInput) => call("submitToolCallInput", input);
