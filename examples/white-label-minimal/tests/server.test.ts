@@ -152,9 +152,9 @@ test('live updates open with the workspace key, and a refusal says how to fix it
 });
 
 test('the sandbox preview URL gets a scheme and its one-time preview token', async () => {
-  const calls = setup({ preview_url: 'preview-app1.base44.app', preview_token: 'token-canary' });
+  const calls = setup({ preview_url: 'preview-app1.platform.example', preview_token: 'token-canary' });
   const { url } = await buildTurn.getSandboxPreviewUrl('app_1');
   assert.equal(calls[0].url, 'https://platform.example/api/apps/app_1/sandbox/preview-url');
-  assert.equal(new URL(url).origin, 'https://preview-app1.base44.app');
+  assert.equal(new URL(url).origin, 'https://preview-app1.platform.example');
   assert.equal(new URL(url).searchParams.get('_preview_token'), 'token-canary');
 });
