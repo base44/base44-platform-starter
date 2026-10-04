@@ -5,6 +5,7 @@ import type { NextConfig } from "next";
 const config: NextConfig = {
   turbopack: {
     resolveAlias: {
+      "../server/actions": "./fake-actions.ts",
       "../../server/actions": "./fake-actions.ts",
     },
   },

@@ -1,86 +1,25 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect } from "react";
 import { Loader2 } from "lucide-react";
-import * as actions from "../../server/actions";
-import { getChatState, type ChatState } from "../chat-state";
-import { mergeOptimisticMessages, type OptimisticMessage } from "../optimistic-messages";
-import type { App, ToolInput } from "../../types";
-import { unwrap } from "../unwrap";
+import type { App } from "../../types";
+import type { ChatState } from "../chat-state";
+import { useBuildTurn, type Busy } from "../useBuildTurn";
 import BuilderChat from "./BuilderChat";
 import ReadyCard from "./ReadyCard";
-import { useLiveUpdates } from "./useLiveUpdates";
 
-type Busy = "create" | "send" | "answer" | null;
-
-// One build turn: create the app or send a prompt, watch it build, answer the
-// agent's questions, and offer to publish when it is ready.
+// The builder's chat for one app. The logic is in useBuildTurn; this only shows it.
 export default function Builder({ initialAppId, onCreated, onUpdated, onGoHome }: {
   initialAppId?: string;
   onCreated?: (app: App) => void;
   onUpdated?: (app: App) => void;
   onGoHome?: () => void;
 }) {
-  const [appId, setAppId] = useState<string | null>(initialAppId || null);
-  const [busy, setBusy] = useState<Busy>(null);
-  const [error, setError] = useState("");
-  // The builder's prompt, shown until Base44 sends it back.
-  const [optimistic, setOptimistic] = useState<OptimisticMessage[]>([]);
-  const lock = useRef(false);
-
-  const { app, messages, error: liveError, loading, refresh, reconnect } = useLiveUpdates(appId);
-  const state = getChatState(app, messages, loading, liveError);
-  const displayedMessages = useMemo(() => mergeOptimisticMessages(messages, optimistic), [messages, optimistic]);
+  const { app, appId, messages, state, busy, canSend, error, send, answer, reconnect } =
+    useBuildTurn(initialAppId ?? null, onCreated);
 
   useEffect(() => {
     if (app) onUpdated?.(app);
   }, [app, onUpdated]);
-
-  // Base44 ignores new prompts while a question is open or a build runs.
-  const canSend = !busy && (state === "idle" || state === "ready" || state === "failed");
-
-  async function send(prompt: string) {
-    if (lock.current || !canSend || !prompt.trim()) return false;
-    lock.current = true;
-    const optimisticId = `local:${crypto.randomUUID()}`;
-    setOptimistic((current) => [...current, {
-      message: { id: optimisticId, role: "user", content: prompt },
-      knownIds: messages.map((message) => message.id),
-    }]);
-    setBusy(appId ? "send" : "create");
-    setError("");
-    try {
-      if (appId) {
-        await unwrap(actions.sendMessage(appId, prompt));
-        await refresh();
-      } else {
-        const created = await unwrap(actions.createApp(prompt));
-        setAppId(created.id);
-        onCreated?.(created);
-      }
-      return true;
-    } catch (err) {
-      setOptimistic((current) => current.filter(({ message }) => message.id !== optimisticId));
-      setError(err instanceof Error ? err.message : "Request failed.");
-      if (appId) await refresh();
-      return false;
-    } finally {
-      lock.current = false;
-      setBusy(null);
-    }
-  }
-
-  async function answer(input: ToolInput) {
-    if (lock.current) throw new Error("Another action is still running.");
-    lock.current = true;
-    setBusy("answer");
-    try {
-      await unwrap(actions.submitToolCallInput(input));
-    } finally {
-      await refresh();
-      lock.current = false;
-      setBusy(null);
-    }
-  }
 
   return (
     <div className="builder">
@@ -90,11 +29,11 @@ export default function Builder({ initialAppId, onCreated, onUpdated, onGoHome }
           the conversation and send a follow-up prompt.
         </p>
       )}
-      {(error || liveError) && (
+      {error && (
         <aside role="alert">
-          <p>{error || liveError}</p>
+          <p>{error}</p>
           {appId && (
-            <button className="secondary" disabled={!!busy} onClick={() => { setError(""); reconnect(); }}>
+            <button className="secondary" disabled={!!busy} onClick={reconnect}>
               Reconnect live updates
             </button>
           )}
@@ -102,7 +41,7 @@ export default function Builder({ initialAppId, onCreated, onUpdated, onGoHome }
       )}
       <BuilderChat
         appId={appId}
-        messages={displayedMessages}
+        messages={messages}
         state={state}
         busy={!!busy}
         canSend={canSend}

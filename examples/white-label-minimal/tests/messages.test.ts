@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { toMessage, upsertMessage } from '../client/live-updates';
+import { toMessage, upsertMessage } from '../client/messages';
 
 test('socket messages convert to the shape the chat renders', () => {
   const message = toMessage({ id: 'm1', role: 'assistant', content: 'Hi', tool_calls: [
