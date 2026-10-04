@@ -25,8 +25,8 @@ function hasOpenQuestion(messages: Message[]) {
     message.tool_calls?.some((tool) => tool.status === "waiting_for_user_input"));
 }
 
-// "ready" alone also follows a greeting-only reply, so the app counts as built
-// only once the agent has written code and the latest turn has finished.
+// "ready" alone also follows a greeting-only reply or an answer, so the app
+// counts as built only once the latest turn has written code and finished.
 function hasBuiltCode(messages: Message[]) {
   if (messages.at(-1)?.role !== "assistant") return false;
 
@@ -36,7 +36,7 @@ function hasBuiltCode(messages: Message[]) {
     message.tool_calls?.some((tool) => tool.status === "pending" || tool.status === "running"));
   if (stillWorking) return false;
 
-  return messages.some((message) =>
+  return latestTurn.some((message) =>
     message.tool_calls?.some((tool) =>
       (tool.name === "write_file" || tool.name === "find_replace") && tool.status === "success"));
 }

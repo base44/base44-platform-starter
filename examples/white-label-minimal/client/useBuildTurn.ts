@@ -22,6 +22,7 @@ export function useBuildTurn(initialAppId: string | null, onCreated?: (app: App)
   const [error, setError] = useState("");
   const [liveError, setLiveError] = useState("");
   const lock = useRef(false);
+  const turnStarted = useRef<(() => void) | null>(null);
 
   // Each app and each reconnect is a new live-updates session. It is loading
   // until its first snapshot arrives or it fails.
@@ -110,6 +111,11 @@ export function useBuildTurn(initialAppId: string | null, onCreated?: (app: App)
     () => mergeOptimisticMessages(currentMessages, optimistic),
     [currentMessages, optimistic],
   );
+  // Send chat message stays open until the whole turn ends; see send().
+  useEffect(() => {
+    if (state === "building") turnStarted.current?.();
+  }, [state]);
+
   // Base44 ignores new prompts while a question is open or a build runs.
   const canSend = !busy && (state === "idle" || state === "ready" || state === "failed");
 
@@ -130,7 +136,12 @@ export function useBuildTurn(initialAppId: string | null, onCreated?: (app: App)
     setError("");
     try {
       if (appId) {
-        await unwrap(actions.sendMessage(appId, prompt));
+        // Base44 holds this request open until the whole turn ends, which can take
+        // minutes. Stop waiting once live updates show the build running; the
+        // app status reports how it ends.
+        const sent = unwrap(actions.sendMessage(appId, prompt));
+        sent.catch(() => {});
+        await Promise.race([sent, new Promise<void>((resolve) => { turnStarted.current = resolve; })]);
         await refreshApp();
       } else {
         const created = await unwrap(actions.createApp(prompt));
@@ -144,6 +155,7 @@ export function useBuildTurn(initialAppId: string | null, onCreated?: (app: App)
       if (appId) await refreshApp().catch(() => {});
       return false;
     } finally {
+      turnStarted.current = null;
       lock.current = false;
       setBusy(null);
     }
