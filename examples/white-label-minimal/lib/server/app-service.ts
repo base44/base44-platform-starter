@@ -1,6 +1,7 @@
 import "server-only";
 import { requireUser } from "./auth";
 import { getEmbedUrl } from "../base44/embed";
+import { Base44Error } from "../base44/error";
 import { openSocketSession } from "../base44/socket-session";
 import { base44 } from "../base44/client";
 import { createAppRepository } from "../storage/app-repository";
@@ -17,8 +18,14 @@ export async function getAppClient(): Promise<AppClient> {
     ...base44,
     authorize: apps.authorize,
     openBuilderSession: openSocketSession,
-    // The builder sees the latest build signed in as themselves.
+    // Every preview is the app signed in as the builder: the latest build in
+    // cards, the running sandbox while editing.
     getLatestBuildUrl: (id) => getEmbedUrl(id, user.email, "latest_preview"),
+    async getPreviewUrl(id) {
+      const { url } = await getEmbedUrl(id, user.email, "live_preview");
+      if (!url) throw new Base44Error("The live preview is not available yet. Try refreshing.", 502);
+      return { url };
+    },
     removeApp: apps.remove,
     async createApp(prompt) {
       const app = await base44.createApp(prompt);

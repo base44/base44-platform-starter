@@ -9,7 +9,12 @@ let signedIn = true;
 const POST = createHandler(async () => {
   if (!signedIn) throw new Base44Error('Sign in to continue.', 401);
   return { ...base44, openBuilderSession: openSocketSession,
-    getLatestBuildUrl: (id: string) => getEmbedUrl(id, 'builder@example.com', 'latest_preview'), authorize: async (id: string) => {
+    getLatestBuildUrl: (id: string) => getEmbedUrl(id, 'builder@example.com', 'latest_preview'),
+    getPreviewUrl: async (id: string) => {
+      const { url } = await getEmbedUrl(id, 'builder@example.com', 'live_preview');
+      if (!url) throw new Base44Error('The live preview is not available yet. Try refreshing.', 502);
+      return { url };
+    }, authorize: async (id: string) => {
     if (id === 'other_app') throw new Base44Error('App not found.', 404);
   }, removeApp: async () => ({}), listApps: async () => ({ apps: [], hasMore: false, nextSkip: 0 }) };
 });
@@ -83,15 +88,18 @@ test('tool approvals, rejection and retries preserve payload and request identit
   assert.deepEqual(JSON.parse(String(calls[0].init?.body)), { tool_call_id: 'tool_1', message_id: 'message_1', action: 'approved', extra_user_input: input.extraUserInput });
   assert.equal(JSON.parse(String(calls[2].init?.body)).action, 'rejected');
 });
-test('preview response is not cached and upstream failures cannot expose tokens', async () => {
-  const calls = setup({ preview_url: 'preview.example/?existing=1', preview_token: 'token-canary' });
+test('the live preview signs the builder into the sandbox, is not cached, and never leaks upstream bodies', async () => {
+  const calls = setup({ embed_url: 'https://reading.example/?ott=token-canary', expires_in: 60 });
   const result = await request({ action: 'getPreviewUrl', appId: 'app_1' });
   assert.match(result.headers.get('cache-control')!, /no-store/);
   assert.equal(result.headers.get('referrer-policy'), 'no-referrer');
-  assert.equal(new URL((await result.json()).url).searchParams.get('_preview_token'), 'token-canary');
-  assert.equal(calls[0].init?.cache, 'no-store');
+  assert.equal((await result.json()).url, 'https://reading.example/?ott=token-canary');
+  assert.equal(JSON.parse(String(calls[1].init?.body)).target, 'live_preview');
+  assert.equal(calls[1].init?.cache, 'no-store');
   setup({ error: 'token-canary personal-key-canary' }, 500);
-  assert.doesNotMatch(await (await request({ action: 'getPreviewUrl', appId: 'app_1' })).text(), /canary/);
+  const failed = await request({ action: 'getPreviewUrl', appId: 'app_1' });
+  assert.equal(failed.status, 502);
+  assert.doesNotMatch(await failed.text(), /canary/);
 });
 test('network failures are uncertain, not retried, and safe to display', async () => {
   setup(); let calls = 0;

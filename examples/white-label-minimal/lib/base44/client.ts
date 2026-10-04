@@ -48,16 +48,8 @@ export const base44 = {
       extra_user_input: p.extraUserInput,
     }, { "X-Request-ID": `submit-${p.toolCallId}` }),
 
-  // 5. Show the preview. The preview_token is short-lived: never cache or log it.
-  async getPreviewUrl(id: string) {
-    const data = await request(`${app(id)}/sandbox/preview-url`, { timeout: 120_000 });
-    const url = httpsUrl(data?.preview_url);
-    if (data.preview_token) url.searchParams.set("_preview_token", data.preview_token);
-    url.searchParams.set("server_url", url.origin);
-    url.searchParams.set("hide_badge", "true");
-    url.searchParams.set("analytics-enable", "false");
-    return { url: url.href };
-  },
+  // 5. Show the preview: Tiny signs the builder into it with "Embed the app"
+  //    (lib/base44/embed.ts), so private apps open without their sign-in page.
 
   // 6. Publish the app. A 404 from Get published URL means "nothing to link to yet".
   deployApp: (id: string) => post(`${app(id)}/deploy`, {}),
