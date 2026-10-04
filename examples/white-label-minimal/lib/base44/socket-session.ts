@@ -12,9 +12,13 @@ export async function openSocketSession(appId: string) {
     body: JSON.stringify({ app_ids: [appId] }),
     cache: "no-store",
   });
-  if (response.status === 401 || response.status === 403)
-    throw new Base44Error("Live updates need a workspace key with the apps:watch scope.", 503);
-  if (!response.ok) throw new Base44Error(`Base44 returned ${response.status} opening live updates.`);
+  if (!response.ok) {
+    // Base44 says why: a key without apps:watch, a workspace without white-label
+    // sockets, or an app the key isn't granted.
+    const reason = (await response.json().catch(() => null))?.error?.message;
+    throw new Base44Error(`Live updates unavailable: ${reason ?? `Base44 returned ${response.status}`}.`,
+      response.status === 401 || response.status === 403 ? 503 : 502);
+  }
   const { socket_url, session_token } = await response.json();
   return { serverUrl: new URL(socket_url).origin, sessionToken: String(session_token) };
 }
