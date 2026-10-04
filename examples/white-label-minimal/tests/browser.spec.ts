@@ -355,6 +355,30 @@ test('preview card waits for build completion and hides during follow-up submiss
   await expect(card).toBeVisible();
 });
 
+test('a follow-up stops showing "Sending prompt" once the turn is running', async ({ page }) => {
+  let state = 'ready';
+  await page.route('**/api/base44', async route => {
+    const { action } = route.request().postDataJSON();
+    if (action === 'listApps') return route.fulfill({ json: { apps: [], hasMore: false } });
+    // Base44 keeps the send request open until the whole turn ends.
+    if (action === 'sendMessage') { state = 'processing'; return; }
+    if (action === 'getConversation') return route.fulfill({ json: { messages: [
+      { id: 'm1', role: 'assistant', content: 'Your notes app is ready.', tool_calls: [{ id: 'w', name: 'write_file', status: 'success' }] },
+    ] } });
+    return route.fulfill({ json: { id: APP, name: 'Notes', status: { state } } });
+  });
+  await openBuilder(page);
+  await page.getByLabel('What would you like to build?').fill('Build a notes app');
+  await page.getByRole('button', { name: 'Create app', exact: true }).click();
+  await expect(page.getByText('Your notes app is ready.')).toBeVisible();
+  await page.getByLabel('What should change?').fill('Add tags');
+  await page.getByRole('button', { name: 'Send prompt', exact: true }).click();
+  await expect(page.getByText('Sending prompt…', { exact: true })).toBeVisible();
+  await pushUpdates(page);
+  await expect(page.getByText('Sending prompt…', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Building…', { exact: true })).toBeVisible();
+});
+
 test('first prompt stays visible through creation and an empty snapshot, then merges once', async ({ page }) => {
   let releaseCreate: (() => void) | undefined;
   let includeMessage = false;

@@ -26,6 +26,7 @@ export default function Builder({
   const [resumeId, setResumeId] = useState("");
   const [optimistic, setOptimistic] = useState<OptimisticMessage[]>([]);
   const lock = useRef(false);
+  const turnStarted = useRef<(() => void) | null>(null);
   const { app, messages, error: socketError, loading, refresh, resume } = useBuilderSocket(appId);
   const displayedMessages = useMemo(
     () => mergeOptimisticMessages(messages, optimistic), [messages, optimistic],
@@ -37,6 +38,9 @@ export default function Builder({
     m.tool_calls?.some((t) => t.status === "waiting_for_user_input"),
   );
   const processing = app?.status?.state === "processing";
+  useEffect(() => {
+    if (processing) turnStarted.current?.();
+  }, [processing]);
   // A prompt/answer invalidates the previous ready state before live updates catch up.
   // Preview and deploy operations themselves should keep the card mounted.
   const submittingBuild = busy === "Sending prompt…" || busy === "Answering question…";
@@ -64,7 +68,11 @@ export default function Builder({
     setError("");
     try {
       if (appId) {
-        await api.sendMessage(appId, prompt);
+        // Base44 holds this request open until the whole turn ends, which can take
+        // minutes; once live updates show the turn running, stop waiting on it.
+        const sent = api.sendMessage(appId, prompt);
+        sent.catch(() => {});
+        await Promise.race([sent, new Promise<void>((resolve) => { turnStarted.current = resolve; })]);
         await refresh();
       } else {
         const created = await api.createApp(prompt);
@@ -79,6 +87,7 @@ export default function Builder({
       else await refresh();
       return false;
     } finally {
+      turnStarted.current = null;
       lock.current = false;
       setBusy("");
     }
