@@ -63,7 +63,7 @@ numbered by the step of the build turn: create, send a prompt, watch, answer, an
 [embed.ts](server/base44/embed.ts) and [live-updates.ts](server/base44/live-updates.ts) cover the other two docs
 pages, and [request.ts](server/base44/request.ts) is the `fetch` they share. Copy them with
 `server/base44/config.ts`, `server/base44/error.ts`, `server/base44/custom-instructions.ts`, and `types.ts`. Every endpoint it calls is described in
-Base44's [OpenAPI spec](https://app.base44.com/api/openapi.json), if you prefer to generate a typed client. It uses `fetch` and `server-only`, with
+Base44's [Apps API reference](https://docs.base44.com/developers/references/apps-api/get-started/overview), which also links the OpenAPI spec if you prefer to generate a typed client. It uses `fetch` and `server-only`, with
 no Sunny imports. Set `BASE44_PLATFORM_HOST` to your Base44 HTTPS origin and
 adapt `server/base44/custom-instructions.ts` to your product. New apps use the first 80
 characters of the prompt as their initial name.
