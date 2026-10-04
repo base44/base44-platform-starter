@@ -20,6 +20,7 @@ function setup(reply: unknown = { id: 'app_1' }, status = 200) {
   process.env.BASE44_PLATFORM_HOST = 'https://platform.example';
   process.env.BASE44_ACCESS_TOKEN = 'pat-canary';
   process.env.BASE44_WORKSPACE_ID = 'workspace_1';
+  process.env.BASE44_SVC_KEY = 'b44k_workspace';
   const calls: { url: string; init?: RequestInit }[] = [];
   globalThis.fetch = async (url, init) => {
     calls.push({ url: String(url), init });
