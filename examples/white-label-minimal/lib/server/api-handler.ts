@@ -46,6 +46,7 @@ export function createHandler(resolveClient: () => Promise<AppClient>) {
       const method = client[name as keyof AppClient] as (...args: unknown[]) => Promise<unknown>;
       return Response.json(await method(...args), { headers });
     } catch (error) {
+      if (!(error instanceof Base44Error)) console.error("[api/base44]", error);
       const safe = error instanceof Base44Error
         ? error
         : new Base44Error("The local request failed. Check configuration and refresh app state.");
@@ -61,40 +62,24 @@ function fail(message: string, status = 400): never {
   throw new Base44Error(message, status);
 }
 
-// Only same-origin calls: BUILDER_ORIGIN when hosted, a loopback host locally.
+// Only Tiny's own pages may call this: BUILDER_ORIGIN when hosted, a loopback
+// host locally. (A DNS-rebinding page would send its own name as Host, so any
+// other host is refused.) request.url is not used because Next rewrites it.
 function checkOrigin(request: Request) {
-  const host = request.headers.get("host");
-  const origin = request.headers.get("origin");
-  const hosted = process.env.BUILDER_ORIGIN;
-  let ok: boolean;
-  if (hosted) {
-    const url = new URL(hosted);
-    ok = url.protocol === "https:" && url.origin === hosted && host === url.host && origin === hosted;
-  } else {
-    ok = !!host && /^(127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/.test(host) && origin === `http://${host}`;
-  }
-  if (!ok) fail("This request origin is not allowed.", 403);
+  const host = request.headers.get("host") ?? "";
+  const allowed = process.env.BUILDER_ORIGIN ||
+    (/^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(host) ? `http://${host}` : null);
+  if (!allowed || request.headers.get("origin") !== allowed) fail("This request origin is not allowed.", 403);
 }
 
 async function readJson(request: Request): Promise<Record<string, unknown>> {
   if (request.headers.get("content-type")?.split(";")[0].trim() !== "application/json")
     fail("Send application/json.", 415);
-  // Read in chunks so an oversized body is rejected without buffering all of it.
-  const reader = request.body?.getReader();
-  if (!reader) fail("A JSON body is required.");
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
-    size += chunk.value.byteLength;
-    if (size > 64_000) {
-      await reader.cancel();
-      fail("Request body is too large.", 413);
-    }
-    chunks.push(chunk.value);
-  }
+  const text = await request.text();
+  if (text.length > 64_000) fail("Request body is too large.", 413);
   let json;
   try {
-    json = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    json = JSON.parse(text);
   } catch {
     fail("Invalid JSON.");
   }
