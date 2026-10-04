@@ -41,8 +41,8 @@ and workspace are available here too.
 
 Start with [lib/base44/client.ts](lib/base44/client.ts). It contains the Base44
 endpoints and request payloads for creation, conversation, tool answers, preview,
-and publishing. Copy it with `lib/base44/config.ts`, `lib/base44/error.ts`,
-`lib/base44/custom-instructions.ts`, and `lib/types.ts`. It uses `fetch` and `server-only`, with
+and publishing. Copy it with `lib/base44/http.ts`, `lib/base44/static-preview.ts`,
+`lib/base44/config.ts`, `lib/base44/error.ts`, `lib/base44/custom-instructions.ts`, and `lib/types.ts`. It uses `fetch` and `server-only`, with
 no Sunny imports. Set `BASE44_PLATFORM_HOST` to your Base44 HTTPS origin and
 adapt `lib/base44/custom-instructions.ts` to your product. New apps use the first 80
 characters of the prompt as their initial name.

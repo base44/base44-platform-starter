@@ -1,165 +1,139 @@
 import { Base44Error } from "../base44/error";
 import type { AppClient } from "../types";
 
-const headers = { "Cache-Control": "no-store, private", "Referrer-Policy": "no-referrer" };
-const bad = (message: string, status = 400): never => {
-  throw new Base44Error(message, status);
+type Body = ReturnType<typeof bodyReader>;
+
+// The browser may call only these actions. Each one validates and returns the
+// arguments for the AppClient method of the same name.
+const actions: Record<string, (body: Body) => unknown[]> = {
+  listApps: (b) => [b.skip()],
+  createApp: (b) => [b.text("prompt")],
+  removeApp: (b) => [b.id("appId")],
+  getApp: (b) => [b.id("appId")],
+  getConversation: (b) => [b.id("appId"), b.skip()],
+  sendMessage: (b) => [b.id("appId"), b.text("content")],
+  submitToolCallInput: (b) => [{
+    appId: b.id("appId"),
+    toolCallId: b.id("toolCallId"),
+    messageId: b.id("messageId"),
+    approve: b.boolean("approve"),
+    extraUserInput: b.object("extraUserInput"),
+  }],
+  getPreviewUrl: (b) => [b.id("appId")],
+  deployApp: (b) => [b.id("appId")],
+  getPublishedUrl: (b) => [b.id("appId")],
 };
+
+const headers = { "Cache-Control": "no-store, private", "Referrer-Policy": "no-referrer" };
 
 export function createHandler(resolveClient: () => Promise<AppClient>) {
   return async function POST(request: Request) {
+    // After dispatch, a failure may still have changed something upstream.
     let dispatched = false;
     try {
-      const host = request.headers.get("host");
-      const origin = request.headers.get("origin");
-      const hostedOrigin = process.env.BUILDER_ORIGIN;
-      if (hostedOrigin) {
-        const allowed = new URL(hostedOrigin);
-        if (
-          allowed.protocol !== "https:" ||
-          allowed.origin !== hostedOrigin ||
-          host !== allowed.host ||
-          origin !== hostedOrigin
-        )
-          bad("This request origin is not allowed.", 403);
-      } else if (
-        !host ||
-        !/^(127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/.test(host) ||
-        origin !== `http://${host}`
-      ) {
-        bad("This request origin is not allowed.", 403);
-      }
+      checkOrigin(request);
       const client = await resolveClient();
-      if (request.headers.get("content-type")?.split(";")[0].trim() !== "application/json")
-        bad("Send application/json.", 415);
-      const reader = request.body?.getReader();
-      if (!reader) return bad("A JSON body is required.");
-      const chunks: Uint8Array[] = [];
-      let size = 0;
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        size += value.byteLength;
-        if (size > 64_000) {
-          await reader.cancel();
-          bad("Request body is too large.", 413);
-        }
-        chunks.push(value);
-      }
-      let p: Record<string, unknown>;
-      try {
-        p = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-      } catch {
-        return Response.json(
-          { error: "Invalid JSON.", outcome: "not_started" },
-          { status: 400, headers },
-        );
-      }
-      if (!p || typeof p !== "object" || Array.isArray(p)) bad("Expected a JSON object.");
-      const fields = (...allowed: string[]) => {
-        if (Object.keys(p).some((k) => !["action", ...allowed].includes(k)))
-          bad("Unexpected request field.");
-      };
-      const string = (key: string, max = 16_000): string => {
-        const v = p[key];
-        if (typeof v !== "string" || !v.trim() || v.length > max) return bad(`Invalid ${key}.`);
-        return v;
-      };
-      const id = (key: string) => {
-        const v = string(key, 200);
-        if (!/^[A-Za-z0-9_-]+$/.test(v)) bad(`Invalid ${key}.`);
-        return v;
-      };
-      const skip = () => {
-        const value = p.skip ?? 0;
-        if (
-          typeof value !== "number" ||
-          !Number.isSafeInteger(value) ||
-          value < 0 ||
-          value > 100_000
-        )
-          return bad("Invalid skip.");
-        return value;
-      };
-      function execute<Args extends unknown[], Result>(
-        operation: (...args: Args) => Promise<Result>,
-        ...args: Args
-      ) {
-        dispatched = true;
-        return operation(...args);
-      }
-      let result;
-      if (p.appId !== undefined) await client.authorize(id("appId"));
-      switch (p.action) {
-        case "listApps": {
-          fields("skip");
-          result = await execute(client.listApps, skip());
-          break;
-        }
-        case "createApp":
-          fields("prompt");
-          result = await execute(client.createApp, string("prompt"));
-          break;
-        case "removeApp":
-          fields("appId");
-          result = await execute(client.removeApp, id("appId"));
-          break;
-        case "getApp":
-          fields("appId");
-          result = await execute(client.getApp, id("appId"));
-          break;
-        case "getConversation": {
-          fields("appId", "skip");
-          result = await execute(client.getConversation, id("appId"), skip());
-          break;
-        }
-        case "sendMessage":
-          fields("appId", "content");
-          result = await execute(client.sendMessage, id("appId"), string("content"));
-          break;
-        case "submitToolCallInput": {
-          fields("appId", "toolCallId", "messageId", "approve", "extraUserInput");
-          if (
-            typeof p.approve !== "boolean" ||
-            !p.extraUserInput ||
-            typeof p.extraUserInput !== "object" ||
-            Array.isArray(p.extraUserInput)
-          )
-            bad("Invalid tool-call decision or input.");
-          result = await execute(client.submitToolCallInput, {
-            appId: id("appId"),
-            toolCallId: id("toolCallId"),
-            messageId: id("messageId"),
-            approve: p.approve as boolean,
-            extraUserInput: p.extraUserInput as Record<string, unknown>,
-          });
-          break;
-        }
-        case "getPreviewUrl":
-          fields("appId");
-          result = await execute(client.getPreviewUrl, id("appId"));
-          break;
-        case "deployApp":
-          fields("appId");
-          result = await execute(client.deployApp, id("appId"));
-          break;
-        case "getPublishedUrl":
-          fields("appId");
-          result = await execute(client.getPublishedUrl, id("appId"));
-          break;
-        default:
-          bad("Unsupported action.");
-      }
-      return Response.json(result, { headers });
+      const json = await readJson(request);
+      if (json.appId !== undefined) await client.authorize(validId(json.appId, "appId"));
+
+      const name = String(json.action);
+      if (!Object.hasOwn(actions, name)) fail("Unsupported action.");
+      const body = bodyReader(json);
+      const args = actions[name](body);
+      if (body.hasUnreadFields()) fail("Unexpected request field.");
+
+      dispatched = true;
+      const method = client[name as keyof AppClient] as (...args: unknown[]) => Promise<unknown>;
+      return Response.json(await method(...args), { headers });
     } catch (error) {
-      const safe =
-        error instanceof Base44Error
-          ? error
-          : new Base44Error("The local request failed. Check configuration and refresh app state.");
+      const safe = error instanceof Base44Error
+        ? error
+        : new Base44Error("The local request failed. Check configuration and refresh app state.");
       return Response.json(
         { error: safe.message, outcome: dispatched ? "unknown" : "not_started" },
         { status: safe.status, headers },
       );
     }
+  };
+}
+
+function fail(message: string, status = 400): never {
+  throw new Base44Error(message, status);
+}
+
+// Only same-origin calls: BUILDER_ORIGIN when hosted, a loopback host locally.
+function checkOrigin(request: Request) {
+  const host = request.headers.get("host");
+  const origin = request.headers.get("origin");
+  const hosted = process.env.BUILDER_ORIGIN;
+  let ok: boolean;
+  if (hosted) {
+    const url = new URL(hosted);
+    ok = url.protocol === "https:" && url.origin === hosted && host === url.host && origin === hosted;
+  } else {
+    ok = !!host && /^(127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/.test(host) && origin === `http://${host}`;
+  }
+  if (!ok) fail("This request origin is not allowed.", 403);
+}
+
+async function readJson(request: Request): Promise<Record<string, unknown>> {
+  if (request.headers.get("content-type")?.split(";")[0].trim() !== "application/json")
+    fail("Send application/json.", 415);
+  // Read in chunks so an oversized body is rejected without buffering all of it.
+  const reader = request.body?.getReader();
+  if (!reader) fail("A JSON body is required.");
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
+    size += chunk.value.byteLength;
+    if (size > 64_000) {
+      await reader.cancel();
+      fail("Request body is too large.", 413);
+    }
+    chunks.push(chunk.value);
+  }
+  let json;
+  try {
+    json = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    fail("Invalid JSON.");
+  }
+  if (!json || typeof json !== "object" || Array.isArray(json)) fail("Expected a JSON object.");
+  return json;
+}
+
+function validId(value: unknown, key: string) {
+  if (typeof value !== "string" || !/^[A-Za-z0-9_-]{1,200}$/.test(value)) fail(`Invalid ${key}.`);
+  return value;
+}
+
+// Validates fields by name and remembers which ones were read, so any extra
+// field in the request is rejected.
+function bodyReader(json: Record<string, unknown>) {
+  const read = new Set(["action"]);
+  const get = (key: string) => (read.add(key), json[key]);
+  return {
+    id: (key: string) => validId(get(key), key),
+    text(key: string) {
+      const value = get(key);
+      if (typeof value !== "string" || !value.trim() || value.length > 16_000) fail(`Invalid ${key}.`);
+      return value;
+    },
+    skip() {
+      const value = get("skip") ?? 0;
+      if (!Number.isSafeInteger(value) || (value as number) < 0 || (value as number) > 100_000) fail("Invalid skip.");
+      return value as number;
+    },
+    boolean(key: string) {
+      const value = get(key);
+      if (typeof value !== "boolean") fail(`Invalid ${key}.`);
+      return value;
+    },
+    object(key: string) {
+      const value = get(key);
+      if (!value || typeof value !== "object" || Array.isArray(value)) fail(`Invalid ${key}.`);
+      return value as Record<string, unknown>;
+    },
+    hasUnreadFields: () => Object.keys(json).some((key) => !read.has(key)),
   };
 }

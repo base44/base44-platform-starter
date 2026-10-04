@@ -8,14 +8,8 @@ export function getBase44Config() {
   } catch {
     throw new Base44Error("The workspace connection is not configured.", 503);
   }
-  if (
-    host.protocol !== "https:" ||
-    host.username ||
-    host.password ||
-    host.pathname !== "/" ||
-    host.search ||
-    host.hash
-  ) {
+  // A bare origin only: no credentials, path, query, or fragment.
+  if (host.protocol !== "https:" || host.href !== `${host.origin}/`) {
     throw new Base44Error("The workspace connection requires an HTTPS platform origin.", 503);
   }
   return { host: host.origin };

@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "./db";
 import type { App } from "../types";
 import { Base44Error } from "../base44/error";
+import { PAGE_SIZE } from "./app-list";
 
 export function createAppRepository(actor: { email: string }) {
   const owner = { createdBy: actor.email };
@@ -29,7 +30,7 @@ export function createAppRepository(actor: { email: string }) {
         where: owner,
         orderBy: { createdAt: "desc" },
         skip,
-        take: 13,
+        take: PAGE_SIZE + 1,
         select: { appId: true },
       });
     },

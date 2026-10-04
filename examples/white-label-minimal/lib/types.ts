@@ -8,6 +8,7 @@ export type App = {
   user_description?: string;
   status?: { state?: string; error_source?: string };
 };
+
 export type ToolCall = {
   id?: string | null;
   name?: string | null;
@@ -16,6 +17,7 @@ export type ToolCall = {
   arguments_string?: string | null;
   results?: string | null;
 };
+
 export type Message = {
   id: string;
   role?: string | null;
@@ -23,6 +25,7 @@ export type Message = {
   hidden?: boolean | null;
   tool_calls?: ToolCall[] | null;
 };
+
 export type ToolInput = {
   appId: string;
   toolCallId: string;

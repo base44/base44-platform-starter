@@ -1,219 +1,125 @@
 import "server-only";
-import { customInstructions } from "./custom-instructions";
 import type { App, Message, ToolInput } from "../types";
+import { customInstructions } from "./custom-instructions";
 import { Base44Error } from "./error";
-import { getBase44Config } from "./config";
+import { base44Fetch } from "./http";
+import { staticPreviewUrl } from "./static-preview";
+
+const hints: Record<number, string> = {
+  401: "Reconnect your workspace.",
+  403: "Check the account’s workspace access.",
+  409: "The app may not build yet. Ask the agent to fix it.",
+  429: "Rate limit reached. Wait before trying again.",
+};
 
 export function createBase44Client(accessToken: string) {
-  async function request(
-    path: string,
-    {
-      body,
-      timeout = 30_000,
-      headers,
-    }: {
-      body?: object;
-      timeout?: number;
-      headers?: Record<string, string>;
-    } = {},
-  ) {
-    const { host } = getBase44Config();
-    let response: Response;
-    try {
-      response = await fetch(`${host}${path}`, {
-        method: body ? "POST" : "GET",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-          ...headers,
-        },
-        body: body ? JSON.stringify(body) : undefined,
-        cache: "no-store",
-        redirect: "error",
-        signal: AbortSignal.timeout(timeout),
-      });
-    } catch {
-      // Never include fetch errors: they can contain a URL or upstream credentials.
-      throw new Base44Error(
-        "Base44 did not return a response. The operation may still be running.",
-        504,
-      );
-    }
-    if (!response.ok) {
-      const hint =
-        response.status === 401
-          ? "Reconnect your workspace."
-          : response.status === 403
-            ? "Check the account’s workspace access."
-            : response.status === 429
-              ? "Rate limit reached. Wait before trying again."
-              : response.status === 409
-                ? "The app may not build yet. Ask the agent to fix it."
-                : "Refresh the app state before repeating an operation.";
-      throw new Base44Error(`Base44 returned ${response.status}. ${hint}`, response.status);
-    }
-    const text = await response.text();
-    if (!text) return null;
-    try {
-      return JSON.parse(text);
-    } catch {
-      throw new Base44Error("Base44 returned an unreadable response. The outcome is uncertain.");
-    }
-  }
+  const request = (path: string, options: Parameters<typeof base44Fetch>[1] = {}) =>
+    base44Fetch(path, {
+      ...options,
+      headers: { Authorization: `Bearer ${accessToken}`, ...options.headers },
+      errorFor: (status) => new Base44Error(
+        `Base44 returned ${status}. ${hints[status] ?? "Refresh the app state before repeating an operation."}`,
+        status,
+      ),
+    });
+  const post = (path: string, body: object, headers?: Record<string, string>) =>
+    request(path, { body, headers, timeout: 120_000 }).then(() => ({}));
 
-  // Whether a derived static preview URL actually serves a build. Cached
-  // because getApp is polled every two seconds while an app is building.
-  const probes = new Map<string, { ok: boolean; at: number }>();
-  const probeTtl = 60_000;
-  async function servesABuild(url: string) {
-    const cached = probes.get(url);
-    if (cached && Date.now() - cached.at < probeTtl) return cached.ok;
-    let ok = false;
-    try {
-      const response = await fetch(url, {
-        redirect: "follow",
-        headers: { Accept: "text/html" },
-        signal: AbortSignal.timeout(5_000),
-      });
-      // An app with no build yet answers with a JSON error, which an iframe
-      // would render to the user as raw JSON.
-      ok = response.ok && (response.headers.get("content-type") || "").includes("text/html");
-    } catch {
-      ok = false;
-    }
-    probes.set(url, { ok, at: Date.now() });
-    return ok;
-  }
-
-  function staticPreviewUrl(slug: App["slug"]) {
-    const domain = process.env.BASE44_STATIC_PREVIEW_DOMAIN;
-    if (!domain || !slug || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(slug) ||
-      !/^[a-z0-9.-]+$/i.test(domain)) return undefined;
-    return `https://preview--${slug}.${domain}`;
-  }
-
-  // The static preview URL is derived here rather than returned by Base44, so
-  // it can name a build that does not exist. Verify the guess before handing
-  // it to a browser that would point an iframe at it.
-  async function appSummary(value: App): Promise<App> {
-    if (!value || typeof value.id !== "string")
-      throw new Base44Error("Base44 returned an app without an ID.");
-    const derived = staticPreviewUrl(value.slug);
+  // Return only the fields the browser needs; never pass the raw Base44 app through.
+  async function toApp(app: App): Promise<App> {
+    if (typeof app?.id !== "string") throw new Base44Error("Base44 returned an app without an ID.");
+    const { id, name, slug, preview_screenshot_url, logo_url, user_description, status } = app;
     return {
-      id: value.id,
-      name: value.name,
-      slug: value.slug,
-      static_preview_url: derived && (await servesABuild(derived)) ? derived : undefined,
-      preview_screenshot_url: value.preview_screenshot_url,
-      logo_url: value.logo_url,
-      user_description: value.user_description,
-      status: value.status
-        ? { state: value.status.state, error_source: value.status.error_source }
-        : undefined,
+      id, name, slug, preview_screenshot_url, logo_url, user_description,
+      static_preview_url: await staticPreviewUrl(slug),
+      status: status && { state: status.state, error_source: status.error_source },
     };
   }
 
-  async function createApp(prompt: string) {
-    const app = await request("/api/apps", {
-      body: {
-        name: prompt.trim().slice(0, 80),
-        user_description: prompt,
-        initial_message: { content: prompt },
-        custom_instructions: customInstructions,
-        prevent_iframe_embedding: false,
-      },
-      timeout: 120_000,
-    });
-    return appSummary(app);
+  function toMessage(m: Message): Message {
+    if (typeof m?.id !== "string" || !m.id) throw new Base44Error("A conversation message has no stable ID.");
+    return {
+      id: m.id,
+      role: m.role,
+      content: m.content,
+      hidden: m.hidden,
+      tool_calls: m.tool_calls?.map((t) => ({
+        id: t.id,
+        name: t.name,
+        status: t.status,
+        waiting_on: t.waiting_on,
+        arguments_string: t.arguments_string,
+        results: typeof t.results === "string" ? t.results : undefined,
+      })),
+    };
   }
 
-  const getApp = async (id: string) => appSummary(await request(`/api/apps/${id}`));
-  async function getConversation(id: string, skip: number) {
-    const data = await request(`/api/apps/${id}/chat/full-conversation?limit=20&skip=${skip}`, {
-      timeout: 60_000,
-    });
-    if (!data || typeof data !== "object")
-      throw new Base44Error("Unexpected conversation response.");
-    if (data.messages != null && !Array.isArray(data.messages))
-      throw new Base44Error("Unexpected conversation response.");
-    const messages: Message[] = (data.messages ?? []).map((m: Message) => {
-      if (!m || typeof m.id !== "string" || !m.id)
-        throw new Base44Error("A conversation message has no stable ID.");
-      return {
-        id: m.id,
-        role: m.role,
-        content: m.content,
-        hidden: m.hidden,
-        tool_calls: m.tool_calls?.map((t) => ({
-          id: t.id,
-          name: t.name,
-          status: t.status,
-          waiting_on: t.waiting_on,
-          arguments_string: t.arguments_string,
-          results: typeof t.results === "string" ? t.results : undefined,
-        })),
-      };
-    });
-    return { messages };
-  }
-  const sendMessage = (id: string, content: string) =>
-    request(`/api/apps/${id}/chat/message`, { body: { content }, timeout: 120_000 }).then(
-      () => ({}),
-    );
-  const submitToolCallInput = (p: ToolInput) =>
-    request(`/api/apps/${p.appId}/chat/submit-tool-call-input`, {
-      body: {
+  return {
+    createApp: async (prompt: string) =>
+      toApp(await request("/api/apps", {
+        body: {
+          name: prompt.trim().slice(0, 80),
+          user_description: prompt,
+          initial_message: { content: prompt },
+          custom_instructions: customInstructions,
+          prevent_iframe_embedding: false,
+        },
+        timeout: 120_000,
+      })),
+
+    getApp: async (id: string) => toApp(await request(`/api/apps/${id}`)),
+
+    // skip counts backward from the newest message.
+    async getConversation(id: string, skip: number) {
+      const data = await request(`/api/apps/${id}/chat/full-conversation?limit=20&skip=${skip}`, { timeout: 60_000 });
+      const messages = data?.messages ?? [];
+      if (!Array.isArray(messages)) throw new Base44Error("Unexpected conversation response.");
+      return { messages: messages.map(toMessage) };
+    },
+
+    sendMessage: (id: string, content: string) => post(`/api/apps/${id}/chat/message`, { content }),
+
+    // A fixed request ID lets Base44 deduplicate retries of the same answer.
+    submitToolCallInput: (p: ToolInput) =>
+      post(`/api/apps/${p.appId}/chat/submit-tool-call-input`, {
         tool_call_id: p.toolCallId,
         message_id: p.messageId,
         action: p.approve ? "approved" : "rejected",
         extra_user_input: p.extraUserInput,
-      },
-      timeout: 120_000,
-      headers: { "X-Request-ID": `submit-${p.toolCallId}` },
-    }).then(() => ({}));
-  const deployApp = (id: string) =>
-    request(`/api/apps/${id}/deploy`, { body: {}, timeout: 120_000 }).then(() => ({}));
+      }, { "X-Request-ID": `submit-${p.toolCallId}` }),
 
-  function httpsUrl(raw: unknown) {
-    if (typeof raw !== "string" || !raw)
-      throw new Base44Error("Base44 has not returned a URL yet. Try again shortly.");
-    let url: URL;
-    try {
-      url = new URL(raw.includes("://") ? raw : `https://${raw}`);
-    } catch {
-      throw new Base44Error("Base44 returned an invalid URL.");
-    }
-    if (url.protocol !== "https:" || url.username || url.password)
-      throw new Base44Error("Base44 returned an unsafe URL.");
-    return url;
-  }
-  async function getPreviewUrl(id: string) {
-    const data = await request(`/api/apps/${id}/sandbox/preview-url`, { timeout: 120_000 });
-    const url = httpsUrl(data?.preview_url);
-    if (data.preview_token) url.searchParams.set("_preview_token", data.preview_token);
-    url.searchParams.set("server_url", url.origin);
-    url.searchParams.set("hide_badge", "true");
-    url.searchParams.set("analytics-enable", "false");
-    return { url: url.href };
-  }
-  async function getPublishedUrl(id: string) {
-    try {
-      const data = await request(`/api/apps/platform/${id}/published-url`);
-      return { url: httpsUrl(data?.url).href };
-    } catch (error) {
-      if (error instanceof Base44Error && error.status === 404) return { url: null };
-      throw error;
-    }
-  }
+    deployApp: (id: string) => post(`/api/apps/${id}/deploy`, {}),
 
-  return {
-    createApp,
-    getApp,
-    getConversation,
-    sendMessage,
-    submitToolCallInput,
-    getPreviewUrl,
-    deployApp,
-    getPublishedUrl,
+    async getPreviewUrl(id: string) {
+      const data = await request(`/api/apps/${id}/sandbox/preview-url`, { timeout: 120_000 });
+      const url = httpsUrl(data?.preview_url);
+      if (data.preview_token) url.searchParams.set("_preview_token", data.preview_token);
+      url.searchParams.set("server_url", url.origin);
+      url.searchParams.set("hide_badge", "true");
+      url.searchParams.set("analytics-enable", "false");
+      return { url: url.href };
+    },
+
+    async getPublishedUrl(id: string) {
+      try {
+        const data = await request(`/api/apps/platform/${id}/published-url`);
+        return { url: httpsUrl(data?.url).href };
+      } catch (error) {
+        if (error instanceof Base44Error && error.status === 404) return { url: null };
+        throw error;
+      }
+    },
   };
+}
+
+function httpsUrl(raw: unknown) {
+  if (typeof raw !== "string" || !raw) throw new Base44Error("Base44 has not returned a URL yet. Try again shortly.");
+  let url: URL;
+  try {
+    url = new URL(raw.includes("://") ? raw : `https://${raw}`);
+  } catch {
+    throw new Base44Error("Base44 returned an invalid URL.");
+  }
+  if (url.protocol !== "https:" || url.username || url.password) throw new Base44Error("Base44 returned an unsafe URL.");
+  return url;
 }
