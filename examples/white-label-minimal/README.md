@@ -16,13 +16,13 @@ each part of them lives in one place here:
 
 | Docs | Code |
 | --- | --- |
-| [Tenancy and credentials](https://docs.base44.com/developers/white-label/tenancy-and-credentials) | [lib/base44/config.ts](lib/base44/config.ts), [lib/base44/http.ts](lib/base44/http.ts) |
+| [Tenancy and credentials](https://docs.base44.com/developers/white-label/tenancy-and-credentials) | [lib/base44/config.ts](lib/base44/config.ts), `request` in [lib/base44/client.ts](lib/base44/client.ts) |
 | Keeping builders apart | [lib/server/api-handler.ts](lib/server/api-handler.ts), [lib/storage/app-repository.ts](lib/storage/app-repository.ts) |
 | [The build turn](https://docs.base44.com/developers/white-label/the-build-turn), steps 1–6 | [lib/base44/client.ts](lib/base44/client.ts), one commented section per step |
-| Watch it build (live, instead of polling) | [lib/base44/socket-session.ts](lib/base44/socket-session.ts), [lib/chat/live-updates.ts](lib/chat/live-updates.ts) |
+| Watch it build (live, instead of polling) | `openSocketSession` in [lib/base44/client.ts](lib/base44/client.ts), [lib/chat/live-updates.ts](lib/chat/live-updates.ts) |
 | Answer the agent's questions | [components/Question.tsx](components/Question.tsx), one UI per `waiting_on.kind` |
 | Publish the app | `publish()` in [components/Builder.tsx](components/Builder.tsx) |
-| [Embed the app](https://docs.base44.com/developers/white-label/embed-the-app) | [lib/base44/embed.ts](lib/base44/embed.ts), used for the latest build in each app card |
+| [Embed the app](https://docs.base44.com/developers/white-label/embed-the-app) | `getEmbedUrl` in [lib/base44/client.ts](lib/base44/client.ts), used for every preview |
 | [Custom instructions](https://docs.base44.com/developers/white-label/custom-instructions) | [lib/base44/custom-instructions.ts](lib/base44/custom-instructions.ts) |
 
 Everything else is Tiny's own product: sign-in, the app list, and the chat UI.
@@ -61,7 +61,7 @@ Open [Tiny Sunny](http://127.0.0.1:3001) and sign in.
 
 Start with [lib/base44/client.ts](lib/base44/client.ts). It contains the Base44
 endpoints and request payloads for creation, conversation, tool answers, preview,
-and publishing. Copy it with `lib/base44/http.ts`, `lib/base44/config.ts`, `lib/base44/error.ts`,
+and publishing. Copy it with `lib/base44/config.ts`, `lib/base44/error.ts`,
 `lib/base44/custom-instructions.ts`, and `lib/types.ts`. Every endpoint it calls is described in
 Base44's [OpenAPI spec](https://app.base44.com/api/openapi.json), if you prefer to generate a typed client. It uses `fetch` and `server-only`, with
 no Sunny imports. Set `BASE44_PLATFORM_HOST` to your Base44 HTTPS origin and
@@ -89,7 +89,7 @@ new apps are created with `organization_id`, so they use your workspace's design
 skills, and plan. The API handler validates each request and checks that the signed-in
 builder owns the app before any app operation.
 
-For the chat UI, copy `components/`, `lib/chat/`, and `lib/base44/socket-session.ts`.
+For the chat UI, copy `components/`, `lib/chat/`, and `lib/base44/client.ts`.
 The chat uses assistant-ui's external-store runtime with Base44's live updates as its
 source of truth (see below). `Question.tsx` handles
 approvals, choices, and secrets; retries preserve the original answer and request ID.
@@ -104,10 +104,10 @@ The chat updates live over the Base44 platform socket, through the Platform SDK,
 
 ```text
 components/useBuilderSocket.ts → lib/chat/live-updates.ts → @base44/platform
-lib/chat/builder-api.ts → app/api/base44/route.ts → lib/base44/socket-session.ts
+lib/chat/builder-api.ts → app/api/base44/route.ts → lib/base44/client.ts
 ```
 
-1. **Server** ([socket-session.ts](lib/base44/socket-session.ts)): after the usual
+1. **Server** (`openSocketSession` in [client.ts](lib/base44/client.ts)): after the usual
    sign-in and app-ownership checks, opens a read-only session for one app with the
    workspace key. `BASE44_SVC_KEY` needs the `apps:watch` scope. Only the session
    token reaches the browser.
@@ -153,16 +153,19 @@ Browser tests use a separate fixture app with mocked Base44 responses.
 
 ### Latest build and live previews
 
-Tiny shows two versions of an app, both from documented Base44 calls:
+Every preview is the app signed in as the builder, through
+[Embed the app](https://docs.base44.com/developers/white-label/embed-the-app)
+(`getEmbedUrl` in [lib/base44/client.ts](lib/base44/client.ts)). The builder is not a Base44 user, so
+without it a private app would show its own sign-in page inside the frame.
 
-- **Latest build** (app cards, and the stage until the live preview loads): the server
-  signs the builder into the app with [Embed the app](https://docs.base44.com/developers/white-label/embed-the-app)
-  and `target: "latest_preview"` ([lib/base44/embed.ts](lib/base44/embed.ts)). The URL works once and
-  expires in 60 seconds, so [PreviewFrame](components/PreviewFrame.tsx) asks for a new one when it mounts and
-  after each build. It needs no sandbox. Before the first build there is no URL, and the card shows
-  the screenshot or a placeholder.
-- **Live preview** (while editing): [Get preview URL](https://docs.base44.com/api-reference/get-preview-url),
-  step 5 of the build turn. It runs the app's sandbox and shows each change as the agent makes it.
+- **Latest build** (`target: "latest_preview"`): app cards, and the stage until the live preview
+  loads. It needs no sandbox. Before the first build there is no URL, and the card shows the
+  screenshot or a placeholder.
+- **Live preview** (`target: "live_preview"`): while editing. It runs the app's sandbox and shows
+  each change as the agent makes it.
+
+Each URL works once and expires in 60 seconds, so [PreviewFrame](components/PreviewFrame.tsx) asks
+for a new one whenever it loads a frame.
 
 The live frame keeps the latest build visible until it loads. Recovery checks the source window and
 live origin of `preview:requestRefresh` messages, with at most three attempts per preview session and no

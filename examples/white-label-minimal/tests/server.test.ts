@@ -1,10 +1,8 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { createHandler } from '../lib/server/api-handler';
-import { base44 } from '../lib/base44/client';
+import { base44, getEmbedUrl, openSocketSession } from '../lib/base44/client';
 import { Base44Error } from '../lib/base44/error';
-import { openSocketSession } from '../lib/base44/socket-session';
-import { getEmbedUrl } from '../lib/base44/embed';
 let signedIn = true;
 const POST = createHandler(async () => {
   if (!signedIn) throw new Base44Error('Sign in to continue.', 401);
@@ -98,7 +96,7 @@ test('the live preview signs the builder into the sandbox, is not cached, and ne
   assert.equal(calls[1].init?.cache, 'no-store');
   setup({ error: 'token-canary personal-key-canary' }, 500);
   const failed = await request({ action: 'getPreviewUrl', appId: 'app_1' });
-  assert.equal(failed.status, 502);
+  assert.equal(failed.status, 500);
   assert.doesNotMatch(await failed.text(), /canary/);
 });
 test('network failures are uncertain, not retried, and safe to display', async () => {

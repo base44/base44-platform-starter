@@ -1,9 +1,7 @@
 import "server-only";
 import { requireUser } from "./auth";
-import { getEmbedUrl } from "../base44/embed";
+import { base44, getEmbedUrl, openSocketSession } from "../base44/client";
 import { Base44Error } from "../base44/error";
-import { openSocketSession } from "../base44/socket-session";
-import { base44 } from "../base44/client";
 import { createAppRepository } from "../storage/app-repository";
 import { resolveAppPage } from "../storage/app-list";
 import type { AppClient } from "../types";
