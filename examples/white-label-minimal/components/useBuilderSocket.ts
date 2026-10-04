@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { getApp } from "../lib/chat/builder-api";
+import { ApiError, getApp } from "../lib/chat/builder-api";
 import { watchApp } from "../lib/chat/live-updates";
 import type { App, Message } from "../lib/types";
 
@@ -22,11 +22,12 @@ export function useBuilderSocket(appId: string | null) {
     let stopped = false;
     let stop: (() => void) | undefined;
     const readApp = () => getApp(appId).then((next) => { if (!stopped) setApp(next); });
-    const fail = () => {
+    const fail = (error?: unknown) => {
       if (stopped) return;
       stopped = true;
       stop?.();
-      setError("Live updates paused. Reconnect to continue.");
+      // Our server explains configuration problems; socket errors get the generic message.
+      setError(error instanceof ApiError ? error.message : "Live updates paused. Reconnect to continue.");
       setLoaded(key);
     };
 

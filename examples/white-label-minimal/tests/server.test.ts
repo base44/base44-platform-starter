@@ -207,8 +207,8 @@ test('the live-updates session opens with the workspace key only after sign-in a
   assert.equal(calls.length, 1);
 });
 
-test('a workspace key without the apps:watch scope is reported as configuration', async () => {
-  setup({ error: { code: 'scope_required' } }, 403);
+test('Base44 rejecting the key is reported as configuration, with its reason', async () => {
+  setup({ error: { code: 'scope_required', message: 'The key needs the apps:watch scope' } }, 403);
   const response = await request({ action: 'openBuilderSession', appId: 'app_1' });
   assert.equal(response.status, 503);
   assert.match((await response.json()).error, /apps:watch/);
