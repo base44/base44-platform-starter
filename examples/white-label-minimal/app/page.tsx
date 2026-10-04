@@ -1,4 +1,4 @@
-import { getSessionUser } from "../lib/server/auth";
+import { getSessionUser } from "../lib/auth";
 import GoogleSignInButton from "../components/GoogleSignInButton";
 import TinySunnyLogo from "../components/TinySunnyLogo";
 import Workspace from "../components/Workspace";

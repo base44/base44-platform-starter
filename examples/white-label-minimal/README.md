@@ -53,10 +53,11 @@ Open [Tiny Sunny](http://127.0.0.1:3001) and sign in.
 
 | Folder | Responsibility |
 | --- | --- |
+| `app/actions.ts` | Server actions: the checks before every Base44 call |
 | `lib/base44/` | Base44 API calls, credentials, and custom instructions |
-| `lib/server/` | Authentication and request handling |
+| `lib/auth.ts` | Sign-in |
 | `lib/storage/` | Database access and app ownership |
-| `lib/chat/` | Browser API calls and conversation helpers |
+| `lib/chat/` | Chat state, live updates and the builder's pending prompt |
 | `lib/types.ts` | Shared types |
 
 Start with [lib/base44/build-turn.ts](lib/base44/build-turn.ts). It has one function per Base44 call,
@@ -77,7 +78,7 @@ components/Builder.tsx → app/actions.ts → lib/base44/build-turn.ts
 
 [app/actions.ts](app/actions.ts) holds Tiny's server actions, and is where your application plugs in:
 
-- [server/auth.ts](lib/server/auth.ts) supplies the verified user from your session.
+- [auth.ts](lib/auth.ts) supplies the verified user from your session.
 - [storage/ownership.ts](lib/storage/ownership.ts) records which builder created each app, and checks it.
 
 [prisma/schema.prisma](prisma/schema.prisma) defines app ownership.

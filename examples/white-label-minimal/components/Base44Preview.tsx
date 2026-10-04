@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-export type Base44PreviewProps = {
+type Base44PreviewProps = {
   appId: string;
   title: string;
   live?: boolean;

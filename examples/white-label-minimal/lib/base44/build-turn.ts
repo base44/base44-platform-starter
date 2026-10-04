@@ -96,10 +96,7 @@ function toApp(app: App): App {
   return {
     id: app.id,
     name: app.name,
-    slug: app.slug,
     preview_screenshot_url: app.preview_screenshot_url,
-    logo_url: app.logo_url,
-    user_description: app.user_description,
     status: app.status && { state: app.status.state, error_source: app.status.error_source },
   };
 }

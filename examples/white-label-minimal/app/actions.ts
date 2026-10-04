@@ -3,7 +3,7 @@ import * as buildTurn from "../lib/base44/build-turn";
 import { getEmbedUrl } from "../lib/base44/embed";
 import { Base44Error } from "../lib/base44/error";
 import * as liveUpdates from "../lib/base44/live-updates";
-import { requireUser } from "../lib/server/auth";
+import { requireUser } from "../lib/auth";
 import { resolveAppPage } from "../lib/storage/app-list";
 import { listOwnedApps, removeOwner, requireOwner, saveOwner } from "../lib/storage/ownership";
 import type { ActionResult, ToolInput } from "../lib/types";

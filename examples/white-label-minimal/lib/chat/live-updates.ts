@@ -3,7 +3,7 @@ import type { Message } from "../types";
 
 type Session = { serverUrl: string; sessionToken: string };
 
-export type LiveUpdateHandlers = {
+type LiveUpdateHandlers = {
   onMessages: (update: (messages: Message[]) => Message[]) => void;
   onStatus: (status: AppStatus | null) => void;
   onError: () => void;
