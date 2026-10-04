@@ -1,6 +1,6 @@
 "use client";
 import { useRef, useState } from "react";
-import type { ToolCall, ToolInput } from "../lib/types";
+import type { ToolCall, ToolInput } from "../../types";
 
 // "Answer the agent's questions": a waiting tool call says what it needs in
 // waiting_on.kind, and there are exactly three kinds. One form for each.

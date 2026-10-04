@@ -1,7 +1,7 @@
-import { getSessionUser } from "../lib/auth";
-import GoogleSignInButton from "../components/GoogleSignInButton";
-import TinySunnyLogo from "../components/TinySunnyLogo";
-import Workspace from "../components/Workspace";
+import { getSessionUser } from "../server/auth";
+import GoogleSignInButton from "../client/components/GoogleSignInButton";
+import TinySunnyLogo from "../client/components/TinySunnyLogo";
+import Workspace from "../client/components/Workspace";
 
 export default async function Page() {
   const user = await getSessionUser();

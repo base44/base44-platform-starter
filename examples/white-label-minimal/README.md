@@ -16,14 +16,14 @@ each part of them lives in one place here:
 
 | Docs | Code |
 | --- | --- |
-| [Tenancy and credentials](https://docs.base44.com/developers/white-label/tenancy-and-credentials) | [lib/base44/config.ts](lib/base44/config.ts), [lib/base44/request.ts](lib/base44/request.ts) |
-| Keeping builders apart | [app/actions.ts](app/actions.ts), [lib/storage/ownership.ts](lib/storage/ownership.ts) |
-| [The build turn](https://docs.base44.com/developers/white-label/the-build-turn), steps 1–6 | [lib/base44/build-turn.ts](lib/base44/build-turn.ts), one function per call, numbered by step |
-| Watch it build (live, instead of polling) | [lib/base44/live-updates.ts](lib/base44/live-updates.ts), [lib/chat/live-updates.ts](lib/chat/live-updates.ts) |
-| Answer the agent's questions | [components/Question.tsx](components/Question.tsx), one UI per `waiting_on.kind` |
-| Publish the app | `publish()` in [components/Builder.tsx](components/Builder.tsx) |
-| [Embed the app](https://docs.base44.com/developers/white-label/embed-the-app) | [lib/base44/embed.ts](lib/base44/embed.ts), used for every preview |
-| [Custom instructions](https://docs.base44.com/developers/white-label/custom-instructions) | [lib/base44/custom-instructions.ts](lib/base44/custom-instructions.ts) |
+| [Tenancy and credentials](https://docs.base44.com/developers/white-label/tenancy-and-credentials) | [server/base44/config.ts](server/base44/config.ts), [server/base44/request.ts](server/base44/request.ts) |
+| Keeping builders apart | [server/actions.ts](server/actions.ts), [server/ownership.ts](server/ownership.ts) |
+| [The build turn](https://docs.base44.com/developers/white-label/the-build-turn), steps 1–6 | [server/base44/build-turn.ts](server/base44/build-turn.ts), one function per call, numbered by step |
+| Watch it build (live, instead of polling) | [server/base44/live-updates.ts](server/base44/live-updates.ts), [client/live-updates.ts](client/live-updates.ts) |
+| Answer the agent's questions | [components/Question.tsx](client/components/Question.tsx), one UI per `waiting_on.kind` |
+| Publish the app | `publish()` in [components/Builder.tsx](client/components/Builder.tsx) |
+| [Embed the app](https://docs.base44.com/developers/white-label/embed-the-app) | [server/base44/embed.ts](server/base44/embed.ts), used for every preview |
+| [Custom instructions](https://docs.base44.com/developers/white-label/custom-instructions) | [server/base44/custom-instructions.ts](server/base44/custom-instructions.ts) |
 
 Everything else is Tiny's own product: sign-in, the app list, and the chat UI.
 
@@ -51,38 +51,36 @@ Open [Tiny Sunny](http://127.0.0.1:3001) and sign in.
 
 ## Copy the integration
 
-| Folder | Responsibility |
+| Folder | What runs there |
 | --- | --- |
-| `app/actions.ts` | Server actions: the checks before every Base44 call |
-| `lib/base44/` | Base44 API calls, credentials, and custom instructions |
-| `lib/auth.ts` | Sign-in |
-| `lib/storage/` | Database access and app ownership |
-| `lib/chat/` | Chat state, live updates and the builder's pending prompt |
-| `lib/types.ts` | Shared types |
+| `server/` | The server: Base44 calls ([server/base44/](server/base44)), server actions, sign-in, and app ownership |
+| `client/` | The browser: the build turn's state, live updates, and the UI components |
+| `app/` | Next.js routes only: the page, its layout, and the sign-in callback |
+| `types.ts` | Types both sides share |
 
-Start with [lib/base44/build-turn.ts](lib/base44/build-turn.ts). It has one function per Base44 call,
+Start with [server/base44/build-turn.ts](server/base44/build-turn.ts). It has one function per Base44 call,
 numbered by the step of the build turn: create, send a prompt, watch, answer, and publish.
-[embed.ts](lib/base44/embed.ts) and [live-updates.ts](lib/base44/live-updates.ts) cover the other two docs
-pages, and [request.ts](lib/base44/request.ts) is the `fetch` they share. Copy them with
-`lib/base44/config.ts`, `lib/base44/error.ts`, `lib/base44/custom-instructions.ts`, and `lib/types.ts`. Every endpoint it calls is described in
+[embed.ts](server/base44/embed.ts) and [live-updates.ts](server/base44/live-updates.ts) cover the other two docs
+pages, and [request.ts](server/base44/request.ts) is the `fetch` they share. Copy them with
+`server/base44/config.ts`, `server/base44/error.ts`, `server/base44/custom-instructions.ts`, and `types.ts`. Every endpoint it calls is described in
 Base44's [OpenAPI spec](https://app.base44.com/api/openapi.json), if you prefer to generate a typed client. It uses `fetch` and `server-only`, with
 no Sunny imports. Set `BASE44_PLATFORM_HOST` to your Base44 HTTPS origin and
-adapt `lib/base44/custom-instructions.ts` to your product. New apps use the first 80
+adapt `server/base44/custom-instructions.ts` to your product. New apps use the first 80
 characters of the prompt as their initial name.
 
 For a complete browser integration, follow this path:
 
 ```text
-components/Builder.tsx → app/actions.ts → lib/base44/build-turn.ts
+client/components/Builder.tsx → server/actions.ts → server/base44/build-turn.ts
 ```
 
-[app/actions.ts](app/actions.ts) holds Tiny's server actions, and is where your application plugs in:
+[server/actions.ts](server/actions.ts) holds Tiny's server actions, and is where your application plugs in:
 
-- [auth.ts](lib/auth.ts) supplies the verified user from your session.
-- [storage/ownership.ts](lib/storage/ownership.ts) records which builder created each app, and checks it.
+- [server/auth.ts](server/auth.ts) supplies the verified user from your session.
+- [server/ownership.ts](server/ownership.ts) records which builder created each app, and checks it.
 
 [prisma/schema.prisma](prisma/schema.prisma) defines app ownership.
-[lib/storage/db.ts](lib/storage/db.ts) connects through `DATABASE_URL`. The Prisma client is generated
+[server/db.ts](server/db.ts) connects through `DATABASE_URL`. The Prisma client is generated
 on install and build; run `npm run db:generate` from the example after schema edits.
 
 Every Base44 call sends `Authorization: Bearer <token>` and `X-Active-Workspace-Id`, and
@@ -90,7 +88,7 @@ new apps are created with `organization_id`, so they use your workspace's design
 skills, and plan. Each server action checks who is signed in and, for an app, that they own it,
 before it calls Base44.
 
-For the chat UI, copy `components/`, `lib/chat/`, and `lib/base44/live-updates.ts`.
+For the chat UI, copy `client/components/`, `client/`, and `server/base44/live-updates.ts`.
 The chat uses assistant-ui's external-store runtime with Base44's live updates as its
 source of truth (see below). `Question.tsx` handles
 approvals, choices, and secrets; retries preserve the original answer and request ID.
@@ -102,19 +100,19 @@ The chat updates live over the Base44 platform socket, through the Platform SDK,
 [`@base44/platform`](https://github.com/base44/javascript-sdk/tree/main/packages/platform).
 
 ```text
-components/useLiveUpdates.ts → lib/chat/live-updates.ts → @base44/platform
-app/actions.ts → lib/base44/live-updates.ts
+client/components/useLiveUpdates.ts → client/live-updates.ts → @base44/platform
+server/actions.ts → server/base44/live-updates.ts
 ```
 
-1. **Server** ([lib/base44/live-updates.ts](lib/base44/live-updates.ts)): after the usual
+1. **Server** ([server/base44/live-updates.ts](server/base44/live-updates.ts)): after the usual
    sign-in and app-ownership checks, opens a read-only session for one app with the
    workspace key. `BASE44_SVC_KEY` needs the `apps:watch` scope. Only the session
    token reaches the browser.
-2. **Browser** ([live-updates.ts](lib/chat/live-updates.ts)): connects with that
+2. **Browser** ([live-updates.ts](client/live-updates.ts)): connects with that
    token and subscribes to the app. A snapshot (status and the last 50 messages)
    arrives on every connect; then `message.updated`, `message.removed` and
    `app.status_changed` keep the chat current.
-3. **React** ([useLiveUpdates.ts](components/useLiveUpdates.ts)): holds the
+3. **React** ([useLiveUpdates.ts](client/components/useLiveUpdates.ts)): holds the
    state and shows one error with **Reconnect live updates** if the connection stops.
 
 Kept out to stay minimal; add them in production:
@@ -154,7 +152,7 @@ Browser tests use a separate fixture app with mocked Base44 responses.
 
 Every preview is the app signed in as the builder, through
 [Embed the app](https://docs.base44.com/developers/white-label/embed-the-app)
-([lib/base44/embed.ts](lib/base44/embed.ts)). The builder is not a Base44 user, so
+([server/base44/embed.ts](server/base44/embed.ts)). The builder is not a Base44 user, so
 without it a private app would show its own sign-in page inside the frame.
 
 - **Latest build** (`target: "latest_preview"`): app cards, and the stage until the live preview
@@ -163,7 +161,7 @@ without it a private app would show its own sign-in page inside the frame.
 - **Live preview** (`target: "live_preview"`): while editing. It runs the app's sandbox and shows
   each change as the agent makes it.
 
-Each URL works once and expires in 60 seconds, so [PreviewFrame](components/PreviewFrame.tsx) asks
+Each URL works once and expires in 60 seconds, so [PreviewFrame](client/components/PreviewFrame.tsx) asks
 for a new one whenever it loads a frame.
 
 The live frame keeps the latest build visible until it loads. Recovery checks the source window and
@@ -173,7 +171,7 @@ manual refresh remains available.
 
 ### Reusing the preview component
 
-`components/Base44Preview.tsx` owns static/live rendering, loading, recovery, and manual refresh. It depends only on React. `PreviewFrame` adapts Tiny's app model and backend client to its props:
+`client/components/Base44Preview.tsx` owns static/live rendering, loading, recovery, and manual refresh. It depends only on React. `PreviewFrame` adapts Tiny's app model and backend client to its props:
 
 ```tsx
 <Base44Preview

@@ -1,6 +1,6 @@
 import "server-only";
 import type { App } from "../types";
-import { Base44Error } from "../base44/error";
+import { Base44Error } from "./base44/error";
 import { PAGE_SIZE } from "./app-list";
 import { prisma } from "./db";
 

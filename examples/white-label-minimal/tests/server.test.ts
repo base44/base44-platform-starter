@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
-import * as buildTurn from '../lib/base44/build-turn';
-import { customInstructions } from '../lib/base44/custom-instructions';
-import { getEmbedUrl } from '../lib/base44/embed';
-import { Base44Error } from '../lib/base44/error';
-import { openLiveUpdates } from '../lib/base44/live-updates';
-import { resolveAppPage } from '../lib/storage/app-list';
-import { requireOwner } from '../lib/storage/ownership';
-import { prisma } from '../lib/storage/db';
+import * as buildTurn from '../server/base44/build-turn';
+import { customInstructions } from '../server/base44/custom-instructions';
+import { getEmbedUrl } from '../server/base44/embed';
+import { Base44Error } from '../server/base44/error';
+import { openLiveUpdates } from '../server/base44/live-updates';
+import { resolveAppPage } from '../server/app-list';
+import { requireOwner } from '../server/ownership';
+import { prisma } from '../server/db';
 
 const originalFetch = globalThis.fetch;
 const originalEnv = { ...process.env };

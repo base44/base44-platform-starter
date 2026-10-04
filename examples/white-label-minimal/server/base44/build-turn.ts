@@ -1,5 +1,5 @@
 import "server-only";
-import type { App, ToolInput } from "../types";
+import type { App, ToolInput } from "../../types";
 import { getBase44Config } from "./config";
 import { customInstructions } from "./custom-instructions";
 import { Base44Error } from "./error";
@@ -10,7 +10,7 @@ import { base44 } from "./request";
 //
 // Every app belongs to the integration account, so Base44 cannot tell builders
 // apart. Before calling these, the caller checks that the builder owns the app
-// and that its ID is a plain ID (app/actions.ts).
+// and that its ID is a plain ID (server/actions.ts).
 
 // Create app, Send chat message, Submit tool-call input and Deploy an app wait
 // on a whole build turn, which can take minutes.

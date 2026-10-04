@@ -1,8 +1,8 @@
 "use client";
 import { useState } from "react";
 import { ArrowRight, Check, ExternalLink } from "lucide-react";
-import * as actions from "../app/actions";
-import { unwrap } from "../lib/chat/unwrap";
+import * as actions from "../../server/actions";
+import { unwrap } from "../unwrap";
 
 // Shown when a build is done. Step 6 of the build turn: deploy the app, then
 // read back its address to link to.

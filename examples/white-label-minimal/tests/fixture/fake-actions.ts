@@ -1,6 +1,6 @@
-import type { ActionResult, ToolInput } from "../../lib/types";
+import type { ActionResult, ToolInput } from "../../types";
 
-// Stands in for app/actions.ts in the browser tests (see next.config.ts). Each
+// Stands in for server/actions.ts in the browser tests (see next.config.ts). Each
 // action goes to /api/base44, which the tests answer with page.route.
 async function call<T>(action: string, params: object): Promise<ActionResult<T>> {
   const response = await fetch("/api/base44", {

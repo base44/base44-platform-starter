@@ -1,5 +1,5 @@
 import type { App } from "../types";
-import { Base44Error } from "../base44/error";
+import { Base44Error } from "./base44/error";
 
 export const PAGE_SIZE = 12;
 

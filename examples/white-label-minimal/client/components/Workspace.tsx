@@ -1,12 +1,12 @@
 "use client";
-import type { App } from "../lib/types";
+import type { App } from "../../types";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
 import { ArrowLeft, Grid2X2, Loader2, LogOut, MessageSquare, Plus, Sparkles, X } from "lucide-react";
 import TinySunnyLogo from "./TinySunnyLogo";
-import * as actions from "../app/actions";
-import { unwrap } from "../lib/chat/unwrap";
+import * as actions from "../../server/actions";
+import { unwrap } from "../unwrap";
 import Builder from "./Builder";
 import AppWidget from "./AppWidget";
 import PreviewFrame from "./PreviewFrame";

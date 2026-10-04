@@ -1,9 +1,9 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import * as actions from "../app/actions";
-import { unwrap } from "../lib/chat/unwrap";
-import { watchLiveUpdates } from "../lib/chat/live-updates";
-import type { App, Message } from "../lib/types";
+import * as actions from "../../server/actions";
+import { unwrap } from "../unwrap";
+import { watchLiveUpdates } from "../live-updates";
+import type { App, Message } from "../../types";
 
 // The app and its chat, kept current by Base44's live updates.
 export function useLiveUpdates(appId: string | null) {

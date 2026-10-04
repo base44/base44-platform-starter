@@ -2,7 +2,7 @@
 
 import { Loader2, Pencil, Trash2 } from "lucide-react";
 import PreviewFrame from "./PreviewFrame";
-import type { App } from "../lib/types";
+import type { App } from "../../types";
 
 // A card in the apps list, showing the app's last static build. The live
 // preview belongs to the app you are editing, so listing apps starts no

@@ -1,11 +1,11 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
-import * as actions from "../app/actions";
-import { getChatState, type ChatState } from "../lib/chat/chat-state";
-import { mergeOptimisticMessages, type OptimisticMessage } from "../lib/chat/optimistic-messages";
-import type { App, ToolInput } from "../lib/types";
-import { unwrap } from "../lib/chat/unwrap";
+import * as actions from "../../server/actions";
+import { getChatState, type ChatState } from "../chat-state";
+import { mergeOptimisticMessages, type OptimisticMessage } from "../optimistic-messages";
+import type { App, ToolInput } from "../../types";
+import { unwrap } from "../unwrap";
 import BuilderChat from "./BuilderChat";
 import ReadyCard from "./ReadyCard";
 import { useLiveUpdates } from "./useLiveUpdates";

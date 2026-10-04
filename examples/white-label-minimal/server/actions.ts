@@ -1,12 +1,12 @@
 "use server";
-import * as buildTurn from "../lib/base44/build-turn";
-import { getEmbedUrl } from "../lib/base44/embed";
-import { Base44Error } from "../lib/base44/error";
-import * as liveUpdates from "../lib/base44/live-updates";
-import { requireUser } from "../lib/auth";
-import { resolveAppPage } from "../lib/storage/app-list";
-import { listOwnedApps, removeOwner, requireOwner, saveOwner } from "../lib/storage/ownership";
-import type { ActionResult, ToolInput } from "../lib/types";
+import * as buildTurn from "./base44/build-turn";
+import { getEmbedUrl } from "./base44/embed";
+import { Base44Error } from "./base44/error";
+import * as liveUpdates from "./base44/live-updates";
+import { requireUser } from "./auth";
+import { resolveAppPage } from "./app-list";
+import { listOwnedApps, removeOwner, requireOwner, saveOwner } from "./ownership";
+import type { ActionResult, ToolInput } from "../types";
 
 // Server actions: functions Tiny's pages call that run on the server, where the
 // Base44 credentials are. Next.js exposes each one to the browser, so each one

@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import * as actions from "../app/actions";
-import { unwrap } from "../lib/chat/unwrap";
-import type { App } from "../lib/types";
+import * as actions from "../../server/actions";
+import { unwrap } from "../unwrap";
+import type { App } from "../../types";
 import Base44Preview from "./Base44Preview";
 
 export default function PreviewFrame({ app, live = false, title, showControls }: { app: App; live?: boolean; title: string; showControls?: boolean }) {

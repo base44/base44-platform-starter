@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import Question, { parseQuestion } from '../components/Question';
-import type { ToolCall } from '../lib/types';
+import Question, { parseQuestion } from '../client/components/Question';
+import type { ToolCall } from '../types';
 const tool = (kind: string, args: object): ToolCall => ({ id: 'tool_1', status: 'waiting_for_user_input', waiting_on: { kind }, arguments_string: JSON.stringify(args) });
 const render = (t: ToolCall) => renderToStaticMarkup(<Question tool={t} appId="app_1" messageId="m1" disabled={false} onSubmit={async () => {}} />);
 test('choice accepts string and object options, including multiple selection', () => {

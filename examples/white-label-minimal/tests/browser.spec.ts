@@ -1,5 +1,5 @@
 import { test, expect, type Page, type Route } from '@playwright/test';
-import type { ToolCall } from '../lib/types';
+import type { ToolCall } from '../types';
 
 // Live updates in every test: our server opens a session, then a fake Base44
 // socket serves the fixture's own conversation and app status.
