@@ -1,6 +1,6 @@
 import type { Message } from "../types";
 
-export const isPending = (m: Message) =>
+const isPending = (m: Message) =>
   m.tool_calls?.some((t) => t.status === "running" || t.status === "waiting_for_user_input");
 
 // skip counts backward from the newest message, not forward from the oldest.

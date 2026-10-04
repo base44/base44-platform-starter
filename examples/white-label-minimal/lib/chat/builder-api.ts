@@ -54,7 +54,14 @@ export const getPreviewUrl = (appId: string) => call<{ url: string }>("getPrevie
 export const deployApp = (appId: string) => call("deployApp", { appId });
 export const getPublishedUrl = (appId: string) =>
   call<{ url: string | null }>("getPublishedUrl", { appId });
-
 export const listApps = (skip = 0) => call<AppPage>("listApps", { skip });
-
 export const removeApp = (appId: string) => call("removeApp", { appId });
+
+export async function connectWorkspace() {
+  const response = await fetch("/api/base44/connection", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "connect" }),
+  });
+  if (!response.ok) throw new ApiError("Could not connect your workspace. Please try again.", response.status);
+}

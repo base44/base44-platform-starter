@@ -11,47 +11,63 @@ import AppWidget from "./AppWidget";
 import PreviewFrame from "./PreviewFrame";
 
 export default function Workspace({ name }: { name: string }) {
-  const [removing, setRemoving] = useState<string | null>(null);
-  const editorPanel = useRef<HTMLElement>(null);
-  const assistantButton = useRef<HTMLButtonElement>(null);
-  const closeButton = useRef<HTMLButtonElement>(null);
-  const backButton = useRef<HTMLButtonElement>(null);
   const [apps, setApps] = useState<App[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [needsConnection, setNeedsConnection] = useState(false);
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [inApp, setInApp] = useState(false);
   // What the stage shows. Kept apart from `editor` so an app created mid-chat
   // can appear beside the conversation without remounting the Builder.
   const [stageApp, setStageApp] = useState<App | null>(null);
-  const [editor, setEditor] = useState<{ app: App | null; version: number }>({
-    app: null,
-    version: 0,
-  });
-  const [inApp, setInApp] = useState(false);
-  function closeAssistant() {
-    setMobileEditorOpen(false);
-    assistantButton.current?.focus();
-  }
-  const [activeName, setActiveName] = useState("");
+  // Bumping `version` remounts the Builder with a fresh conversation.
+  const [editor, setEditor] = useState<{ app: App | null; version: number }>({ app: null, version: 0 });
   const [mobileEditorOpen, setMobileEditorOpen] = useState(false);
+  const editorPanel = useRef<HTMLElement>(null);
+  const assistantButton = useRef<HTMLButtonElement>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
+  const activeName = stageApp?.name || "";
+
   useEffect(() => {
-    if (mobileEditorOpen && window.matchMedia("(max-width: 760px)").matches)
-      closeButton.current?.focus();
+    if (mobileEditorOpen && window.matchMedia("(max-width: 760px)").matches) closeButton.current?.focus();
   }, [mobileEditorOpen]);
   useEffect(() => {
     if (editor.version > 0 && !editor.app)
       editorPanel.current?.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus();
   }, [editor.version, editor.app]);
+
+  const load = useCallback(async () => {
+    try {
+      const all: App[] = [];
+      for (let skip = 0; ; ) {
+        const page = await api.listApps(skip);
+        all.push(...page.apps);
+        if (!page.hasMore) break;
+        if (page.nextSkip <= skip) throw new Error("Could not load the next page of apps.");
+        skip = page.nextSkip;
+      }
+      setApps(all);
+      setError("");
+      setNeedsConnection(false);
+    } catch (err) {
+      if (err instanceof api.ApiError && err.status === 428) setNeedsConnection(true);
+      else setError(err instanceof Error ? err.message : "Could not load your apps.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // useState setters are stable, so this callback is too.
   const updateApp = useCallback((app: App) => {
-    setActiveName(app.name || "");
     setApps((current) => current.map((item) => (item.id === app.id ? app : item)));
     setStageApp((current) => (current?.id === app.id ? app : current));
     setEditor((current) => (current.app?.id === app.id ? { ...current, app } : current));
-    // useState setters are stable, so this stays a stable callback; naming them
-    // is what lets the React Compiler keep the memoization.
-  }, [setActiveName, setApps, setStageApp, setEditor]);
+  }, [setApps, setStageApp, setEditor]);
+
   function openApp(app: App | null = null) {
-    setActiveName(app?.name || "");
     setStageApp(app);
     setEditor((current) => ({ app, version: current.version + 1 }));
     setInApp(true);
@@ -61,35 +77,21 @@ export default function Workspace({ name }: { name: string }) {
     setInApp(false);
     setMobileEditorOpen(false);
     setStageApp(null);
-    setActiveName("");
     setEditor((current) => ({ app: null, version: current.version + 1 }));
   }
-  const load = useCallback(() => {
-    return (async () => {
-      const allApps: App[] = [];
-      let skip = 0;
-      while (true) {
-        const page = await api.listApps(skip);
-        allApps.push(...page.apps);
-        if (!page.hasMore) return allApps;
-        if (page.nextSkip <= skip) throw new Error("Could not load the next page of apps.");
-        skip = page.nextSkip;
-      }
-    })()
-      .then((result) => {
-        setError("");
-        setApps(result);
-        setNeedsConnection(false);
-      })
-      .catch((err) => {
-        if (err instanceof api.ApiError && err.status === 428) setNeedsConnection(true);
-        else setError(err instanceof Error ? err.message : "Could not load your apps.");
-      })
-      .finally(() => setLoading(false));
-  }, []);
-  useEffect(() => {
-    void load();
-  }, [load]);
+  function closeAssistant() {
+    setMobileEditorOpen(false);
+    assistantButton.current?.focus();
+  }
+  function onCreated(app: App) {
+    setStageApp(app);
+    setApps((current) => [app, ...current]);
+    // Adopt the app without bumping the version: the conversation that just
+    // created it has to survive.
+    setEditor((current) => ({ ...current, app }));
+    setInApp(true);
+  }
+
   async function removeApp(app: App) {
     if (removing) return;
     setRemoving(app.id);
@@ -97,8 +99,6 @@ export default function Workspace({ name }: { name: string }) {
     try {
       await api.removeApp(app.id);
       setApps((current) => current.filter((item) => item.id !== app.id));
-      // No guard for "was the open app removed": the cards only exist on the
-      // home page, and stageApp is only set once you are inside an app.
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not remove the app.");
     } finally {
@@ -109,12 +109,7 @@ export default function Workspace({ name }: { name: string }) {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch("/api/base44/connection", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "connect" }),
-      });
-      if (!response.ok) throw new Error("Could not connect your workspace. Please try again.");
+      await api.connectWorkspace();
       setNeedsConnection(false);
       await load();
     } catch (err) {
@@ -122,6 +117,7 @@ export default function Workspace({ name }: { name: string }) {
       setLoading(false);
     }
   }
+
   return (
     <div className="workspace">
       <header className="topbar">
@@ -133,11 +129,7 @@ export default function Workspace({ name }: { name: string }) {
             <Plus size={16} /> New app
           </button>
           <span>{name}</span>
-          <button
-            className="icon-button"
-            aria-label="Sign out"
-            onClick={() => signOut({ callbackUrl: "/" })}
-          >
+          <button className="icon-button" aria-label="Sign out" onClick={() => signOut({ callbackUrl: "/" })}>
             <LogOut size={17} />
           </button>
         </div>
@@ -149,9 +141,7 @@ export default function Workspace({ name }: { name: string }) {
               {error && (
                 <div role="alert" className="error">
                   <p>{error}</p>
-                  <button className="secondary" onClick={() => load()}>
-                    Try again
-                  </button>
+                  <button className="secondary" onClick={() => load()}>Try again</button>
                 </div>
               )}
               {needsConnection ? (
@@ -195,19 +185,14 @@ export default function Workspace({ name }: { name: string }) {
         ) : (
           <main className="app-stage">
             <header className="stage-heading">
-              <button ref={backButton} className="secondary" onClick={backToApps}>
+              <button className="secondary" onClick={backToApps}>
                 <ArrowLeft size={16} /> All apps
               </button>
               <strong>{activeName || "New app"}</strong>
             </header>
             <div className="stage-body">
               {stageApp ? (
-                <PreviewFrame
-                  key={stageApp.id}
-                  app={stageApp}
-                  live
-                  title={`${stageApp.name || "Untitled"} preview`}
-                />
+                <PreviewFrame key={stageApp.id} app={stageApp} live title={`${stageApp.name || "Untitled"} preview`} />
               ) : (
                 <div className="widget-placeholder">
                   Describe what you want to build. The preview appears here once the app exists.
@@ -218,62 +203,45 @@ export default function Workspace({ name }: { name: string }) {
         )}
         <button
           ref={assistantButton}
-            className="mobile-assistant"
-            onClick={() => setMobileEditorOpen(true)}
-            aria-expanded={mobileEditorOpen}
-            aria-controls="app-editor"
-          >
-            <MessageSquare size={18} /> Assistant
-          </button>
-          <section
-            ref={editorPanel}
-            id="app-editor"
-            className={`editor-panel ${mobileEditorOpen ? "is-open" : ""} ${
-            editor.app ? "is-editing" : ""
-          }`}
-            aria-label="App editor"
-            onKeyDown={(e) => {
-              if (e.key === "Escape") closeAssistant();
-            }}
-          >
-            <header className="editor-heading">
-              <div>
-                {editor.app ? (
-                  <span className="editing-badge">
-                    <span className="editing-flare" aria-hidden="true" />
-                    Editing
-                  </span>
-                ) : (
-                  <Sparkles size={14} />
-                )}
-                <strong>{activeName || "Build an app"}</strong>
-              </div>
-              <div>
-                <button
-                  ref={closeButton}
-                  className="icon-button mobile-close"
-                  aria-label="Close assistant"
-                  onClick={closeAssistant}
-                >
-                  <X size={20} />
-                </button>
-              </div>
-            </header>
-            <Builder
-              key={editor.version}
-              initialAppId={editor.app?.id}
-              onUpdated={updateApp}
-              onGoHome={backToApps}
-              onCreated={(app) => {
-                setActiveName(app.name || "");
-                setStageApp(app);
-                setApps((current) => [app, ...current]);
-                // Adopt the app without bumping the version: the conversation
-                // that just created it has to survive.
-                setEditor((current) => ({ ...current, app }));
-                setInApp(true);
-              }}
-            />
+          className="mobile-assistant"
+          onClick={() => setMobileEditorOpen(true)}
+          aria-expanded={mobileEditorOpen}
+          aria-controls="app-editor"
+        >
+          <MessageSquare size={18} /> Assistant
+        </button>
+        <section
+          ref={editorPanel}
+          id="app-editor"
+          className={`editor-panel ${mobileEditorOpen ? "is-open" : ""} ${editor.app ? "is-editing" : ""}`}
+          aria-label="App editor"
+          onKeyDown={(e) => e.key === "Escape" && closeAssistant()}
+        >
+          <header className="editor-heading">
+            <div>
+              {editor.app ? (
+                <span className="editing-badge">
+                  <span className="editing-flare" aria-hidden="true" />
+                  Editing
+                </span>
+              ) : (
+                <Sparkles size={14} />
+              )}
+              <strong>{activeName || "Build an app"}</strong>
+            </div>
+            <div>
+              <button ref={closeButton} className="icon-button mobile-close" aria-label="Close assistant" onClick={closeAssistant}>
+                <X size={20} />
+              </button>
+            </div>
+          </header>
+          <Builder
+            key={editor.version}
+            initialAppId={editor.app?.id}
+            onUpdated={updateApp}
+            onGoHome={backToApps}
+            onCreated={onCreated}
+          />
         </section>
       </div>
     </div>

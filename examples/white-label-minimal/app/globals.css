@@ -147,23 +147,6 @@ h1 {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
   gap: 20px;
 }
-.app-thumbnail {
-  display: flex;
-  width: 100%;
-  aspect-ratio: 4 / 3;
-  border: 0;
-  border-radius: 0;
-  padding: 0;
-  background: #edf0f4;
-  color: #c0c7d2;
-  font-size: 54px;
-  font-weight: 400;
-}
-.app-thumbnail img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
 .empty-state {
   min-height: 330px;
   display: flex;
@@ -182,10 +165,6 @@ h1 {
 .empty-state p {
   font-size: 13px;
   margin-bottom: 24px;
-}
-.load-more {
-  display: flex;
-  margin: 30px auto;
 }
 .error,
 .builder aside {

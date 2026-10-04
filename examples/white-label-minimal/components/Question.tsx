@@ -4,21 +4,17 @@ import type { ToolCall, ToolInput } from "../lib/types";
 
 type Choice = { question: string; options: string[]; multi: boolean };
 type Field = { name: string; description: string };
-export function parseQuestion(
-  tool: ToolCall,
-):
+type ParsedQuestion =
   | { kind: "choice"; choices: Choice[] }
   | { kind: "input"; fields: Field[] }
   | { kind: "approval" }
-  | { kind: "unknown" } {
+  | { kind: "unknown" };
+
+export function parseQuestion(tool: ToolCall): ParsedQuestion {
   try {
     const args = JSON.parse(tool.arguments_string || "{}");
     if (tool.waiting_on?.kind === "approval") return { kind: "approval" };
-    if (
-      tool.waiting_on?.kind === "choice" &&
-      Array.isArray(args.questions) &&
-      args.questions.length
-    ) {
+    if (tool.waiting_on?.kind === "choice" && Array.isArray(args.questions) && args.questions.length) {
       const choices = args.questions.map((q: Record<string, unknown>) => {
         if (typeof q.question !== "string" || !Array.isArray(q.options)) throw Error();
         const options = q.options.map((o) => (typeof o === "string" ? o : o?.label));
@@ -27,17 +23,10 @@ export function parseQuestion(
       });
       return { kind: "choice", choices };
     }
-    if (
-      tool.waiting_on?.kind === "input" &&
-      Array.isArray(args.secrets_schema) &&
-      args.secrets_schema.length
-    ) {
+    if (tool.waiting_on?.kind === "input" && Array.isArray(args.secrets_schema) && args.secrets_schema.length) {
       const fields = args.secrets_schema.map((s: Record<string, unknown>) => {
         if (typeof s.secretName !== "string" || !s.secretName) throw Error();
-        return {
-          name: s.secretName,
-          description: typeof s.description === "string" ? s.description : "",
-        };
+        return { name: s.secretName, description: typeof s.description === "string" ? s.description : "" };
       });
       return { kind: "input", fields };
     }
@@ -45,6 +34,26 @@ export function parseQuestion(
     /* Incomplete or unfamiliar schemas must not become blind approvals. */
   }
   return { kind: "unknown" };
+}
+
+/** The answer to send, or null while nothing has been filled in. */
+function buildPayload(question: ParsedQuestion, selected: Record<number, string[]>, values: Record<string, string>) {
+  if (question.kind === "choice") {
+    const answers = question.choices
+      .map((_, i) => ({ question_index: i, selected_labels: selected[i] || [], custom_text: values[i] || "" }))
+      .filter((a) => a.selected_labels.length || a.custom_text.trim());
+    return answers.length ? { answers } : null;
+  }
+  if (question.kind === "input") {
+    const filled = question.fields.filter((f) => values[f.name]?.trim());
+    return filled.length ? { secrets: Object.fromEntries(filled.map((f) => [f.name, values[f.name]])) } : null;
+  }
+  return {};
+}
+
+function toggle(current: string[] = [], label: string, multi: boolean) {
+  if (!multi) return [label];
+  return current.includes(label) ? current.filter((x) => x !== label) : [...current, label];
 }
 
 export default function Question({
@@ -89,43 +98,14 @@ export default function Question({
       setBusy(false);
     }
   }
-  const answers =
-    question.kind === "choice"
-      ? question.choices
-          .map((_, i) => ({
-            question_index: i,
-            selected_labels: selected[i] || [],
-            custom_text: values[i] || "",
-          }))
-          .filter((a) => a.selected_labels.length || a.custom_text.trim())
-      : [];
-  const secrets =
-    question.kind === "input"
-      ? Object.fromEntries(
-          question.fields
-            .filter((f) => values[f.name]?.trim())
-            .map((f) => [f.name, values[f.name]]),
-        )
-      : {};
-  const payload =
-    question.kind === "choice" ? { answers } : question.kind === "input" ? { secrets } : {};
-  const empty =
-    question.kind === "choice"
-      ? !answers.length
-      : question.kind === "input"
-        ? !Object.keys(secrets).length
-        : false;
+  const payload = buildPayload(question, selected, values);
   return (
     <section className="question">
       <strong>{tool.name || "Agent action"}</strong>{" "}
       <small>{submitted ? "Answer sent" : tool.status}</small>
       {(question.kind === "unknown" || question.kind === "approval") && (
         <details>
-          <summary>
-            {question.kind === "unknown"
-              ? "Unsupported question / tool details"
-              : "Review proposed action"}
-          </summary>
+          <summary>{question.kind === "unknown" ? "Unsupported question / tool details" : "Review proposed action"}</summary>
           <pre>{tool.arguments_string || "No arguments provided."}</pre>
         </details>
       )}
@@ -142,16 +122,7 @@ export default function Question({
                         type={q.multi ? "checkbox" : "radio"}
                         name={`${tool.id}-${i}`}
                         checked={(selected[i] || []).includes(label)}
-                        onChange={() =>
-                          setSelected((s) => ({
-                            ...s,
-                            [i]: q.multi
-                              ? (s[i] || []).includes(label)
-                                ? s[i].filter((x) => x !== label)
-                                : [...(s[i] || []), label]
-                              : [label],
-                          }))
-                        }
+                        onChange={() => setSelected((s) => ({ ...s, [i]: toggle(s[i], label, q.multi) }))}
                       />
                       {label}
                     </label>
@@ -180,7 +151,7 @@ export default function Question({
               ))}
             <div className="actions">
               {question.kind !== "unknown" && (
-                <button disabled={empty} onClick={() => void submit(true, payload)}>
+                <button disabled={!payload} onClick={() => payload && void submit(true, payload)}>
                   {question.kind === "approval" ? "Approve" : "Send answer"}
                 </button>
               )}
@@ -190,18 +161,13 @@ export default function Question({
             </div>
           </fieldset>
           {attempt && !busy && (
-            <button
-              disabled={disabled}
-              onClick={() => void submit(attempt.approve, attempt.extraUserInput)}
-            >
+            <button disabled={disabled} onClick={() => void submit(attempt.approve, attempt.extraUserInput)}>
               Retry original answer
             </button>
           )}
           {busy && <p role="status">Sending answer…</p>}
           {error && (
-            <p role="alert">
-              {error} Resume polling to check the outcome, or retry the original answer.
-            </p>
+            <p role="alert">{error} Resume polling to check the outcome, or retry the original answer.</p>
           )}
         </>
       )}

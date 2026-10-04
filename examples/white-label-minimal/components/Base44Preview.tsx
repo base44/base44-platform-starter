@@ -7,7 +7,6 @@ export type Base44PreviewProps = {
   title: string;
   live?: boolean;
   showControls?: boolean;
-  onStatusChange?: (status: string) => void;
   staticUrl?: string;
   screenshotUrl?: string;
   loadPreview: (appId: string) => Promise<{ url: string }>;
@@ -17,7 +16,7 @@ export default function Base44Preview(props: Base44PreviewProps) {
   return <PreviewSession key={`${props.appId}:${!!props.live}`} {...props} />;
 }
 
-function PreviewSession({ appId, live = false, title, staticUrl, screenshotUrl, loadPreview, showControls = true, onStatusChange }: Base44PreviewProps) {
+function PreviewSession({ appId, live = false, title, staticUrl, screenshotUrl, loadPreview, showControls = true }: Base44PreviewProps) {
   const loadPreviewRef = useRef(loadPreview);
   useEffect(() => { loadPreviewRef.current = loadPreview; }, [loadPreview]);
   const frame = useRef<HTMLIFrameElement>(null);
@@ -86,8 +85,6 @@ function PreviewSession({ appId, live = false, title, staticUrl, screenshotUrl, 
       window.removeEventListener("message", recover);
     };
   }, [appId, live, attempt]);
-  const status = error ? "Preview unavailable" : live ? loaded ? "Live build" : "Starting live…" : "Last build";
-  useEffect(() => { onStatusChange?.(status); }, [onStatusChange, status]);
   const retry = () => { setUrl(""); setLoaded(false); setError(""); setAttempt(value => value + 1); };
   const frameProps = { referrerPolicy: "no-referrer" as const, sandbox: "allow-scripts allow-same-origin allow-forms allow-popups" };
   return <div className="preview-frame">

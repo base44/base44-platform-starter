@@ -31,11 +31,7 @@ export default function ToolActivity({ tool }: { tool: ToolCall }) {
       {tool.results && (
         <div>
           <strong>Result</strong>
-          <pre>
-            {typeof tool.results === "string"
-              ? tool.results
-              : JSON.stringify(tool.results, null, 2)}
-          </pre>
+          <pre>{tool.results}</pre>
         </div>
       )}
     </details>

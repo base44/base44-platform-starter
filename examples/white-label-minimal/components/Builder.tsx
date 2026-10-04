@@ -1,10 +1,10 @@
 "use client";
-import { hasCompletedBuild } from "../lib/chat/build-readiness";
-import type { App, ToolInput } from "../lib/types";
 import { useEffect, useMemo, useRef, useState } from "react";
-import * as api from "../lib/chat/builder-api";
 import { ArrowRight, Check, Loader2 } from "lucide-react";
+import * as api from "../lib/chat/builder-api";
+import { hasCompletedBuild } from "../lib/chat/build-readiness";
 import { mergeOptimisticMessages, type OptimisticMessage } from "../lib/chat/optimistic-messages";
+import type { App, ToolInput } from "../lib/types";
 import BuilderChat from "./BuilderChat";
 import { useBuildPolling } from "./useBuildPolling";
 
@@ -27,16 +27,13 @@ export default function Builder({
   const [optimistic, setOptimistic] = useState<OptimisticMessage[]>([]);
   const lock = useRef(false);
   const { app, messages, error: pollingError, loading, refresh, resume } = useBuildPolling(appId);
-  const displayedMessages = useMemo(
-    () => mergeOptimisticMessages(messages, optimistic), [messages, optimistic],
-  );
+  const displayedMessages = useMemo(() => mergeOptimisticMessages(messages, optimistic), [messages, optimistic]);
   useEffect(() => {
     if (app) onUpdated?.(app);
   }, [app, onUpdated]);
-  const waiting = messages.some((m) =>
-    m.tool_calls?.some((t) => t.status === "waiting_for_user_input"),
-  );
+  const waiting = messages.some((m) => m.tool_calls?.some((t) => t.status === "waiting_for_user_input"));
   const processing = app?.status?.state === "processing";
+  const composerDisabled = loading || !!busy || waiting || processing || !!pollingError || creationUncertain;
   // A prompt/answer invalidates the previous ready state before polling catches up.
   // Preview and deploy operations themselves should keep the card mounted.
   const submittingBuild = busy === "Sending prompt…" || busy === "Answering question…";
@@ -44,16 +41,7 @@ export default function Builder({
     !waiting && !pollingError && !submittingBuild && hasCompletedBuild(messages);
 
   async function send(prompt: string) {
-    if (
-      lock.current ||
-      loading ||
-      !prompt.trim() ||
-      waiting ||
-      processing ||
-      pollingError ||
-      creationUncertain
-    )
-      return false;
+    if (lock.current || composerDisabled || !prompt.trim()) return false;
     lock.current = true;
     const optimisticId = `local:${crypto.randomUUID()}`;
     setOptimistic((current) => [...current, {
@@ -161,7 +149,7 @@ export default function Builder({
         busy={!!busy}
         processing={processing}
         waiting={waiting}
-        disabled={loading || !!busy || waiting || processing || !!pollingError || creationUncertain}
+        disabled={composerDisabled}
         questionsDisabled={!!busy || !!pollingError}
         onSend={send}
         onAnswer={answer}
@@ -182,12 +170,7 @@ export default function Builder({
         {(busy || waiting || processing || pollingError) && (
           <div className="build-progress" role="status">
             {(busy || processing) && <Loader2 size={12} className="spin" />}
-            {busy ||
-              (pollingError
-                ? "Connection paused"
-                : waiting
-                  ? "Waiting for your answer"
-                  : "Building…")}
+            {busy || (pollingError ? "Connection paused" : waiting ? "Waiting for your answer" : "Building…")}
           </div>
         )}
       </BuilderChat>
