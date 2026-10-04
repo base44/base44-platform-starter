@@ -8,7 +8,7 @@ test('socket messages convert to the shape the chat renders', () => {
     { id: 't2', name: 'generate_video', status: 'success', results: 'https://media.example/v.mp4' },
   ] });
   assert.deepEqual(message.tool_calls, [
-    { id: 't1', name: 'ask', status: 'waiting_for_user_input', waiting_on: { kind: 'choice' }, arguments_string: '{"questions":[]}', results: undefined },
+    { id: 't1', name: 'ask', status: 'waiting_for_user_input', waiting_on: { kind: 'choice' }, arguments_string: '{\n  "questions": []\n}', results: undefined },
     { id: 't2', name: 'generate_video', status: 'success', waiting_on: undefined, arguments_string: null, results: 'https://media.example/v.mp4' },
   ]);
 });

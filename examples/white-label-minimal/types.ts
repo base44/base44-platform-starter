@@ -18,7 +18,6 @@ export type Message = {
   id: string;
   role?: string | null;
   content?: string | null;
-  hidden?: boolean | null;
   tool_calls?: ToolCall[] | null;
 };
 

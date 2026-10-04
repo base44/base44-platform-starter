@@ -28,8 +28,7 @@ function hasOpenQuestion(messages: Message[]) {
 // "ready" alone also follows a greeting-only reply, so the app counts as built
 // only once the agent has written code and the latest turn has finished.
 function hasBuiltCode(messages: Message[]) {
-  const visible = messages.filter((message) => !message.hidden);
-  if (visible.at(-1)?.role !== "assistant") return false;
+  if (messages.at(-1)?.role !== "assistant") return false;
 
   const lastPrompt = messages.findLastIndex((message) => message.role === "user");
   const latestTurn = messages.slice(lastPrompt + 1);
