@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getLatestBuildUrl, getPreviewUrl } from "../lib/chat/builder-api";
+import * as actions from "../app/actions";
+import { unwrap } from "../lib/chat/unwrap";
 import type { App } from "../lib/types";
 import Base44Preview from "./Base44Preview";
 
@@ -14,7 +15,7 @@ export default function PreviewFrame({ app, live = false, title, showControls }:
     showControls={showControls}
     staticUrl={latestBuildUrl}
     screenshotUrl={app.preview_screenshot_url}
-    loadPreview={getPreviewUrl}
+    loadPreview={(appId) => unwrap(actions.getPreviewUrl(appId))}
   />;
 }
 
@@ -26,7 +27,7 @@ function useLatestBuildUrl(app: App) {
   useEffect(() => {
     if (building) return;
     let current = true;
-    getLatestBuildUrl(app.id).then((r) => current && setUrl(r.url ?? undefined), () => {});
+    unwrap(actions.getLatestBuildUrl(app.id)).then((r) => current && setUrl(r.url ?? undefined), () => {});
     return () => { current = false; };
   }, [app.id, building]);
   return url;

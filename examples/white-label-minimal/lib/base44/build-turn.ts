@@ -10,7 +10,7 @@ import { base44 } from "./request";
 //
 // Every app belongs to the integration account, so Base44 cannot tell builders
 // apart. Before calling these, the caller checks that the builder owns the app
-// and that its ID is a plain ID (lib/server/api-handler.ts).
+// and that its ID is a plain ID (app/actions.ts).
 
 // Create app, Send chat message, Submit tool-call input and Deploy an app wait
 // on a whole build turn, which can take minutes.

@@ -1,6 +1,7 @@
 import { Base44PlatformClient, type AppStatus, type ChatMessage } from "@base44/platform";
 import type { Message } from "../types";
-import { openLiveUpdates } from "./builder-api";
+
+type Session = { serverUrl: string; sessionToken: string };
 
 export type LiveUpdateHandlers = {
   onMessages: (update: (messages: Message[]) => Message[]) => void;
@@ -9,16 +10,21 @@ export type LiveUpdateHandlers = {
 };
 
 // Watches one app's chat and status over Base44's live-updates socket.
-// Resolves to a function that stops watching.
-export async function watchLiveUpdates(appId: string, handlers: LiveUpdateHandlers) {
-  const session = await openLiveUpdates(appId);
+// openSession asks Tiny's server for a session. Resolves to a function that
+// stops watching.
+export async function watchLiveUpdates(
+  appId: string,
+  openSession: (appId: string) => Promise<Session>,
+  handlers: LiveUpdateHandlers,
+) {
+  const session = await openSession(appId);
   let firstToken: string | undefined = session.sessionToken;
   const client = new Base44PlatformClient({
     serverUrl: session.serverUrl,
     // The first connection uses the session opened above. The SDK calls this
     // again only when that session has ended, and our server opens a new one.
     async getSessionToken() {
-      const token = firstToken ?? (await openLiveUpdates(appId)).sessionToken;
+      const token = firstToken ?? (await openSession(appId)).sessionToken;
       firstToken = undefined;
       return token;
     },

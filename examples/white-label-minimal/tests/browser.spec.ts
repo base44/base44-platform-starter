@@ -164,19 +164,6 @@ test('live preview stays stable and recovers only from its own expiry message', 
   await expect(page.locator('.stage-body iframe')).toBeVisible();
 });
 
-test('real Next route requires authentication for local browser origins and rejects foreign origins', async ({ page, request }) => {
-  await page.goto('/');
-  const status = await page.evaluate(async () => (await fetch('/api/base44', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'unknown' }),
-  })).status);
-  expect(status).toBe(401); // Validation reached; Next may normalize request.url internally.
-  const foreign = await request.post('/api/base44', {
-    headers: { Origin: 'https://foreign.example' }, data: { action: 'unknown' },
-  });
-  expect(foreign.status()).toBe(403);
-});
-
 test('rejected access preserves prompt and allows retry without uncertain creation warning', async ({ page }) => {
   await page.route('**/api/base44', route => route.fulfill({ status: 401, contentType: 'application/json',
     body: JSON.stringify({ error: 'Sign in to continue.' }) }));

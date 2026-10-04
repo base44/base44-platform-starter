@@ -1,7 +1,8 @@
 "use client";
 import { useState } from "react";
 import { ArrowRight, Check, ExternalLink } from "lucide-react";
-import * as api from "../lib/chat/builder-api";
+import * as actions from "../app/actions";
+import { unwrap } from "../lib/chat/unwrap";
 
 // Shown when a build is done. Step 6 of the build turn: deploy the app, then
 // read back its address to link to.
@@ -18,8 +19,9 @@ export default function ReadyCard({ appId, name, onGoHome }: {
     setPublishing(true);
     setError("");
     try {
-      await api.deployApp(appId);
-      setPublishedUrl((await api.getPublishedUrl(appId)).url);
+      await unwrap(actions.deployApp(appId));
+      const { url } = await unwrap(actions.getPublishedUrl(appId));
+      setPublishedUrl(url);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not publish the app.");
     } finally {

@@ -1,10 +1,11 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
-import * as api from "../lib/chat/builder-api";
+import * as actions from "../app/actions";
 import { getChatState, type ChatState } from "../lib/chat/chat-state";
 import { mergeOptimisticMessages, type OptimisticMessage } from "../lib/chat/optimistic-messages";
 import type { App, ToolInput } from "../lib/types";
+import { unwrap } from "../lib/chat/unwrap";
 import BuilderChat from "./BuilderChat";
 import ReadyCard from "./ReadyCard";
 import { useLiveUpdates } from "./useLiveUpdates";
@@ -49,10 +50,10 @@ export default function Builder({ initialAppId, onCreated, onUpdated, onGoHome }
     setError("");
     try {
       if (appId) {
-        await api.sendMessage(appId, prompt);
+        await unwrap(actions.sendMessage(appId, prompt));
         await refresh();
       } else {
-        const created = await api.createApp(prompt);
+        const created = await unwrap(actions.createApp(prompt));
         setAppId(created.id);
         onCreated?.(created);
       }
@@ -73,7 +74,7 @@ export default function Builder({ initialAppId, onCreated, onUpdated, onGoHome }
     lock.current = true;
     setBusy("answer");
     try {
-      await api.submitToolCallInput(input);
+      await unwrap(actions.submitToolCallInput(input));
     } finally {
       await refresh();
       lock.current = false;

@@ -17,7 +17,7 @@ each part of them lives in one place here:
 | Docs | Code |
 | --- | --- |
 | [Tenancy and credentials](https://docs.base44.com/developers/white-label/tenancy-and-credentials) | [lib/base44/config.ts](lib/base44/config.ts), [lib/base44/request.ts](lib/base44/request.ts) |
-| Keeping builders apart | [lib/server/api-handler.ts](lib/server/api-handler.ts), [lib/storage/app-repository.ts](lib/storage/app-repository.ts) |
+| Keeping builders apart | [app/actions.ts](app/actions.ts), [lib/storage/app-repository.ts](lib/storage/app-repository.ts) |
 | [The build turn](https://docs.base44.com/developers/white-label/the-build-turn), steps 1–6 | [lib/base44/build-turn.ts](lib/base44/build-turn.ts), one function per call, numbered by step |
 | Watch it build (live, instead of polling) | [lib/base44/live-updates.ts](lib/base44/live-updates.ts), [lib/chat/live-updates.ts](lib/chat/live-updates.ts) |
 | Answer the agent's questions | [components/Question.tsx](components/Question.tsx), one UI per `waiting_on.kind` |
@@ -72,11 +72,10 @@ characters of the prompt as their initial name.
 For a complete browser integration, follow this path:
 
 ```text
-components/Builder.tsx → lib/chat/builder-api.ts → app/api/base44/route.ts
-  → lib/server/api-handler.ts → lib/server/app-service.ts → lib/base44/build-turn.ts
+components/Builder.tsx → app/actions.ts → lib/base44/build-turn.ts
 ```
 
-[lib/server/app-service.ts](lib/server/app-service.ts) is where your application plugs in:
+[app/actions.ts](app/actions.ts) holds Tiny's server actions, and is where your application plugs in:
 
 - [server/auth.ts](lib/server/auth.ts) supplies the verified user from your session.
 - [storage/app-repository.ts](lib/storage/app-repository.ts) saves ownership and scopes app access to that user.
@@ -87,16 +86,14 @@ on install and build; run `npm run db:generate` from the example after schema ed
 
 Every Base44 call sends `Authorization: Bearer <token>` and `X-Active-Workspace-Id`, and
 new apps are created with `organization_id`, so they use your workspace's design system,
-skills, and plan. The API handler validates each request and checks that the signed-in
-builder owns the app before any app operation.
+skills, and plan. Each server action checks who is signed in and, for an app, that they own it,
+before it calls Base44.
 
 For the chat UI, copy `components/`, `lib/chat/`, and `lib/base44/live-updates.ts`.
 The chat uses assistant-ui's external-store runtime with Base44's live updates as its
 source of truth (see below). `Question.tsx` handles
 approvals, choices, and secrets; retries preserve the original answer and request ID.
-Preview URLs stay in page memory and remain stable during normal use. A timed-out
-creation may still succeed, so the UI asks users to check before creating again.
-An app can only be resumed here if its ownership was saved successfully.
+A timed-out creation may still succeed, and the error says so.
 
 ## Live builder updates
 
@@ -105,7 +102,7 @@ The chat updates live over the Base44 platform socket, through the Platform SDK,
 
 ```text
 components/useLiveUpdates.ts → lib/chat/live-updates.ts → @base44/platform
-lib/chat/builder-api.ts → app/api/base44/route.ts → lib/base44/live-updates.ts
+app/actions.ts → lib/base44/live-updates.ts
 ```
 
 1. **Server** ([lib/base44/live-updates.ts](lib/base44/live-updates.ts)): after the usual
@@ -135,7 +132,7 @@ as the package directory. Its `netlify.toml` builds the example without running
 migrations; use an already migrated Sunny database.
 
 Set the variables from `.env.example` for builds and production functions.
-Set `NEXTAUTH_URL` and `BUILDER_ORIGIN` to your deployment's exact HTTPS origin.
+Set `NEXTAUTH_URL` to your deployment's exact HTTPS origin.
 Register `<origin>/api/auth/callback/google` with your Google OAuth client, or
 set `AUTH_REDIRECT_PROXY_URL=https://sunny44.com/api/auth` and use Sunny's Google
 client and `NEXTAUTH_SECRET` for its existing redirect proxy.

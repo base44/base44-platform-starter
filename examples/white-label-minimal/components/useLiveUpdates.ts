@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { getApp } from "../lib/chat/builder-api";
+import * as actions from "../app/actions";
+import { unwrap } from "../lib/chat/unwrap";
 import { watchLiveUpdates } from "../lib/chat/live-updates";
 import type { App, Message } from "../lib/types";
 
@@ -20,7 +21,7 @@ export function useLiveUpdates(appId: string | null) {
     if (!appId) return;
     let stopped = false;
     let close: (() => void) | undefined;
-    const readApp = () => getApp(appId).then((next) => { if (!stopped) setApp(next); });
+    const readApp = () => unwrap(actions.getApp(appId)).then((next) => { if (!stopped) setApp(next); });
     const fail = () => {
       if (stopped) return;
       stopped = true;
@@ -30,7 +31,7 @@ export function useLiveUpdates(appId: string | null) {
     };
 
     readApp().catch(fail);
-    watchLiveUpdates(appId, {
+    watchLiveUpdates(appId, (id) => unwrap(actions.openLiveUpdates(id)), {
       onMessages(update) {
         if (stopped) return;
         setMessages(update);
@@ -54,7 +55,7 @@ export function useLiveUpdates(appId: string | null) {
 
   // After a prompt or an answer, read the app's status right away.
   const refresh = useCallback(async () => {
-    if (appId) setApp(await getApp(appId));
+    if (appId) setApp(await unwrap(actions.getApp(appId)));
   }, [appId]);
 
   return {

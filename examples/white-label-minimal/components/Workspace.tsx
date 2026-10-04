@@ -5,7 +5,8 @@ import Link from "next/link";
 import { signOut } from "next-auth/react";
 import { ArrowLeft, Grid2X2, Loader2, LogOut, MessageSquare, Plus, Sparkles, X } from "lucide-react";
 import TinySunnyLogo from "./TinySunnyLogo";
-import * as api from "../lib/chat/builder-api";
+import * as actions from "../app/actions";
+import { unwrap } from "../lib/chat/unwrap";
 import Builder from "./Builder";
 import AppWidget from "./AppWidget";
 import PreviewFrame from "./PreviewFrame";
@@ -39,7 +40,7 @@ export default function Workspace({ name }: { name: string }) {
     try {
       const all: App[] = [];
       for (let skip = 0; ; ) {
-        const page = await api.listApps(skip);
+        const page = await unwrap(actions.listApps(skip));
         all.push(...page.apps);
         if (!page.hasMore) break;
         if (page.nextSkip <= skip) throw new Error("Could not load the next page of apps.");
@@ -94,7 +95,7 @@ export default function Workspace({ name }: { name: string }) {
     setRemoving(app.id);
     setError("");
     try {
-      await api.removeApp(app.id);
+      await unwrap(actions.removeApp(app.id));
       setApps((current) => current.filter((item) => item.id !== app.id));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not remove the app.");

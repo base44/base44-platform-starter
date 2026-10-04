@@ -35,17 +35,6 @@ export type ToolInput = {
 
 export type AppPage = { apps: App[]; hasMore: boolean; nextSkip: number };
 
-export interface AppClient {
-  openLiveUpdates(appId: string): Promise<{ serverUrl: string; sessionToken: string }>;
-  getLatestBuildUrl(appId: string): Promise<{ url: string | null }>;
-  createApp(prompt: string): Promise<App>;
-  getApp(appId: string): Promise<App>;
-  sendMessage(appId: string, content: string): Promise<object>;
-  submitToolCallInput(input: ToolInput): Promise<object>;
-  getPreviewUrl(appId: string): Promise<{ url: string }>;
-  deployApp(appId: string): Promise<object>;
-  getPublishedUrl(appId: string): Promise<{ url: string | null }>;
-  removeApp(appId: string): Promise<object>;
-  authorize(appId: string): Promise<void>;
-  listApps(skip: number): Promise<AppPage>;
-}
+// What a server action returns. Next.js hides thrown errors from the browser in
+// production, so an error is a value.
+export type ActionResult<T> = { data: T } | { error: string; status: number };
