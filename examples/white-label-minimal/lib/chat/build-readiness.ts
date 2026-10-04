@@ -10,6 +10,7 @@ export function hasCompletedBuild(messages: Message[]): boolean {
   const activeTurn = messages.slice(lastUser + 1);
   if (activeTurn.some(message => message.tool_calls?.some(tool =>
     ACTIVE_STATUSES.has(tool.status || "")))) return false;
-  return messages.some(message => message.tool_calls?.some(tool =>
+  // Only this turn counts: a later turn that just answers or asks is not a new build.
+  return activeTurn.some(message => message.tool_calls?.some(tool =>
     CODE_TOOLS.has(tool.name || "") && tool.status === "success"));
 }

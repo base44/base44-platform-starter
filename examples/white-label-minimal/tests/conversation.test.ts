@@ -56,5 +56,6 @@ test('optimistic prompts survive empty polls and merge once without confusing re
   assert.equal(hasCompletedBuild([built]), true);
   assert.equal(hasCompletedBuild([{ ...built, tool_calls: [{ name: 'write_file', status: 'error' }] }]), false);
   assert.equal(hasCompletedBuild([built, { id: 'followup', role: 'user' }]), false);
+  assert.equal(hasCompletedBuild([built, { id: 'question', role: 'user' }, { id: 'answer', role: 'assistant', content: 'Want confetti too?' }]), false);
   assert.equal(hasCompletedBuild([built, { id: 'running', role: 'assistant', tool_calls: [{ name: 'find_replace', status: 'running' }] }]), false);
 });
