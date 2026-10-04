@@ -9,11 +9,10 @@ deleted app indefinitely.
 `POST /api/base44/webhooks` (`src/app/api/base44/webhooks/route.ts`):
 
 1. Verifies the signature (`src/lib/base44WebhookSignature.ts`). Nothing else runs before this.
-2. Checks the event's `source` is this deployment's workspace.
-3. Echoes the `challenge` for `webhook.test.v1` — that is how the endpoint activates.
-4. On `app.deleted.v1`, maps `owner_service_external_id` to a Sunny user via
+2. Echoes the `challenge` for `webhook.test.v1` — that is how the endpoint activates.
+3. On `app.deleted.v1`, maps `owner_service_external_id` to a Sunny user via
    `emailForServiceExternalId()` and deletes that user's `Widget` rows for the app.
-5. Answers 2xx to everything else.
+4. Answers 2xx to everything else.
 
 It keeps no state. Deleting pins is idempotent, so a redelivery is harmless, and a restore never puts
 pins back, so a late `app.deleted` arriving after an `app.restored` leaves the same result as one

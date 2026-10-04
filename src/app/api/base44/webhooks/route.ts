@@ -9,7 +9,6 @@
 
 import { NextResponse } from "next/server";
 
-import { orgId } from "@/lib/base44Config";
 import { emailForServiceExternalId } from "@/lib/base44Link";
 import { verifyWebhook } from "@/lib/base44WebhookSignature";
 import { deleteEntity, listEntities } from "@/lib/entityCrud";
@@ -17,7 +16,7 @@ import { deleteEntity, listEntities } from "@/lib/entityCrud";
 // node:crypto for Ed25519, so not the edge runtime.
 export const runtime = "nodejs";
 
-type CloudEvent = { type: string; source?: string; data: Record<string, unknown> };
+type CloudEvent = { type: string; data: Record<string, unknown> };
 
 /**
  * Idempotent and order-safe without a ledger: deleting pins that are already
@@ -52,11 +51,6 @@ export async function POST(request: Request) {
   }
 
   const event = JSON.parse(rawBody) as CloudEvent;
-  // The signature proves Base44 sent it, not which workspace it was for.
-  if (!event.source?.endsWith(`/${orgId()}`)) {
-    return NextResponse.json({ error: "unknown_workspace" }, { status: 404 });
-  }
-
   // Activation: echo the challenge, only after the signature verified.
   if (event.type === "webhook.test.v1") {
     return NextResponse.json({ challenge: event.data.challenge });
