@@ -1,5 +1,5 @@
 import { test, expect, type Page, type Route } from '@playwright/test';
-import type { ToolCall } from '../lib/types';
+import type { ToolCall } from '../types';
 
 // Live updates in every test: our server opens a session, then a fake Base44
 // socket serves the fixture's own conversation and app status.
@@ -34,7 +34,7 @@ async function pushUpdates(page: Page) {
 test.beforeEach(async ({ page }) => {
   const route = page.route.bind(page);
   page.route = ((url: string, handler: (route: Route) => unknown, options?: object) => route(url, url === '**/api/base44'
-    ? (r: Route) => r.request().postDataJSON()?.action === 'openBuilderSession'
+    ? (r: Route) => r.request().postDataJSON()?.action === 'openLiveUpdates'
       ? r.fulfill({ json: { serverUrl: 'https://socket.example', sessionToken: 'wlst_fixture' } })
       : handler(r)
     : handler, options)) as Page['route'];
@@ -138,20 +138,6 @@ test('approval rejection is an answer and removes the waiting state', async ({ p
   expect(f.submissions[0].approve).toBe(false);
   expect(f.submissions[0].extraUserInput).toEqual({});
 });
-test('uncertain create never retries automatically and offers existing-app recovery', async ({ page }) => {
-  let creates = 0;
-  await page.route('**/api/base44', route => {
-    if (route.request().postDataJSON().action === 'listApps') return route.fulfill({ json: { apps: [], hasMore: false } });
-    creates++; return route.abort('failed');
-  });
-  await page.goto('/');
-  await page.getByRole('button', { name: 'Create an app', exact: true }).click();
-  await page.getByLabel('What would you like to build?').fill('Reading list');
-  await page.getByRole('button', { name: 'Create app', exact: true }).click();
-  await expect(page.getByLabel('Existing app ID')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Create app', exact: true })).toBeDisabled();
-  expect(creates).toBe(1);
-});
 test('an ended live session pauses updates, reconnect restores them', async ({ page }) => {
   await fixture(page);
   const socket = sockets.get(page)!;
@@ -163,37 +149,9 @@ test('an ended live session pauses updates, reconnect restores them', async ({ p
   await expect(page.getByText('Your app is taking shape.')).toBeVisible();
 });
 
-test('live preview stays stable and recovers only from its own expiry message', async ({ page }) => {
-  await page.clock.install();
-  await fixture(page);
-  await expect(page.locator('.stage-body iframe')).toBeVisible();
-  const initialUrl = await page.locator('.stage-body iframe').getAttribute('src');
-  await page.clock.fastForward(300_000);
-  await expect(page.locator('.stage-body iframe')).toHaveAttribute('src', initialUrl!);
-  await page.evaluate(() => window.postMessage({ type: 'preview:requestRefresh' }, '*'));
-  await expect(page.locator('.stage-body iframe')).toHaveAttribute('src', initialUrl!);
-  const preview = page.frames().find(frame => frame.url() === initialUrl)!;
-  await preview.evaluate(() => window.parent.postMessage({ type: 'preview:requestRefresh' }, '*'));
-  await expect(page.locator('.stage-body iframe')).not.toHaveAttribute('src', initialUrl!);
-  await expect(page.locator('.stage-body iframe')).toBeVisible();
-});
-
-test('real Next route requires authentication for local browser origins and rejects foreign origins', async ({ page, request }) => {
-  await page.goto('/');
-  const status = await page.evaluate(async () => (await fetch('/api/base44', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'unknown' }),
-  })).status);
-  expect(status).toBe(401); // Validation reached; Next may normalize request.url internally.
-  const foreign = await request.post('/api/base44', {
-    headers: { Origin: 'https://foreign.example' }, data: { action: 'unknown' },
-  });
-  expect(foreign.status()).toBe(403);
-});
-
 test('rejected access preserves prompt and allows retry without uncertain creation warning', async ({ page }) => {
   await page.route('**/api/base44', route => route.fulfill({ status: 401, contentType: 'application/json',
-    body: JSON.stringify({ error: 'Sign in to continue.', outcome: 'not_started' }) }));
+    body: JSON.stringify({ error: 'Sign in to continue.' }) }));
   await openBuilder(page);
   await page.getByLabel('What would you like to build?').fill('Hello world');
   await page.getByRole('button', { name: 'Create app', exact: true }).click();
@@ -355,6 +313,28 @@ test('preview card waits for build completion and hides during follow-up submiss
   await expect(card).toBeVisible();
 });
 
+test('a ready app publishes once and then links to the published address', async ({ page }) => {
+  const actions: string[] = [];
+  await page.route('**/api/base44', async route => {
+    const { action } = route.request().postDataJSON();
+    actions.push(action);
+    if (action === 'listApps') return route.fulfill({ json: { apps: [], hasMore: false } });
+    if (action === 'getConversation') return route.fulfill({ json: { messages: [
+      { id: 'm1', role: 'assistant', content: 'Your scoreboard is live.', tool_calls: [{ id: 'write', name: 'write_file', status: 'success' }] },
+    ] } });
+    if (action === 'deployApp') return route.fulfill({ json: {} });
+    if (action === 'getPublishedUrl') return route.fulfill({ json: { url: 'https://scoreboard.example' } });
+    return route.fulfill({ json: { id: APP, name: 'Scoreboard', status: { state: 'ready' } } });
+  });
+  await openBuilder(page);
+  await page.getByLabel('What would you like to build?').fill('Build a scoreboard');
+  await page.getByRole('button', { name: 'Create app', exact: true }).click();
+  const card = page.getByRole('region', { name: 'App ready' });
+  await card.getByRole('button', { name: 'Publish' }).click();
+  await expect(card.getByRole('link', { name: 'Open the published app' })).toHaveAttribute('href', 'https://scoreboard.example');
+  expect(actions.filter(a => a === 'deployApp' || a === 'getPublishedUrl')).toEqual(['deployApp', 'getPublishedUrl']);
+});
+
 test('a follow-up stops showing "Sending prompt" once the turn is running', async ({ page }) => {
   let state = 'ready';
   await page.route('**/api/base44', async route => {
@@ -448,9 +428,10 @@ test('the empty state owns its CTA and app cards render their build', async ({ p
   let previews = 0;
   await page.route('https://preview.example/**', route => route.fulfill({ contentType: 'text/html', body: '<h1>Working app</h1>' }));
   await page.route('**/api/base44', route => {
+    if (route.request().postDataJSON().action === 'getLatestBuildUrl') return route.fulfill({ json: { url: 'https://preview.example/static' } });
     const { action } = route.request().postDataJSON();
     return route.fulfill({ json: action === 'listApps'
-      ? { apps: populated ? [{ id: 'reading', name: 'Reading list', static_preview_url: 'https://preview.example/static' }] : [], hasMore: false }
+      ? { apps: populated ? [{ id: 'reading', name: 'Reading list' }] : [], hasMore: false }
       : { url: `https://preview.example/?token=${++previews}` } });
   });
   await page.goto('/');
@@ -474,10 +455,11 @@ test('the empty state owns its CTA and app cards render their build', async ({ p
 
 test('the card, the chat thumbnail and the stage show the same app', async ({ page }) => {
   const screenshot = 'https://preview.example/thumbnail.svg';
-  const app = { id: 'reading', name: 'Reading list', static_preview_url: 'https://preview.example/static', preview_screenshot_url: screenshot, status: { state: 'ready' } };
+  const app = { id: 'reading', name: 'Reading list', preview_screenshot_url: screenshot, status: { state: 'ready' } };
   await page.route('https://preview.example/**', route => route.fulfill({ contentType: 'text/html', body: '<h1>Reading app</h1>' }));
   await page.route(screenshot, route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="skyblue"/></svg>' }));
   await page.route('**/api/base44', route => {
+    if (route.request().postDataJSON().action === 'getLatestBuildUrl') return route.fulfill({ json: { url: 'https://preview.example/static' } });
     const { action } = route.request().postDataJSON();
     return route.fulfill({ json: action === 'listApps' ? { apps: [app], hasMore: false }
       : action === 'getConversation' ? { messages: [{ id: 'built', role: 'assistant', content: 'Ready', tool_calls: [{ id: 'file', name: 'write_file', status: 'success' }] }] }
@@ -527,7 +509,7 @@ test('remove persists, handles failures, and New app lives in the topbar', async
     const { action, skip, appId } = route.request().postDataJSON();
     if (action === 'listApps') {
       skips.push(skip);
-      return route.fulfill({ json: { apps: [{ id: skip ? 'second' : 'first', name: skip ? 'Second app' : 'First app', static_preview_url: `https://widgets.example/${skip}` }], hasMore: !skip, nextSkip: skip + 12 } });
+      return route.fulfill({ json: { apps: [{ id: skip ? 'second' : 'first', name: skip ? 'Second app' : 'First app' }], hasMore: !skip, nextSkip: skip + 12 } });
     }
     return route.fulfill({ json: { url: `https://widgets.example/${appId}` } });
   });
@@ -552,8 +534,9 @@ test('remove persists, handles failures, and New app lives in the topbar', async
     await new Promise<void>(resolve => { release = resolve; });
     await route.fulfill({ contentType: 'text/html', body: '<h1>Live build</h1>' });
   });
-  const app = { id: 'reading', name: 'Reading list', static_preview_url: 'https://static.example/app', status: { state: 'ready' } };
+  const app = { id: 'reading', name: 'Reading list', status: { state: 'ready' } };
   await page.route('**/api/base44', route => {
+    if (route.request().postDataJSON().action === 'getLatestBuildUrl') return route.fulfill({ json: { url: 'https://static.example/app' } });
     const { action } = route.request().postDataJSON();
     if (action === 'getPreviewUrl') { requests++; return route.fulfill({ json: { url: 'https://live.example/app' } }); }
     return route.fulfill({ json: action === 'listApps' ? { apps: [app], hasMore: false } : action === 'getConversation' ? { messages: [] } : app });

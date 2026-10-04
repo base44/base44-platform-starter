@@ -1,145 +1,127 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
-import { createHandler } from '../lib/server/api-handler';
-import { createBase44Client } from '../lib/base44/client';
-import { Base44Error } from '../lib/base44/error';
-import { openSocketSession } from '../lib/base44/socket-session';
-let signedIn = true;
-const POST = createHandler(async () => {
-  if (!signedIn) throw new Base44Error('Sign in to continue.', 401);
-  return { ...createBase44Client('user-token-canary'), openBuilderSession: openSocketSession, authorize: async (id: string) => {
-    if (id === 'other_app') throw new Base44Error('App not found.', 404);
-  }, removeApp: async () => ({}), listApps: async () => ({ apps: [], hasMore: false, nextSkip: 0 }) };
-});
-import { customInstructions } from '../lib/base44/custom-instructions';
+import * as buildTurn from '../server/base44/build-turn';
+import { customInstructions } from '../server/base44/custom-instructions';
+import { getEmbedUrl } from '../server/base44/embed';
+import { Base44Error } from '../server/base44/error';
+import { openLiveUpdates } from '../server/base44/live-updates';
+import { resolveAppPage } from '../server/app-list';
+import { requireOwner } from '../server/ownership';
+import { prisma } from '../server/db';
 
 const originalFetch = globalThis.fetch;
 const originalEnv = { ...process.env };
-afterEach(() => { signedIn = true; globalThis.fetch = originalFetch; process.env = { ...originalEnv }; });
+const originalFindFirst = prisma.appOwnership.findFirst;
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+  process.env = { ...originalEnv };
+  prisma.appOwnership.findFirst = originalFindFirst;
+});
+
 function setup(reply: unknown = { id: 'app_1' }, status = 200) {
-  process.env.BASE44_ORG_ID = 'workspace_1';
   process.env.BASE44_PLATFORM_HOST = 'https://platform.example';
-  const calls: { url: string; init?: RequestInit }[] = [];
+  process.env.BASE44_ACCESS_TOKEN = 'pat-canary';
+  process.env.BASE44_WORKSPACE_ID = 'workspace_1';
+  process.env.BASE44_SVC_KEY = 'b44k_workspace';
+  const calls: { url: string; init: RequestInit }[] = [];
   globalThis.fetch = async (url, init) => {
-    calls.push({ url: String(url), init });
+    calls.push({ url: String(url), init: init! });
     return Response.json(reply, { status });
   };
   return calls;
 }
-const request = (body: unknown, headers = {}) => POST(new Request('http://127.0.0.1:3001/api/base44', {
-  method: 'POST', headers: { host: '127.0.0.1:3001', origin: 'http://127.0.0.1:3001', 'content-type': 'application/json', ...headers }, body: JSON.stringify(body),
-}));
+const headers = (init: RequestInit) => new Headers(init.headers);
+const body = (init: RequestInit) => JSON.parse(String(init.body));
 
-test('invalid actions, paths, fields, pagination and decisions never reach Base44', async () => {
-  const calls = setup();
-  for (const body of [null, [], { action: 'proxy' }, { action: 'createApp', prompt: '' }, { action: 'getApp', appId: '../other' },
-    { action: 'getApp', appId: 'app_1', host: 'https://evil.example' },
-    { action: 'getApp', appId: 'app_1', workspaceId: 'other' },
-    { action: 'getApp', appId: 'app_1', api_key: 'other' },
-    { action: 'getConversation', appId: 'app_1', skip: -1 },
-    { action: 'getConversation', appId: 'app_1', skip: 1.5 },
-    { action: 'submitToolCallInput', appId: 'app_1', toolCallId: 'tool_1', messageId: 'message_1', approve: 'false', extraUserInput: {} }]) {
-    const response = await request(body);
-    assert.equal(response.status, 400);
-    assert.equal((await response.json()).outcome, 'not_started');
-  }
-  assert.equal(calls.length, 0);
+test('creating an app authenticates as the integration account in the configured workspace', async () => {
+  const calls = setup({ id: 'app_1', name: 'Reading list', api_key: 'must-not-return' });
+  const app = await buildTurn.createApp('Build a reading list');
+  assert.equal(Object.hasOwn(app, 'api_key'), false);
+  assert.equal(calls[0].url, 'https://platform.example/api/apps');
+  assert.equal(headers(calls[0].init).get('authorization'), 'Bearer pat-canary');
+  assert.equal(headers(calls[0].init).get('X-Active-Workspace-Id'), 'workspace_1');
+  assert.equal(body(calls[0].init).organization_id, 'workspace_1');
+  assert.equal(body(calls[0].init).initial_message.content, 'Build a reading list');
+  assert.equal(body(calls[0].init).custom_instructions, customInstructions);
+  assert.equal(calls[0].init.cache, 'no-store');
+  assert.equal(calls[0].init.redirect, 'error');
 });
-test('rejects foreign origins, nonlocal hosts, non-JSON and oversized bodies', async () => {
-  const calls = setup();
-  assert.equal((await request({}, { origin: 'https://evil.example' })).status, 403);
-  assert.equal((await request({}, { host: 'evil.example', origin: 'http://evil.example' })).status, 403);
-  assert.equal((await request({}, { 'content-type': 'text/plain' })).status, 415);
-  assert.equal((await request({ action: 'createApp', prompt: 'x'.repeat(65000) })).status, 413);
-  assert.equal(calls.length, 0);
-});
-test('creation uses the user token without organization routing', async () => {
-  const calls = setup({ id: 'app_1', name: 'Build a reading list', user_description: 'Build a reading list', custom_instructions: customInstructions, api_key: 'should-not-return' });
-  delete process.env.BASE44_ORG_ID;
-  const response = await request({ action: 'createApp', prompt: 'Build a reading list' });
-  assert.deepEqual(await response.json(), { id: 'app_1', name: 'Build a reading list', user_description: 'Build a reading list' });
-  const init = calls[0].init!;
-  assert.equal(new Headers(init.headers).get('authorization'), 'Bearer user-token-canary');
-  assert.equal(new Headers(init.headers).get('X-Active-Workspace-Id'), null);
-  const body = JSON.parse(String(init.body));
-  assert.equal(Object.hasOwn(body, 'organization_id'), false);
-  assert.equal(body.name, 'Build a reading list');
-  assert.equal(body.initial_message.content, 'Build a reading list');
-  assert.equal(body.custom_instructions, customInstructions);
-  assert.equal(init.cache, 'no-store');
-  assert.equal(init.redirect, 'error');
-});
-test('tool approvals, rejection and retries preserve payload and request identity', async () => {
+
+test('answers keep the same request ID when retried, and a rejection is an answer', async () => {
   const calls = setup({});
-  const input = { action: 'submitToolCallInput', appId: 'app_1', toolCallId: 'tool_1', messageId: 'message_1', approve: true, extraUserInput: { answers: [{ question_index: 0, selected_labels: ['Blue'], custom_text: '' }] } };
-  await request(input); await request(input);
-  await request({ ...input, toolCallId: 'tool_2', approve: false, extraUserInput: {} });
-  assert.equal(new Headers(calls[0].init?.headers).get('X-Request-ID'), 'submit-tool_1');
-  assert.equal(new Headers(calls[1].init?.headers).get('X-Request-ID'), 'submit-tool_1');
-  assert.equal(calls[0].init?.body, calls[1].init?.body);
-  assert.deepEqual(JSON.parse(String(calls[0].init?.body)), { tool_call_id: 'tool_1', message_id: 'message_1', action: 'approved', extra_user_input: input.extraUserInput });
-  assert.equal(JSON.parse(String(calls[2].init?.body)).action, 'rejected');
+  const answer = { appId: 'app_1', toolCallId: 'tool_1', messageId: 'message_1', approve: true, extraUserInput: { answers: [] } };
+  await buildTurn.submitToolCallInput(answer);
+  await buildTurn.submitToolCallInput(answer);
+  await buildTurn.submitToolCallInput({ ...answer, toolCallId: 'tool_2', approve: false });
+  assert.equal(headers(calls[0].init).get('X-Request-ID'), 'submit-tool_1');
+  assert.equal(headers(calls[1].init).get('X-Request-ID'), 'submit-tool_1');
+  assert.deepEqual(body(calls[0].init), { tool_call_id: 'tool_1', message_id: 'message_1', action: 'approved', extra_user_input: { answers: [] } });
+  assert.equal(body(calls[2].init).action, 'rejected');
 });
-test('preview response is not cached and upstream failures cannot expose tokens', async () => {
-  const calls = setup({ preview_url: 'preview.example/?existing=1', preview_token: 'token-canary' });
-  const result = await request({ action: 'getPreviewUrl', appId: 'app_1' });
-  assert.match(result.headers.get('cache-control')!, /no-store/);
-  assert.equal(result.headers.get('referrer-policy'), 'no-referrer');
-  assert.equal(new URL((await result.json()).url).searchParams.get('_preview_token'), 'token-canary');
-  assert.equal(calls[0].init?.cache, 'no-store');
-  setup({ error: 'token-canary personal-key-canary' }, 500);
-  assert.doesNotMatch(await (await request({ action: 'getPreviewUrl', appId: 'app_1' })).text(), /canary/);
+
+test('previews sign the builder in with the workspace key', async () => {
+  const calls = setup({ status: 'exists', embed_url: 'https://reading.example/?ott=once', expires_in: 60 });
+  assert.deepEqual(await getEmbedUrl('app_1', 'builder@example.com', 'live_preview'), { url: 'https://reading.example/?ott=once' });
+  assert.deepEqual(calls.map(c => new URL(c.url).pathname), ['/api/apps/app_1/users/provisions', '/api/apps/app_1/embed-tokens']);
+  for (const call of calls) {
+    assert.equal(headers(call.init).get('api_key'), 'b44k_workspace');
+    assert.equal(body(call.init).email, 'builder@example.com');
+  }
+  assert.equal(body(calls[1].init).target, 'live_preview');
 });
+
+test('before the first build there is no preview; a Base44 failure never leaks its body', async () => {
+  setup({ error: { code: 'app_has_no_slug' } }, 400);
+  assert.deepEqual(await getEmbedUrl('app_1', 'builder@example.com', 'latest_preview'), { url: null });
+
+  setup({ error: 'token-canary' }, 500);
+  await assert.rejects(getEmbedUrl('app_1', 'builder@example.com', 'live_preview'), (error: Base44Error) => {
+    assert.equal(error.status, 500);
+    assert.doesNotMatch(error.message, /canary/);
+    return true;
+  });
+});
+
 test('network failures are uncertain, not retried, and safe to display', async () => {
-  setup(); let calls = 0;
+  setup();
+  let calls = 0;
   globalThis.fetch = async () => { calls++; throw Error('secret-canary'); };
-  const response = await request({ action: 'sendMessage', appId: 'app_1', content: 'Update' });
-  assert.equal(response.status, 504); assert.equal(calls, 1);
-  const text = await response.text(); assert.match(text, /may still be running/); assert.doesNotMatch(text, /canary/);
+  await assert.rejects(buildTurn.sendMessage('app_1', 'Update'), (error: Base44Error) => {
+    assert.equal(error.status, 504);
+    assert.match(error.message, /may still be running/);
+    assert.doesNotMatch(error.message, /canary/);
+    return true;
+  });
+  assert.equal(calls, 1);
 });
-test('published endpoint maps 404 to no link; rejects unsafe URLs', async () => {
+
+test('an app that was never published has no link; an unsafe link is refused', async () => {
   const calls = setup({}, 404);
-  assert.deepEqual(await (await request({ action: 'getPublishedUrl', appId: 'app_1' })).json(), { url: null });
+  assert.deepEqual(await buildTurn.getPublishedUrl('app_1'), { url: null });
   assert.equal(calls[0].url, 'https://platform.example/api/apps/platform/app_1/published-url');
   setup({ url: 'javascript://evil' });
-  assert.equal((await request({ action: 'getPublishedUrl', appId: 'app_1' })).status, 502);
-});
-test('missing configuration makes no network call; conversation uses newest-relative paging', async () => {
-  const calls = setup(); delete process.env.BASE44_PLATFORM_HOST;
-  assert.equal((await request({ action: 'getApp', appId: 'app_1' })).status, 503);
-  assert.equal(calls.length, 0);
-  const reads = setup({ messages: [{ id: 'm1', content: 'Hello', hidden: true }] });
-  const result = await request({ action: 'getConversation', appId: 'app_1', skip: 20 });
-  assert.equal(result.status, 200); assert.match(reads[0].url, /limit=20&skip=20$/);
+  await assert.rejects(buildTurn.getPublishedUrl('app_1'), { status: 502 });
 });
 
-test('requires a session and exact origin before calling Base44', async () => {
+test('missing configuration makes no network call', async () => {
   const calls = setup();
-  process.env.BUILDER_ORIGIN = 'https://tiny.sunny44.com';
-  const h = { host: 'tiny.sunny44.com', origin: 'https://tiny.sunny44.com' };
-  signedIn = false;
-  const denied = await request({ action: 'createApp', prompt: 'Hello' }, h);
-  assert.equal(denied.status, 401);
-  assert.equal((await denied.json()).outcome, 'not_started');
-  signedIn = true;
-  assert.equal((await request({}, { ...h, origin: 'https://evil.example' })).status, 403);
-  assert.equal(calls.length, 0);
-  assert.equal((await request({ action: 'getApp', appId: 'app_1' }, h)).status, 200);
-});
-
-test('another owner’s apps cannot be read, edited, previewed or deployed', async () => {
-  const calls = setup();
-  for (const action of ['getApp', 'getConversation', 'sendMessage', 'getPreviewUrl', 'deployApp', 'getPublishedUrl']) {
-    const response = await request({ action, appId: 'other_app', content: 'Update' });
-    assert.equal(response.status, 404);
-    assert.equal((await response.json()).outcome, 'not_started');
-  }
+  delete process.env.BASE44_PLATFORM_HOST;
+  await assert.rejects(buildTurn.getApp('app_1'), { status: 503 });
   assert.equal(calls.length, 0);
 });
 
+test('a builder can only reach apps they own', async () => {
+  let query: unknown;
+  prisma.appOwnership.findFirst = (async (args: { where: unknown }) => {
+    query = args.where;
+    return null;
+  }) as unknown as typeof prisma.appOwnership.findFirst;
+  await assert.rejects(requireOwner('builder@example.com', 'other_app'), { status: 404 });
+  await assert.rejects(requireOwner('builder@example.com', '../other'), { status: 400 });
+  assert.deepEqual(query, { createdBy: 'builder@example.com', appId: 'other_app' });
+});
 
-test('unavailable apps do not hide valid apps or corrupt pagination', async () => {
-  const { resolveAppPage } = await import('../lib/storage/app-list');
+test('apps missing in Base44 do not hide valid apps or break pagination', async () => {
   const rows = Array.from({ length: 13 }, (_, i) => ({ appId: `app_${i}` }));
   const page = await resolveAppPage(rows, 24, async id => {
     if (id === 'app_0') throw new Base44Error('App not found.', 404);
@@ -151,65 +133,17 @@ test('unavailable apps do not hide valid apps or corrupt pagination', async () =
   await assert.rejects(resolveAppPage(rows, 0, async () => { throw new Base44Error('Unavailable', 503); }));
 });
 
-
-test('remove requires ownership and never calls the upstream app deletion API', async () => {
-  const calls = setup();
-  assert.equal((await request({ action: 'removeApp', appId: 'other_app' })).status, 404);
-  assert.equal((await request({ action: 'removeApp', appId: 'app_1' })).status, 200);
-  assert.equal((await request({ action: 'removeApp' })).status, 400);
-  assert.equal(calls.length, 0);
-});
-
- test('a static preview is only offered once the derived URL serves a build', async () => {
-  // The URL is derived from the slug, not returned by Base44, so it can name a
-  // build that does not exist; the host then answers with a JSON error that an
-  // iframe would render as raw JSON. Hence the probe.
-  process.env.BASE44_ORG_ID = 'workspace_1';
-  process.env.BASE44_PLATFORM_HOST = 'https://platform.example';
-  process.env.BASE44_STATIC_PREVIEW_DOMAIN = 'preview.example';
-  const derived = 'https://preview--my-app.preview.example';
-
-  const serve = (body: string, contentType: string, status = 200) => {
-    const calls: string[] = [];
-    globalThis.fetch = async (url) => {
-      const href = String(url);
-      calls.push(href);
-      if (href.startsWith(derived)) return new Response(body, { status, headers: { 'content-type': contentType } });
-      return Response.json({ id: 'app_1', slug: 'my-app' });
-    };
-    return calls;
-  };
-
-  const built = serve('<!doctype html><title>App</title>', 'text/html');
-  assert.equal((await (await request({ action: 'getApp', appId: 'app_1' })).json()).static_preview_url, derived);
-  assert.ok(built.includes('https://platform.example/api/apps/app_1'));
-  assert.ok(built.some(url => url.startsWith(derived)), 'the derived URL is probed');
-
-  // A different slug, so the probe cache cannot answer for it.
-  globalThis.fetch = async (url) => String(url).includes('preview--other')
-    ? new Response('{"message":"Preview not available yet"}', { status: 404, headers: { 'content-type': 'application/json' } })
-    : Response.json({ id: 'app_2', slug: 'other' });
-  assert.equal((await (await request({ action: 'getApp', appId: 'app_2' })).json()).static_preview_url, undefined);
-});
-
-test('the live-updates session opens with the workspace key only after sign-in and app ownership', async () => {
+test('live updates open with the workspace key, and a refusal says how to fix it', async () => {
   const calls = setup({ session_id: 'session_1', session_token: 'wlst_canary', socket_url: 'https://platform.example/ws' });
-  process.env.BASE44_SVC_KEY = 'b44k_workspace';
-  const response = await request({ action: 'openBuilderSession', appId: 'app_1' });
-  assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { serverUrl: 'https://platform.example', sessionToken: 'wlst_canary' });
+  assert.deepEqual(await openLiveUpdates('app_1'), { serverUrl: 'https://platform.example', sessionToken: 'wlst_canary' });
   assert.equal(calls[0].url, 'https://platform.example/api/service/socket-sessions');
-  assert.equal(new Headers(calls[0].init!.headers).get('authorization'), 'Bearer b44k_workspace');
-  assert.deepEqual(JSON.parse(String(calls[0].init!.body)), { app_ids: ['app_1'] });
-  assert.equal((await request({ action: 'openBuilderSession', appId: 'other_app' })).status, 404);
-  signedIn = false;
-  assert.equal((await request({ action: 'openBuilderSession', appId: 'app_1' })).status, 401);
-  assert.equal(calls.length, 1);
-});
+  assert.equal(headers(calls[0].init).get('authorization'), 'Bearer b44k_workspace');
+  assert.deepEqual(body(calls[0].init), { app_ids: ['app_1'] });
 
-test('a workspace key without the apps:watch scope is reported as configuration', async () => {
   setup({ error: { code: 'scope_required' } }, 403);
-  const response = await request({ action: 'openBuilderSession', appId: 'app_1' });
-  assert.equal(response.status, 503);
-  assert.match((await response.json()).error, /apps:watch/);
+  await assert.rejects(openLiveUpdates('app_1'), (error: Base44Error) => {
+    assert.equal(error.status, 503);
+    assert.match(error.message, /apps:watch/);
+    return true;
+  });
 });

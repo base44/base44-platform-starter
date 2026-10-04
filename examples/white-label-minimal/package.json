@@ -7,7 +7,7 @@
     "build": "npm run db:generate && next build",
     "start": "next start --hostname 127.0.0.1 --port 3001",
     "typecheck": "next typegen && tsc --noEmit",
-    "test": "tsx --conditions=react-server --test tests/server.test.ts tests/identity.test.ts && tsx --test tests/conversation.test.ts tests/live-messages.test.ts tests/questions.test.tsx",
+    "test": "tsx --conditions=react-server --test tests/server.test.ts && tsx --test tests/messages.test.ts tests/questions.test.tsx",
     "test:browser": "playwright test",
     "db:generate": "prisma generate",
     "postinstall": "npm run db:generate"
