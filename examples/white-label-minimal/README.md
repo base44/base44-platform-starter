@@ -9,6 +9,23 @@ personal access token. Base44 cannot tell your builders apart, so Tiny keeps the
 apart itself: it records which builder owns each app and checks that on every call.
 The token never reaches the browser.
 
+## From the docs to the code
+
+If you have read the [white label docs](https://docs.base44.com/developers/white-label/overview),
+each part of them lives in one place here:
+
+| Docs | Code |
+| --- | --- |
+| [Tenancy and credentials](https://docs.base44.com/developers/white-label/tenancy-and-credentials) | [lib/base44/config.ts](lib/base44/config.ts), [lib/base44/http.ts](lib/base44/http.ts) |
+| Keeping builders apart | [lib/server/api-handler.ts](lib/server/api-handler.ts), [lib/storage/app-repository.ts](lib/storage/app-repository.ts) |
+| [The build turn](https://docs.base44.com/developers/white-label/the-build-turn), steps 1–6 | [lib/base44/client.ts](lib/base44/client.ts), one commented section per step |
+| Watch it build (live, instead of polling) | [lib/base44/socket-session.ts](lib/base44/socket-session.ts), [lib/chat/live-updates.ts](lib/chat/live-updates.ts) |
+| Answer the agent's questions | [components/Question.tsx](components/Question.tsx), one UI per `waiting_on.kind` |
+| Publish the app | `publish()` in [components/Builder.tsx](components/Builder.tsx) |
+| [Custom instructions](https://docs.base44.com/developers/white-label/custom-instructions) | [lib/base44/custom-instructions.ts](lib/base44/custom-instructions.ts) |
+
+Everything else is Tiny's own product: sign-in, the app list, and the chat UI.
+
 ## Run locally
 
 Use Node.js 24. From the repository root:
@@ -105,8 +122,8 @@ Kept out to stay minimal; add them in production:
 - The session is not closed on leave; it expires after an hour. Workspace keys have
   a limit on open sessions, so close it (`DELETE /api/service/socket-sessions/{id}`)
   when the builder unmounts.
-- The chat shows the last 50 messages. Load older ones over HTTP
-  (`getConversation`) if you need full history.
+- The chat shows the last 50 messages. Load older ones with
+  [Read conversation messages](https://docs.base44.com/api-reference/read-conversation-messages) if you need full history.
 - Generated images stay as placeholders until the next reconnect (`image.resolved`).
 
 ## Deploy to Netlify

@@ -1,20 +1,21 @@
 import "server-only";
-import { CONVERSATION_PAGE_SIZE } from "../chat/conversation";
-import type { App, Message, ToolInput } from "../types";
+import type { App, ToolInput } from "../types";
 import { getBase44Config } from "./config";
 import { customInstructions } from "./custom-instructions";
 import { Base44Error } from "./error";
 import { base44Fetch as request } from "./http";
 
-// Writes return nothing to the browser; Tiny re-reads state by polling instead.
+// Writes return nothing to the browser; live updates bring the new state.
 const post = (path: string, body: object, headers?: Record<string, string>) =>
   request(path, { body, headers, timeout: 120_000 }).then(() => ({}));
 const app = (id: string) => `/api/apps/${encodeURIComponent(id)}`;
 
-// The Base44 endpoints Tiny uses. Every app belongs to the integration account,
-// so the caller must check which builder owns an app before calling these.
-// Full reference: https://app.base44.com/api/openapi.json
+// The Base44 calls Tiny makes, in the order of "The build turn":
+// https://docs.base44.com/developers/white-label/the-build-turn
+// Every app belongs to the integration account, so the caller must check which
+// builder owns an app before calling these (see lib/server/api-handler.ts).
 export const base44 = {
+  // 1. Create the app from a prompt. The build starts inside this call.
   createApp: async (prompt: string) =>
     toApp(await request("/api/apps", {
       body: {
@@ -29,21 +30,16 @@ export const base44 = {
       timeout: 120_000,
     })),
 
-  getApp: async (id: string) => toApp(await request(app(id))),
-
-  // skip counts backward from the newest message.
-  async getConversation(id: string, skip: number) {
-    const data = await request(`${app(id)}/chat/full-conversation?limit=${CONVERSATION_PAGE_SIZE}&skip=${skip}`, {
-      timeout: 60_000,
-    });
-    const messages = data?.messages ?? [];
-    if (!Array.isArray(messages)) throw new Base44Error("Unexpected conversation response.");
-    return { messages: messages.map(toMessage) };
-  },
-
+  // Each later prompt goes through Send chat message.
   sendMessage: (id: string, content: string) => post(`${app(id)}/chat/message`, { content }),
 
-  // A fixed request ID lets Base44 deduplicate retries of the same answer.
+  // 2. Watch it build. Tiny reads status.state here, and receives the chat over
+  //    the live-updates socket (lib/base44/socket-session.ts).
+  getApp: async (id: string) => toApp(await request(app(id))),
+
+  // 3. Answer the agent's questions: the UI for each waiting_on.kind is
+  //    components/Question.tsx. 4. Send the answer back. A request ID that stays
+  //    the same across retries lets Base44 deduplicate them.
   submitToolCallInput: (p: ToolInput) =>
     post(`${app(p.appId)}/chat/submit-tool-call-input`, {
       tool_call_id: p.toolCallId,
@@ -52,8 +48,7 @@ export const base44 = {
       extra_user_input: p.extraUserInput,
     }, { "X-Request-ID": `submit-${p.toolCallId}` }),
 
-  deployApp: (id: string) => post(`${app(id)}/deploy`, {}),
-
+  // 5. Show the preview. The preview_token is short-lived: never cache or log it.
   async getPreviewUrl(id: string) {
     const data = await request(`${app(id)}/sandbox/preview-url`, { timeout: 120_000 });
     const url = httpsUrl(data?.preview_url);
@@ -63,6 +58,9 @@ export const base44 = {
     url.searchParams.set("analytics-enable", "false");
     return { url: url.href };
   },
+
+  // 6. Publish the app. A 404 from Get published URL means "nothing to link to yet".
+  deployApp: (id: string) => post(`${app(id)}/deploy`, {}),
 
   async getPublishedUrl(id: string) {
     try {
@@ -82,24 +80,6 @@ function toApp(app: App): App {
   return {
     id, name, slug, preview_screenshot_url, logo_url, user_description,
     status: status && { state: status.state, error_source: status.error_source },
-  };
-}
-
-function toMessage(m: Message): Message {
-  if (typeof m?.id !== "string" || !m.id) throw new Base44Error("A conversation message has no stable ID.");
-  return {
-    id: m.id,
-    role: m.role,
-    content: m.content,
-    hidden: m.hidden,
-    tool_calls: m.tool_calls?.map((t) => ({
-      id: t.id,
-      name: t.name,
-      status: t.status,
-      waiting_on: t.waiting_on,
-      arguments_string: t.arguments_string,
-      results: typeof t.results === "string" ? t.results : undefined,
-    })),
   };
 }
 

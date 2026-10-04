@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, Check, Loader2 } from "lucide-react";
+import { ArrowRight, Check, ExternalLink, Loader2 } from "lucide-react";
 import * as api from "../lib/chat/builder-api";
 import { hasCompletedBuild } from "../lib/chat/build-readiness";
 import { mergeOptimisticMessages, type OptimisticMessage } from "../lib/chat/optimistic-messages";
@@ -25,6 +25,7 @@ export default function Builder({
   const [creationUncertain, setCreationUncertain] = useState(false);
   const [resumeId, setResumeId] = useState("");
   const [optimistic, setOptimistic] = useState<OptimisticMessage[]>([]);
+  const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
   const lock = useRef(false);
   const { app, messages, error: socketError, loading, refresh, resume } = useBuilderSocket(appId);
   const displayedMessages = useMemo(() => mergeOptimisticMessages(messages, optimistic), [messages, optimistic]);
@@ -66,6 +67,22 @@ export default function Builder({
       if (!appId) setCreationUncertain(!(err instanceof api.ApiError && err.notStarted));
       else await refresh();
       return false;
+    } finally {
+      lock.current = false;
+      setBusy("");
+    }
+  }
+  // Step 6 of the build turn: deploy, then read back the address to link to.
+  async function publish() {
+    if (lock.current || !appId) return;
+    lock.current = true;
+    setBusy("Publishing…");
+    setError("");
+    try {
+      await api.deployApp(appId);
+      setPublishedUrl((await api.getPublishedUrl(appId)).url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not publish the app.");
     } finally {
       lock.current = false;
       setBusy("");
@@ -160,6 +177,13 @@ export default function Builder({
               <Check size={13} aria-hidden="true" /> Ready
             </p>
             <strong>{app?.name || "Your app"}</strong>
+            {publishedUrl ? (
+              <a className="button" href={publishedUrl} target="_blank" rel="noopener noreferrer">
+                Open the published app <ExternalLink size={14} />
+              </a>
+            ) : (
+              <button disabled={!!busy} onClick={publish}>Publish</button>
+            )}
             {onGoHome && (
               <button onClick={onGoHome}>
                 See it in the home page <ArrowRight size={14} />

@@ -38,8 +38,8 @@ test('invalid actions, paths, fields, pagination and decisions never reach Base4
     { action: 'getApp', appId: 'app_1', host: 'https://evil.example' },
     { action: 'getApp', appId: 'app_1', workspaceId: 'other' },
     { action: 'getApp', appId: 'app_1', api_key: 'other' },
-    { action: 'getConversation', appId: 'app_1', skip: -1 },
-    { action: 'getConversation', appId: 'app_1', skip: 1.5 },
+    { action: 'listApps', skip: -1 },
+    { action: 'listApps', skip: 1.5 },
     { action: 'submitToolCallInput', appId: 'app_1', toolCallId: 'tool_1', messageId: 'message_1', approve: 'false', extraUserInput: {} }]) {
     const response = await request(body);
     assert.equal(response.status, 400);
@@ -105,13 +105,10 @@ test('published endpoint maps 404 to no link; rejects unsafe URLs', async () => 
   setup({ url: 'javascript://evil' });
   assert.equal((await request({ action: 'getPublishedUrl', appId: 'app_1' })).status, 502);
 });
-test('missing configuration makes no network call; conversation uses newest-relative paging', async () => {
+test('missing configuration makes no network call', async () => {
   const calls = setup(); delete process.env.BASE44_PLATFORM_HOST;
   assert.equal((await request({ action: 'getApp', appId: 'app_1' })).status, 503);
   assert.equal(calls.length, 0);
-  const reads = setup({ messages: [{ id: 'm1', content: 'Hello', hidden: true }] });
-  const result = await request({ action: 'getConversation', appId: 'app_1', skip: 20 });
-  assert.equal(result.status, 200); assert.match(reads[0].url, /limit=20&skip=20$/);
 });
 
 test('requires a session and exact origin before calling Base44', async () => {
@@ -130,7 +127,7 @@ test('requires a session and exact origin before calling Base44', async () => {
 
 test('another owner’s apps cannot be read, edited, previewed or deployed', async () => {
   const calls = setup();
-  for (const action of ['getApp', 'getConversation', 'sendMessage', 'getPreviewUrl', 'deployApp', 'getPublishedUrl']) {
+  for (const action of ['getApp', 'sendMessage', 'getPreviewUrl', 'deployApp', 'getPublishedUrl']) {
     const response = await request({ action, appId: 'other_app', content: 'Update' });
     assert.equal(response.status, 404);
     assert.equal((await response.json()).outcome, 'not_started');

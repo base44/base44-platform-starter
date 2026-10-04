@@ -1,4 +1,4 @@
-import type { App, AppPage, Message, ToolInput } from "../types";
+import type { App, AppPage, ToolInput } from "../types";
 
 export class ApiError extends Error {
   constructor(
@@ -45,8 +45,6 @@ async function call<T>(action: string, params: object, signal?: AbortSignal): Pr
 export const createApp = (prompt: string) => call<App>("createApp", { prompt });
 export const getApp = (appId: string, signal?: AbortSignal) =>
   call<App>("getApp", { appId }, signal);
-export const getConversation = (appId: string, skip = 0, signal?: AbortSignal) =>
-  call<{ messages: Message[] }>("getConversation", { appId, skip }, signal);
 export const sendMessage = (appId: string, content: string) =>
   call("sendMessage", { appId, content });
 export const submitToolCallInput = (input: ToolInput) => call("submitToolCallInput", input);

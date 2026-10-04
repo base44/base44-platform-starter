@@ -40,7 +40,6 @@ export interface AppClient {
   openBuilderSession(appId: string): Promise<{ serverUrl: string; sessionToken: string }>;
   createApp(prompt: string): Promise<App>;
   getApp(appId: string): Promise<App>;
-  getConversation(appId: string, skip: number): Promise<{ messages: Message[] }>;
   sendMessage(appId: string, content: string): Promise<object>;
   submitToolCallInput(input: ToolInput): Promise<object>;
   getPreviewUrl(appId: string): Promise<{ url: string }>;

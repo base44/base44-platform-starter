@@ -11,7 +11,6 @@ const actions: Record<string, (body: Body) => unknown[]> = {
   createApp: (b) => [b.text("prompt")],
   removeApp: (b) => [b.id("appId")],
   getApp: (b) => [b.id("appId")],
-  getConversation: (b) => [b.id("appId"), b.skip()],
   sendMessage: (b) => [b.id("appId"), b.text("content")],
   submitToolCallInput: (b) => [{
     appId: b.id("appId"),

@@ -355,6 +355,28 @@ test('preview card waits for build completion and hides during follow-up submiss
   await expect(card).toBeVisible();
 });
 
+test('a ready app publishes once and then links to the published address', async ({ page }) => {
+  const actions: string[] = [];
+  await page.route('**/api/base44', async route => {
+    const { action } = route.request().postDataJSON();
+    actions.push(action);
+    if (action === 'listApps') return route.fulfill({ json: { apps: [], hasMore: false } });
+    if (action === 'getConversation') return route.fulfill({ json: { messages: [
+      { id: 'm1', role: 'assistant', content: 'Your scoreboard is live.', tool_calls: [{ id: 'write', name: 'write_file', status: 'success' }] },
+    ] } });
+    if (action === 'deployApp') return route.fulfill({ json: {} });
+    if (action === 'getPublishedUrl') return route.fulfill({ json: { url: 'https://scoreboard.example' } });
+    return route.fulfill({ json: { id: APP, name: 'Scoreboard', status: { state: 'ready' } } });
+  });
+  await openBuilder(page);
+  await page.getByLabel('What would you like to build?').fill('Build a scoreboard');
+  await page.getByRole('button', { name: 'Create app', exact: true }).click();
+  const card = page.getByRole('region', { name: 'App ready' });
+  await card.getByRole('button', { name: 'Publish' }).click();
+  await expect(card.getByRole('link', { name: 'Open the published app' })).toHaveAttribute('href', 'https://scoreboard.example');
+  expect(actions.filter(a => a === 'deployApp' || a === 'getPublishedUrl')).toEqual(['deployApp', 'getPublishedUrl']);
+});
+
 test('first prompt stays visible through creation and an empty snapshot, then merges once', async ({ page }) => {
   let releaseCreate: (() => void) | undefined;
   let includeMessage = false;
