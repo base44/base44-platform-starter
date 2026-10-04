@@ -199,7 +199,7 @@ test('the live-updates session opens with the workspace key only after sign-in a
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { serverUrl: 'https://platform.example', sessionToken: 'wlst_canary' });
   assert.equal(calls[0].url, 'https://platform.example/api/service/socket-sessions');
-  assert.equal(new Headers(calls[0].init!.headers).get('authorization'), 'b44k_workspace');
+  assert.equal(new Headers(calls[0].init!.headers).get('authorization'), 'Bearer b44k_workspace');
   assert.deepEqual(JSON.parse(String(calls[0].init!.body)), { app_ids: ['app_1'] });
   assert.equal((await request({ action: 'openBuilderSession', appId: 'other_app' })).status, 404);
   signedIn = false;

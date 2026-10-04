@@ -8,7 +8,7 @@ export async function openSocketSession(appId: string) {
   const { host } = getBase44Config();
   const response = await fetch(`${host}/api/service/socket-sessions`, {
     method: "POST",
-    headers: { Authorization: process.env.BASE44_SVC_KEY ?? "", "Content-Type": "application/json" },
+    headers: { Authorization: `Bearer ${process.env.BASE44_SVC_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({ app_ids: [appId] }),
     cache: "no-store",
   });
