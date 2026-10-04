@@ -14,6 +14,7 @@ import {
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
 import { Bot, Loader2, Send, User } from "lucide-react";
 import { toAssistantMessage } from "../lib/chat/assistant-messages";
+import type { ChatState } from "../lib/chat/chat-state";
 import type { Message, ToolCall, ToolInput } from "../lib/types";
 import Question from "./Question";
 import ToolActivity from "./ToolActivity";
@@ -21,11 +22,9 @@ import ToolActivity from "./ToolActivity";
 type Props = {
   appId: string | null;
   messages: Message[];
-  loading: boolean;
+  state: ChatState;
   busy: boolean;
-  processing: boolean;
-  waiting: boolean;
-  disabled: boolean;
+  canSend: boolean;
   questionsDisabled: boolean;
   onSend: (text: string) => Promise<boolean>;
   onAnswer: (input: ToolInput) => Promise<void>;
@@ -36,14 +35,16 @@ type Props = {
 // assistant-ui renders part components itself.
 const ChatContext = createContext<Pick<Props, "appId" | "questionsDisabled" | "onAnswer"> | null>(null);
 
-export default function BuilderChat({ appId, messages, loading, busy, processing, waiting, disabled, questionsDisabled, onSend, onAnswer, children }: Props) {
+export default function BuilderChat({ appId, messages, state, busy, canSend, questionsDisabled, onSend, onAnswer, children }: Props) {
+  const loading = state === "loading";
+  const waiting = state === "question";
   const visibleMessages = useMemo(() => messages.filter((m) => !m.hidden), [messages]);
   const runtime = useExternalStoreRuntime({
     messages: visibleMessages,
     convertMessage: toAssistantMessage,
-    isRunning: busy || processing,
-    isDisabled: disabled,
-    isSendDisabled: disabled,
+    isRunning: busy || state === "building",
+    isDisabled: !canSend,
+    isSendDisabled: !canSend,
     onNew: async (message) => {
       const text = message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n");
       // Restore the draft that assistant-ui cleared before sending.
