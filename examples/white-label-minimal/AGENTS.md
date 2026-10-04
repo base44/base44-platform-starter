@@ -12,6 +12,9 @@ into integration guides. Write it the way a careful developer would write a guid
 - **Guard only what matters.** Keep the token on the server, check app ownership, filter what goes to
   the browser, keep `X-Request-ID` stable. Skip checks for states that cannot happen.
 - **Comments say why, briefly.** No comment that repeats the code.
+- **No real Base44 hosts in code, tests or docs.** Netlify fails the deploy when a file contains the value
+  of a secret environment variable, and the platform and preview hosts are set as secrets. Use
+  `platform.example`-style hosts in tests and docs.base44.com links in prose.
 
 <!-- BEGIN:nextjs-agent-rules -->
 
