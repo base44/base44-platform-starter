@@ -1,5 +1,5 @@
 import { requireUser } from "../../../../lib/server/auth";
-import { connect, disconnect, getLink, linkStatus } from "../../../../lib/base44/identity";
+import { connect, disconnect, getConnection } from "../../../../lib/base44/identity";
 import { Base44Error } from "../../../../lib/base44/error";
 
 const headers = { "Cache-Control": "no-store, private" };
@@ -18,7 +18,7 @@ export async function POST(request: Request) {
     let result;
     switch (payload?.action) {
       case "status":
-        result = linkStatus(await getLink(actor.email));
+        result = await getConnection(actor.email);
         break;
       case "connect":
         result = await connect(actor.email);

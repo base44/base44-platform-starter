@@ -57,11 +57,11 @@ export const getPublishedUrl = (appId: string) =>
 export const listApps = (skip = 0) => call<AppPage>("listApps", { skip });
 export const removeApp = (appId: string) => call("removeApp", { appId });
 
-export async function connectWorkspace() {
+export async function setConnection(action: "connect" | "disconnect") {
   const response = await fetch("/api/base44/connection", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "connect" }),
+    body: JSON.stringify({ action }),
   });
-  if (!response.ok) throw new ApiError("Could not connect your workspace. Please try again.", response.status);
+  if (!response.ok) throw new ApiError(`Could not ${action} your workspace. Please try again.`, response.status);
 }

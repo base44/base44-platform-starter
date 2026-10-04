@@ -3,7 +3,7 @@ import type { App } from "../lib/types";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
-import { ArrowLeft, Grid2X2, Loader2, LogOut, MessageSquare, Plus, Sparkles, X } from "lucide-react";
+import { ArrowLeft, Grid2X2, Loader2, LogOut, MessageSquare, Plus, Sparkles, Unplug, X } from "lucide-react";
 import TinySunnyLogo from "./TinySunnyLogo";
 import * as api from "../lib/chat/builder-api";
 import Builder from "./Builder";
@@ -109,12 +109,23 @@ export default function Workspace({ name }: { name: string }) {
     setLoading(true);
     setError("");
     try {
-      await api.connectWorkspace();
+      await api.setConnection("connect");
       setNeedsConnection(false);
       await load();
     } catch (err) {
       setError((err as Error).message);
       setLoading(false);
+    }
+  }
+  async function disconnect() {
+    setError("");
+    try {
+      await api.setConnection("disconnect");
+      backToApps();
+      setApps([]);
+      setNeedsConnection(true);
+    } catch (err) {
+      setError((err as Error).message);
     }
   }
 
@@ -129,6 +140,11 @@ export default function Workspace({ name }: { name: string }) {
             <Plus size={16} /> New app
           </button>
           <span>{name}</span>
+          {!needsConnection && !loading && (
+            <button className="icon-button" aria-label="Disconnect workspace" title="Disconnect workspace" onClick={disconnect}>
+              <Unplug size={17} />
+            </button>
+          )}
           <button className="icon-button" aria-label="Sign out" onClick={() => signOut({ callbackUrl: "/" })}>
             <LogOut size={17} />
           </button>

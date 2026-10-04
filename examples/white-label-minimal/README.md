@@ -58,8 +58,8 @@ components/Builder.tsx → lib/chat/builder-api.ts → app/api/base44/route.ts
 [lib/server/app-service.ts](lib/server/app-service.ts) is where your application plugs in:
 
 - [server/auth.ts](lib/server/auth.ts) supplies the verified user from your session.
-- [base44/identity.ts](lib/base44/identity.ts) provisions a service user, mints its token,
-  and refreshes it near expiry.
+- [base44/identity.ts](lib/base44/identity.ts) provisions a service user and mints a 1-hour
+  token for it, reusing the stored token until it expires.
 - [storage/app-repository.ts](lib/storage/app-repository.ts) saves ownership and scopes app access to that user.
 
 [prisma/schema.prisma](prisma/schema.prisma) defines identity links and app ownership.
@@ -67,8 +67,11 @@ components/Builder.tsx → lib/chat/builder-api.ts → app/api/base44/route.ts
 on install and build; run `npm run db:generate` from the example after schema edits.
 
 Google login and Base44 connection are separate. `/api/base44/connection`
-provisions a service principal using the workspace key. Builder requests use its
-stored token; they do not provision identities or send credentials to the browser.
+connects or disconnects a builder. Connecting provisions a service user with the workspace key,
+which needs the `service_users:provision` and `user_tokens:mint` scopes. Builder requests use the
+stored token and never send credentials to the browser. Minting is rate-limited per workspace,
+so reuse each token for its lifetime rather than minting per request. Tokens are stored in plain
+text here; encrypt them at rest in production.
 The API handler validates requests and checks app ownership before app operations.
 
 For the chat UI, copy `components/`, `lib/chat/builder-api.ts`, `lib/chat/conversation.ts`,

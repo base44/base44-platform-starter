@@ -6,16 +6,10 @@ import { connect, disconnect, getBase44AccessToken } from "../lib/base44/identit
 
 const originalFetch = globalThis.fetch;
 const originalEnv = { ...process.env };
-const originalTransaction = prisma.$transaction;
-const originalMethods = {
-  findUnique: prisma.base44Link.findUnique,
-  upsert: prisma.base44Link.upsert,
-  updateMany: prisma.base44Link.updateMany,
-};
+const originalMethods = { ...prisma.base44Link };
 afterEach(() => {
   globalThis.fetch = originalFetch;
   process.env = { ...originalEnv };
-  prisma.$transaction = originalTransaction;
   Object.assign(prisma.base44Link, originalMethods);
 });
 
@@ -29,19 +23,8 @@ function setup(overrides = {}) {
     ...overrides,
   };
   const calls: { url: string; init?: RequestInit }[] = [];
-  const db = {
-    $queryRaw: async () => [],
-    base44Link: {
-      findUnique: async () => row,
-      update: async ({ data }: any) => (row = { ...row, ...data }),
-    },
-  };
-  prisma.$transaction = (async (fn: any) => fn(db)) as any;
-  prisma.base44Link.findUnique = db.base44Link.findUnique as any;
-  prisma.base44Link.upsert = (async ({ update }: any) => (row = { ...row, ...update })) as any;
-  prisma.base44Link.updateMany = (async ({ data }: any) => {
-    row = { ...row, ...data }; return { count: 1 };
-  }) as any;
+  const save = async ({ data, update }: any) => (row = { ...row, ...(data ?? update) });
+  Object.assign(prisma.base44Link, { findUnique: async () => row, update: save, upsert: save, updateMany: save });
   globalThis.fetch = async (url, init) => {
     calls.push({ url: String(url), init });
     return Response.json(String(url).endsWith("/api/service/users")
@@ -51,7 +34,7 @@ function setup(overrides = {}) {
   return { calls, row: () => row };
 }
 
-test("connect provisions then mints with workspace credentials and preserves the stored identity", async () => {
+test("connect provisions then mints with the workspace key and keeps the stored identity", async () => {
   const state = setup();
   const result = await connect("BUILDER@example.com");
   assert.deepEqual(state.calls.map(c => new URL(c.url).pathname), ["/api/service/users", "/api/service/user-tokens"]);
@@ -59,8 +42,8 @@ test("connect provisions then mints with workspace credentials and preserves the
     assert.equal(new Headers(call.init?.headers).get("Authorization"), "workspace-key");
     assert.equal(JSON.parse(String(call.init?.body)).service_external_id, "existing-id");
   }
-  assert.equal(result.linked, true);
-  assert.equal(JSON.stringify(result).includes("new-access"), false);
+  assert.deepEqual(result, { linked: true });
+  assert.equal(state.row().accessToken, "new-access");
 });
 
 test("new identities retain the deterministic ID used by existing apps", async () => {
@@ -76,32 +59,32 @@ test("unexpired tokens are reused without an upstream request", async () => {
   assert.equal(state.calls.length, 0);
 });
 
-test("refresh uses the OAuth exchange and persists rotated credentials and lifetime", async () => {
+test("an expiring token is re-minted with the workspace key and stored", async () => {
   const state = setup();
   assert.equal(await getBase44AccessToken("builder@example.com"), "new-access");
-  assert.equal(state.calls[0].url, "https://base44.example/oauth/token");
-  assert.equal(new Headers(state.calls[0].init?.headers).has("Authorization"), false);
-  assert.equal(String(state.calls[0].init?.body), "grant_type=refresh_token&client_id=svc_delegate&refresh_token=old-refresh");
-  assert.equal(state.row().refreshToken, "new-refresh");
+  assert.equal(state.calls[0].url, "https://base44.example/api/service/user-tokens");
+  assert.equal(new Headers(state.calls[0].init?.headers).get("Authorization"), "workspace-key");
+  assert.equal(state.row().accessToken, "new-access");
   assert.ok(state.row().expiresAt.getTime() > Date.now() + 3500_000);
 });
 
-test("refresh failures preserve stored credentials and never expose upstream bodies", async () => {
+test("mint failures keep stored credentials and never expose upstream bodies", async () => {
   const state = setup();
-  for (const status of [400, 429, 503]) {
+  for (const status of [404, 429, 503]) {
     globalThis.fetch = async () => new Response("secret-canary", { status });
     await assert.rejects(getBase44AccessToken("builder@example.com"), (error: any) => {
-      assert.equal(error.status, status === 400 ? 428 : 502);
+      assert.equal(error.status, status === 404 ? 428 : 502);
       assert.equal(error.message.includes("secret-canary"), false);
       return true;
     });
-    assert.equal(state.row().refreshToken, "old-refresh");
+    assert.equal(state.row().accessToken, "old-access");
   }
 });
 
-test("disconnect clears tokens but retains identity mapping", async () => {
+test("disconnect revokes and clears tokens but keeps the identity mapping", async () => {
   const state = setup();
   await disconnect("builder@example.com");
+  assert.equal(state.calls[0].url, "https://base44.example/oauth/revoke");
   assert.equal(state.row().serviceExternalId, "existing-id");
   assert.equal(state.row().accessToken, null);
   assert.equal(state.row().refreshToken, null);
