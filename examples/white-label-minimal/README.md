@@ -160,29 +160,6 @@ without it a private app would show its own sign-in page inside the frame.
 - **Live preview** (`target: "live_preview"`): while editing. It runs the app's sandbox and shows
   each change as the agent makes it.
 
-Each URL works once and expires in 60 seconds, so [PreviewFrame](client/components/PreviewFrame.tsx) asks
-for a new one whenever it loads a frame.
-
-The live frame keeps the latest build visible until it loads. Recovery checks the source window and
-live origin of `preview:requestRefresh` messages, with at most three attempts per preview session and no
-retries on authorization failures. This observed Base44 message is not a confirmed public contract, so
-manual refresh remains available.
-
-### Reusing the preview component
-
-`client/components/Base44Preview.tsx` owns static/live rendering, loading, recovery, and manual refresh. It depends only on React. `PreviewFrame` adapts Tiny's app model and backend client to its props:
-
-```tsx
-<Base44Preview
-  appId={app.id}
-  title="App preview"
-  staticUrl={latestBuildUrl}
-  screenshotUrl={app.preview_screenshot_url}
-  live={editing}
-  loadPreview={getPreviewUrl}
-/>
-```
-
-`loadPreview(appId)` calls your authenticated backend and returns `{ url }`. Reject with an error carrying `status: 401` or `403` to stop automatic recovery on authorization failures. Keep platform credentials on the backend. Changing the app or live mode starts a new preview session; changing the callback does not reload the iframe.
-
-When copying the component, include the `preview-frame`, `preview-loading-frame`, `preview-fallback`, `preview-controls`, `preview-spinner`, `widget-placeholder`, and `secondary` styles from `app/globals.css`, or provide equivalent styles and a sized parent container.
+Each URL works once and expires in 60 seconds, so [AppPreview](client/components/AppPreview.tsx)
+asks for a new one whenever it loads a frame, and again on **Refresh preview**. While editing, the
+latest build stays visible until the live preview has loaded.

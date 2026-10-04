@@ -149,21 +149,6 @@ test('an ended live session pauses updates, reconnect restores them', async ({ p
   await expect(page.getByText('Your app is taking shape.')).toBeVisible();
 });
 
-test('live preview stays stable and recovers only from its own expiry message', async ({ page }) => {
-  await page.clock.install();
-  await fixture(page);
-  await expect(page.locator('.stage-body iframe')).toBeVisible();
-  const initialUrl = await page.locator('.stage-body iframe').getAttribute('src');
-  await page.clock.fastForward(300_000);
-  await expect(page.locator('.stage-body iframe')).toHaveAttribute('src', initialUrl!);
-  await page.evaluate(() => window.postMessage({ type: 'preview:requestRefresh' }, '*'));
-  await expect(page.locator('.stage-body iframe')).toHaveAttribute('src', initialUrl!);
-  const preview = page.frames().find(frame => frame.url() === initialUrl)!;
-  await preview.evaluate(() => window.parent.postMessage({ type: 'preview:requestRefresh' }, '*'));
-  await expect(page.locator('.stage-body iframe')).not.toHaveAttribute('src', initialUrl!);
-  await expect(page.locator('.stage-body iframe')).toBeVisible();
-});
-
 test('rejected access preserves prompt and allows retry without uncertain creation warning', async ({ page }) => {
   await page.route('**/api/base44', route => route.fulfill({ status: 401, contentType: 'application/json',
     body: JSON.stringify({ error: 'Sign in to continue.' }) }));

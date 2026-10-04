@@ -8,7 +8,7 @@ import { useApps } from "../useApps";
 import AppsPage from "./AppsPage";
 import Builder from "./Builder";
 import EditorPanel from "./EditorPanel";
-import PreviewFrame from "./PreviewFrame";
+import AppPreview from "./AppPreview";
 import TinySunnyLogo from "./TinySunnyLogo";
 
 // Tiny's one screen: the apps page or an open app, with the assistant beside it.
@@ -73,7 +73,7 @@ export default function Workspace({ name }: { name: string }) {
             </header>
             <div className="stage-body">
               {editor.app ? (
-                <PreviewFrame key={editor.app.id} app={editor.app} live title={`${editor.app.name || "Untitled"} preview`} />
+                <AppPreview key={editor.app.id} app={editor.app} live title={`${editor.app.name || "Untitled"} preview`} />
               ) : (
                 <div className="widget-placeholder">
                   Describe what you want to build. The preview appears here once the app exists.
