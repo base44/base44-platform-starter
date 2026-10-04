@@ -58,3 +58,6 @@ export const getPublishedUrl = (appId: string) =>
 export const listApps = (skip = 0) => call<AppPage>("listApps", { skip });
 
 export const removeApp = (appId: string) => call("removeApp", { appId });
+
+export const openBuilderSession = (appId: string) =>
+  call<{ serverUrl: string; sessionToken: string }>("openBuilderSession", { appId });

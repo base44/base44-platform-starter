@@ -34,6 +34,7 @@ export type ToolInput = {
 export type AppPage = { apps: App[]; hasMore: boolean; nextSkip: number };
 
 export interface AppClient {
+  openBuilderSession(appId: string): Promise<{ serverUrl: string; sessionToken: string }>;
   createApp(prompt: string): Promise<App>;
   getApp(appId: string): Promise<App>;
   getConversation(appId: string, skip: number): Promise<{ messages: Message[] }>;

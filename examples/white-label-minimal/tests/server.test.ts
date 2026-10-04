@@ -3,10 +3,11 @@ import { afterEach, test } from 'node:test';
 import { createHandler } from '../lib/server/api-handler';
 import { createBase44Client } from '../lib/base44/client';
 import { Base44Error } from '../lib/base44/error';
+import { openSocketSession } from '../lib/base44/socket-session';
 let signedIn = true;
 const POST = createHandler(async () => {
   if (!signedIn) throw new Base44Error('Sign in to continue.', 401);
-  return { ...createBase44Client('user-token-canary'), authorize: async (id: string) => {
+  return { ...createBase44Client('user-token-canary'), openBuilderSession: openSocketSession, authorize: async (id: string) => {
     if (id === 'other_app') throw new Base44Error('App not found.', 404);
   }, removeApp: async () => ({}), listApps: async () => ({ apps: [], hasMore: false, nextSkip: 0 }) };
 });
@@ -189,4 +190,26 @@ test('remove requires ownership and never calls the upstream app deletion API', 
     ? new Response('{"message":"Preview not available yet"}', { status: 404, headers: { 'content-type': 'application/json' } })
     : Response.json({ id: 'app_2', slug: 'other' });
   assert.equal((await (await request({ action: 'getApp', appId: 'app_2' })).json()).static_preview_url, undefined);
+});
+
+test('the live-updates session opens with the workspace key only after sign-in and app ownership', async () => {
+  const calls = setup({ session_id: 'session_1', session_token: 'wlst_canary', socket_url: 'https://platform.example/ws' });
+  process.env.BASE44_SVC_KEY = 'b44k_workspace';
+  const response = await request({ action: 'openBuilderSession', appId: 'app_1' });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { serverUrl: 'https://platform.example', sessionToken: 'wlst_canary' });
+  assert.equal(calls[0].url, 'https://platform.example/api/service/socket-sessions');
+  assert.equal(new Headers(calls[0].init!.headers).get('authorization'), 'Bearer b44k_workspace');
+  assert.deepEqual(JSON.parse(String(calls[0].init!.body)), { app_ids: ['app_1'] });
+  assert.equal((await request({ action: 'openBuilderSession', appId: 'other_app' })).status, 404);
+  signedIn = false;
+  assert.equal((await request({ action: 'openBuilderSession', appId: 'app_1' })).status, 401);
+  assert.equal(calls.length, 1);
+});
+
+test('a workspace key without the apps:watch scope is reported as configuration', async () => {
+  setup({ error: { code: 'scope_required' } }, 403);
+  const response = await request({ action: 'openBuilderSession', appId: 'app_1' });
+  assert.equal(response.status, 503);
+  assert.match((await response.json()).error, /apps:watch/);
 });
