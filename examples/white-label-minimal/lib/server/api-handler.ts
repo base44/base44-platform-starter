@@ -6,7 +6,7 @@ type Body = ReturnType<typeof bodyReader>;
 // The browser may call only these actions. Each one validates and returns the
 // arguments for the AppClient method of the same name.
 const actions: Record<string, (body: Body) => unknown[]> = {
-  openBuilderSession: (b) => [b.id("appId")],
+  openLiveUpdates: (b) => [b.id("appId")],
   listApps: (b) => [b.skip()],
   createApp: (b) => [b.text("prompt")],
   removeApp: (b) => [b.id("appId")],

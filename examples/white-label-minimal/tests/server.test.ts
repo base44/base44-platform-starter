@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { createHandler } from '../lib/server/api-handler';
-import { base44, getEmbedUrl, openSocketSession } from '../lib/base44/client';
+import { base44, getEmbedUrl, openLiveUpdates } from '../lib/base44/client';
 import { Base44Error } from '../lib/base44/error';
 let signedIn = true;
 const POST = createHandler(async () => {
   if (!signedIn) throw new Base44Error('Sign in to continue.', 401);
-  return { ...base44, openBuilderSession: openSocketSession,
+  return { ...base44, openLiveUpdates,
     getLatestBuildUrl: (id: string) => getEmbedUrl(id, 'builder@example.com', 'latest_preview'),
     getPreviewUrl: async (id: string) => {
       const { url } = await getEmbedUrl(id, 'builder@example.com', 'live_preview');
@@ -189,21 +189,21 @@ test('the latest build is a one-time sign-in URL for the session user, minted wi
 test('the live-updates session opens with the workspace key only after sign-in and app ownership', async () => {
   const calls = setup({ session_id: 'session_1', session_token: 'wlst_canary', socket_url: 'https://platform.example/ws' });
   process.env.BASE44_SVC_KEY = 'b44k_workspace';
-  const response = await request({ action: 'openBuilderSession', appId: 'app_1' });
+  const response = await request({ action: 'openLiveUpdates', appId: 'app_1' });
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { serverUrl: 'https://platform.example', sessionToken: 'wlst_canary' });
   assert.equal(calls[0].url, 'https://platform.example/api/service/socket-sessions');
   assert.equal(new Headers(calls[0].init!.headers).get('authorization'), 'Bearer b44k_workspace');
   assert.deepEqual(JSON.parse(String(calls[0].init!.body)), { app_ids: ['app_1'] });
-  assert.equal((await request({ action: 'openBuilderSession', appId: 'other_app' })).status, 404);
+  assert.equal((await request({ action: 'openLiveUpdates', appId: 'other_app' })).status, 404);
   signedIn = false;
-  assert.equal((await request({ action: 'openBuilderSession', appId: 'app_1' })).status, 401);
+  assert.equal((await request({ action: 'openLiveUpdates', appId: 'app_1' })).status, 401);
   assert.equal(calls.length, 1);
 });
 
 test('a workspace key without the apps:watch scope is reported as configuration', async () => {
   setup({ error: { code: 'scope_required' } }, 403);
-  const response = await request({ action: 'openBuilderSession', appId: 'app_1' });
+  const response = await request({ action: 'openLiveUpdates', appId: 'app_1' });
   assert.equal(response.status, 503);
   assert.match((await response.json()).error, /apps:watch/);
 });

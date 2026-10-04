@@ -33,7 +33,7 @@ export const base44 = {
   sendMessage: (id: string, content: string) => post(`${app(id)}/chat/message`, { content }),
 
   // 2. Watch it build. Tiny reads status.state here, and receives the chat over
-  //    the live-updates socket (openSocketSession below).
+  //    the live-updates socket (openLiveUpdates below).
   getApp: async (id: string) => toApp(await request(app(id))),
 
   // 3. Answer the agent's questions: the UI for each waiting_on.kind is
@@ -91,7 +91,7 @@ export async function getEmbedUrl(
 
 // Live updates: a read-only socket session for one app. The browser gets only
 // the session token. The workspace key needs the apps:watch scope.
-export async function openSocketSession(appId: string) {
+export async function openLiveUpdates(appId: string) {
   try {
     const data = await request("/api/service/socket-sessions", {
       body: { app_ids: [appId] },

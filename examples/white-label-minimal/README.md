@@ -19,7 +19,7 @@ each part of them lives in one place here:
 | [Tenancy and credentials](https://docs.base44.com/developers/white-label/tenancy-and-credentials) | [lib/base44/config.ts](lib/base44/config.ts), `request` in [lib/base44/client.ts](lib/base44/client.ts) |
 | Keeping builders apart | [lib/server/api-handler.ts](lib/server/api-handler.ts), [lib/storage/app-repository.ts](lib/storage/app-repository.ts) |
 | [The build turn](https://docs.base44.com/developers/white-label/the-build-turn), steps 1–6 | [lib/base44/client.ts](lib/base44/client.ts), one commented section per step |
-| Watch it build (live, instead of polling) | `openSocketSession` in [lib/base44/client.ts](lib/base44/client.ts), [lib/chat/live-updates.ts](lib/chat/live-updates.ts) |
+| Watch it build (live, instead of polling) | `openLiveUpdates` in [lib/base44/client.ts](lib/base44/client.ts), [lib/chat/live-updates.ts](lib/chat/live-updates.ts) |
 | Answer the agent's questions | [components/Question.tsx](components/Question.tsx), one UI per `waiting_on.kind` |
 | Publish the app | `publish()` in [components/Builder.tsx](components/Builder.tsx) |
 | [Embed the app](https://docs.base44.com/developers/white-label/embed-the-app) | `getEmbedUrl` in [lib/base44/client.ts](lib/base44/client.ts), used for every preview |
@@ -103,11 +103,11 @@ The chat updates live over the Base44 platform socket, through the Platform SDK,
 [`@base44/platform`](https://github.com/base44/javascript-sdk/tree/main/packages/platform).
 
 ```text
-components/useBuilderSocket.ts → lib/chat/live-updates.ts → @base44/platform
+components/useLiveUpdates.ts → lib/chat/live-updates.ts → @base44/platform
 lib/chat/builder-api.ts → app/api/base44/route.ts → lib/base44/client.ts
 ```
 
-1. **Server** (`openSocketSession` in [client.ts](lib/base44/client.ts)): after the usual
+1. **Server** (`openLiveUpdates` in [client.ts](lib/base44/client.ts)): after the usual
    sign-in and app-ownership checks, opens a read-only session for one app with the
    workspace key. `BASE44_SVC_KEY` needs the `apps:watch` scope. Only the session
    token reaches the browser.
@@ -115,7 +115,7 @@ lib/chat/builder-api.ts → app/api/base44/route.ts → lib/base44/client.ts
    token and subscribes to the app. A snapshot (status and the last 50 messages)
    arrives on every connect; then `message.updated`, `message.removed` and
    `app.status_changed` keep the chat current.
-3. **React** ([useBuilderSocket.ts](components/useBuilderSocket.ts)): holds the
+3. **React** ([useLiveUpdates.ts](components/useLiveUpdates.ts)): holds the
    state and shows one error with **Reconnect live updates** if the connection stops.
 
 Kept out to stay minimal; add them in production:

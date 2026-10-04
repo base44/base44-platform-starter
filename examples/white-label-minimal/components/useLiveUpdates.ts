@@ -1,42 +1,41 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { getApp } from "../lib/chat/builder-api";
-import { watchApp } from "../lib/chat/live-updates";
+import { watchLiveUpdates } from "../lib/chat/live-updates";
 import type { App, Message } from "../lib/types";
 
-// The app, its chat and the connection state, kept live over the Base44 socket.
-export function useBuilderSocket(appId: string | null) {
+// The app and its chat, kept current by Base44's live updates.
+export function useLiveUpdates(appId: string | null) {
   const [app, setApp] = useState<App | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
-  const [loaded, setLoaded] = useState("");
-  const key = `${appId}:${attempt}`;
-
-  const refresh = useCallback(async () => {
-    if (appId) setApp(await getApp(appId));
-  }, [appId]);
+  // Each app and reconnect is a new session. It is loading until it delivers
+  // its first snapshot or fails.
+  const session = `${appId}:${attempt}`;
+  const [readySession, setReadySession] = useState("");
+  const loading = !!appId && readySession !== session;
 
   useEffect(() => {
     if (!appId) return;
     let stopped = false;
-    let stop: (() => void) | undefined;
+    let close: (() => void) | undefined;
     const readApp = () => getApp(appId).then((next) => { if (!stopped) setApp(next); });
     const fail = () => {
       if (stopped) return;
       stopped = true;
-      stop?.();
+      close?.();
       setError("Live updates paused. Reconnect to continue.");
-      setLoaded(key);
+      setReadySession(session);
     };
 
     readApp().catch(fail);
-    watchApp(appId, {
+    watchLiveUpdates(appId, {
       onMessages(update) {
         if (stopped) return;
         setMessages(update);
         setError("");
-        setLoaded(key);
+        setReadySession(session);
       },
       onStatus(status) {
         if (stopped) return;
@@ -45,21 +44,25 @@ export function useBuilderSocket(appId: string | null) {
         if (status?.state === "ready") readApp().catch(() => {});
       },
       onError: fail,
-    }).then((close) => (stopped ? close() : (stop = close)), fail);
+    }).then((stop) => (stopped ? stop() : (close = stop)), fail);
 
     return () => {
       stopped = true;
-      stop?.();
+      close?.();
     };
-  }, [appId, key]);
+  }, [appId, session]);
 
-  const loading = !!appId && loaded !== key;
+  // After a prompt or an answer, read the app's status right away.
+  const refresh = useCallback(async () => {
+    if (appId) setApp(await getApp(appId));
+  }, [appId]);
+
   return {
     app: app?.id === appId ? app : null,
     messages: loading ? [] : messages,
     error,
     loading,
     refresh,
-    resume: () => setAttempt((n) => n + 1),
+    reconnect: () => setAttempt((n) => n + 1),
   };
 }

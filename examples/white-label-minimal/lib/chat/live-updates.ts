@@ -1,7 +1,6 @@
-import { Base44PlatformClient, type AppStatus } from "@base44/platform";
+import { Base44PlatformClient, type AppStatus, type ChatMessage } from "@base44/platform";
 import type { Message } from "../types";
-import { openBuilderSession } from "./builder-api";
-import { toMessage, upsertMessage } from "./live-messages";
+import { openLiveUpdates } from "./builder-api";
 
 export type LiveUpdateHandlers = {
   onMessages: (update: (messages: Message[]) => Message[]) => void;
@@ -9,17 +8,17 @@ export type LiveUpdateHandlers = {
   onError: () => void;
 };
 
-// Watches one app's builder chat over the Base44 socket. Resolves to a function
-// that stops watching.
-export async function watchApp(appId: string, handlers: LiveUpdateHandlers) {
-  const session = await openBuilderSession(appId);
+// Watches one app's chat and status over Base44's live-updates socket.
+// Resolves to a function that stops watching.
+export async function watchLiveUpdates(appId: string, handlers: LiveUpdateHandlers) {
+  const session = await openLiveUpdates(appId);
   let firstToken: string | undefined = session.sessionToken;
   const client = new Base44PlatformClient({
     serverUrl: session.serverUrl,
     // The first connection uses the session opened above. The SDK calls this
     // again only when that session has ended, and our server opens a new one.
     async getSessionToken() {
-      const token = firstToken ?? (await openBuilderSession(appId)).sessionToken;
+      const token = firstToken ?? (await openLiveUpdates(appId)).sessionToken;
       firstToken = undefined;
       return token;
     },
@@ -47,4 +46,28 @@ export async function watchApp(appId: string, handlers: LiveUpdateHandlers) {
   });
   await builder.connect();
   return () => builder.close();
+}
+
+// Converts a live-updates message to the shape this example's chat UI renders.
+export function toMessage(message: ChatMessage): Message {
+  return {
+    id: message.id ?? "",
+    role: message.role,
+    content: message.content,
+    tool_calls: message.tool_calls?.map((tool) => ({
+      id: tool.id,
+      name: tool.name,
+      status: tool.status,
+      waiting_on: tool.waiting_on,
+      arguments_string: tool.arguments ? JSON.stringify(tool.arguments) : null,
+      results: typeof tool.results === "string" ? tool.results : undefined,
+    })),
+  };
+}
+
+// Replaces the message with the same id, or appends it.
+export function upsertMessage(messages: Message[], message: Message): Message[] {
+  return messages.some((m) => m.id === message.id)
+    ? messages.map((m) => (m.id === message.id ? message : m))
+    : [...messages, message];
 }

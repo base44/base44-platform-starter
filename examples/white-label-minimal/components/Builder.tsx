@@ -6,7 +6,7 @@ import { hasCompletedBuild } from "../lib/chat/build-readiness";
 import { mergeOptimisticMessages, type OptimisticMessage } from "../lib/chat/optimistic-messages";
 import type { App, ToolInput } from "../lib/types";
 import BuilderChat from "./BuilderChat";
-import { useBuilderSocket } from "./useBuilderSocket";
+import { useLiveUpdates } from "./useLiveUpdates";
 
 export default function Builder({
   initialAppId,
@@ -27,19 +27,19 @@ export default function Builder({
   const [optimistic, setOptimistic] = useState<OptimisticMessage[]>([]);
   const [publishedUrl, setPublishedUrl] = useState<string | null>(null);
   const lock = useRef(false);
-  const { app, messages, error: socketError, loading, refresh, resume } = useBuilderSocket(appId);
+  const { app, messages, error: liveError, loading, refresh, reconnect } = useLiveUpdates(appId);
   const displayedMessages = useMemo(() => mergeOptimisticMessages(messages, optimistic), [messages, optimistic]);
   useEffect(() => {
     if (app) onUpdated?.(app);
   }, [app, onUpdated]);
   const waiting = messages.some((m) => m.tool_calls?.some((t) => t.status === "waiting_for_user_input"));
   const processing = app?.status?.state === "processing";
-  const composerDisabled = loading || !!busy || waiting || processing || !!socketError || creationUncertain;
+  const composerDisabled = loading || !!busy || waiting || processing || !!liveError || creationUncertain;
   // A prompt/answer invalidates the previous ready state before live updates catch up.
   // Preview and deploy operations themselves should keep the card mounted.
   const submittingBuild = busy === "Sending prompt…" || busy === "Answering question…";
   const canDeliver = app?.id === appId && app?.status?.state === "ready" &&
-    !waiting && !socketError && !submittingBuild && hasCompletedBuild(messages);
+    !waiting && !liveError && !submittingBuild && hasCompletedBuild(messages);
 
   async function send(prompt: string) {
     if (lock.current || composerDisabled || !prompt.trim()) return false;
@@ -108,16 +108,16 @@ export default function Builder({
           the conversation and send a follow-up prompt.
         </p>
       )}
-      {(error || socketError) && (
+      {(error || liveError) && (
         <aside role="alert">
-          <p>{error || socketError}</p>
+          <p>{error || liveError}</p>
           {appId && (
             <button
               className="secondary"
               disabled={!!busy}
               onClick={() => {
                 setError("");
-                resume();
+                reconnect();
               }}
             >
               Reconnect live updates
@@ -167,7 +167,7 @@ export default function Builder({
         processing={processing}
         waiting={waiting}
         disabled={composerDisabled}
-        questionsDisabled={!!busy || !!socketError}
+        questionsDisabled={!!busy || !!liveError}
         onSend={send}
         onAnswer={answer}
       >
@@ -191,10 +191,10 @@ export default function Builder({
             )}
           </section>
         )}
-        {(busy || waiting || processing || socketError) && (
+        {(busy || waiting || processing || liveError) && (
           <div className="build-progress" role="status">
             {(busy || processing) && <Loader2 size={12} className="spin" />}
-            {busy || (socketError ? "Connection paused" : waiting ? "Waiting for your answer" : "Building…")}
+            {busy || (liveError ? "Connection paused" : waiting ? "Waiting for your answer" : "Building…")}
           </div>
         )}
       </BuilderChat>

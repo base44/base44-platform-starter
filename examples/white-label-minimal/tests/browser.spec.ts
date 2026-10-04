@@ -34,7 +34,7 @@ async function pushUpdates(page: Page) {
 test.beforeEach(async ({ page }) => {
   const route = page.route.bind(page);
   page.route = ((url: string, handler: (route: Route) => unknown, options?: object) => route(url, url === '**/api/base44'
-    ? (r: Route) => r.request().postDataJSON()?.action === 'openBuilderSession'
+    ? (r: Route) => r.request().postDataJSON()?.action === 'openLiveUpdates'
       ? r.fulfill({ json: { serverUrl: 'https://socket.example', sessionToken: 'wlst_fixture' } })
       : handler(r)
     : handler, options)) as Page['route'];
