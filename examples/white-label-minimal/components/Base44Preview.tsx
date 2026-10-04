@@ -88,7 +88,7 @@ function PreviewSession({ appId, live = false, title, staticUrl, screenshotUrl, 
   const retry = () => { setUrl(""); setLoaded(false); setError(""); setAttempt(value => value + 1); };
   const frameProps = { referrerPolicy: "no-referrer" as const, sandbox: "allow-scripts allow-same-origin allow-forms allow-popups" };
   return <div className="preview-frame">
-    {!loaded && (staticUrl ? <iframe key={`static-${attempt}`} title={title} src={staticUrl} loading="lazy" {...frameProps} />
+    {!loaded && (staticUrl ? <iframe key={`static-${attempt}`} title={title} src={staticUrl} {...frameProps} />
       : screenshotUrl ? <img className="preview-fallback" src={screenshotUrl} alt={`${title} screenshot`} />
       : live && !error ? <div className="widget-placeholder" role="status">
           <span className="preview-spinner" aria-hidden="true" />

@@ -446,9 +446,10 @@ test('the empty state owns its CTA and app cards render their build', async ({ p
   let previews = 0;
   await page.route('https://preview.example/**', route => route.fulfill({ contentType: 'text/html', body: '<h1>Working app</h1>' }));
   await page.route('**/api/base44', route => {
+    if (route.request().postDataJSON().action === 'getLatestBuildUrl') return route.fulfill({ json: { url: 'https://preview.example/static' } });
     const { action } = route.request().postDataJSON();
     return route.fulfill({ json: action === 'listApps'
-      ? { apps: populated ? [{ id: 'reading', name: 'Reading list', static_preview_url: 'https://preview.example/static' }] : [], hasMore: false }
+      ? { apps: populated ? [{ id: 'reading', name: 'Reading list' }] : [], hasMore: false }
       : { url: `https://preview.example/?token=${++previews}` } });
   });
   await page.goto('/');
@@ -472,10 +473,11 @@ test('the empty state owns its CTA and app cards render their build', async ({ p
 
 test('the card, the chat thumbnail and the stage show the same app', async ({ page }) => {
   const screenshot = 'https://preview.example/thumbnail.svg';
-  const app = { id: 'reading', name: 'Reading list', static_preview_url: 'https://preview.example/static', preview_screenshot_url: screenshot, status: { state: 'ready' } };
+  const app = { id: 'reading', name: 'Reading list', preview_screenshot_url: screenshot, status: { state: 'ready' } };
   await page.route('https://preview.example/**', route => route.fulfill({ contentType: 'text/html', body: '<h1>Reading app</h1>' }));
   await page.route(screenshot, route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="skyblue"/></svg>' }));
   await page.route('**/api/base44', route => {
+    if (route.request().postDataJSON().action === 'getLatestBuildUrl') return route.fulfill({ json: { url: 'https://preview.example/static' } });
     const { action } = route.request().postDataJSON();
     return route.fulfill({ json: action === 'listApps' ? { apps: [app], hasMore: false }
       : action === 'getConversation' ? { messages: [{ id: 'built', role: 'assistant', content: 'Ready', tool_calls: [{ id: 'file', name: 'write_file', status: 'success' }] }] }
@@ -525,7 +527,7 @@ test('remove persists, handles failures, and New app lives in the topbar', async
     const { action, skip, appId } = route.request().postDataJSON();
     if (action === 'listApps') {
       skips.push(skip);
-      return route.fulfill({ json: { apps: [{ id: skip ? 'second' : 'first', name: skip ? 'Second app' : 'First app', static_preview_url: `https://widgets.example/${skip}` }], hasMore: !skip, nextSkip: skip + 12 } });
+      return route.fulfill({ json: { apps: [{ id: skip ? 'second' : 'first', name: skip ? 'Second app' : 'First app' }], hasMore: !skip, nextSkip: skip + 12 } });
     }
     return route.fulfill({ json: { url: `https://widgets.example/${appId}` } });
   });
@@ -550,8 +552,9 @@ test('remove persists, handles failures, and New app lives in the topbar', async
     await new Promise<void>(resolve => { release = resolve; });
     await route.fulfill({ contentType: 'text/html', body: '<h1>Live build</h1>' });
   });
-  const app = { id: 'reading', name: 'Reading list', static_preview_url: 'https://static.example/app', status: { state: 'ready' } };
+  const app = { id: 'reading', name: 'Reading list', status: { state: 'ready' } };
   await page.route('**/api/base44', route => {
+    if (route.request().postDataJSON().action === 'getLatestBuildUrl') return route.fulfill({ json: { url: 'https://static.example/app' } });
     const { action } = route.request().postDataJSON();
     if (action === 'getPreviewUrl') { requests++; return route.fulfill({ json: { url: 'https://live.example/app' } }); }
     return route.fulfill({ json: action === 'listApps' ? { apps: [app], hasMore: false } : action === 'getConversation' ? { messages: [] } : app });

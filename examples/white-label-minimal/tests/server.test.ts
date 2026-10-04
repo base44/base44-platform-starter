@@ -4,10 +4,12 @@ import { createHandler } from '../lib/server/api-handler';
 import { base44 } from '../lib/base44/client';
 import { Base44Error } from '../lib/base44/error';
 import { openSocketSession } from '../lib/base44/socket-session';
+import { getEmbedUrl } from '../lib/base44/embed';
 let signedIn = true;
 const POST = createHandler(async () => {
   if (!signedIn) throw new Base44Error('Sign in to continue.', 401);
-  return { ...base44, openBuilderSession: openSocketSession, authorize: async (id: string) => {
+  return { ...base44, openBuilderSession: openSocketSession,
+    getLatestBuildUrl: (id: string) => getEmbedUrl(id, 'builder@example.com', 'latest_preview'), authorize: async (id: string) => {
     if (id === 'other_app') throw new Base44Error('App not found.', 404);
   }, removeApp: async () => ({}), listApps: async () => ({ apps: [], hasMore: false, nextSkip: 0 }) };
 });
@@ -158,26 +160,24 @@ test('remove requires ownership and never calls the upstream app deletion API', 
   assert.equal(calls.length, 0);
 });
 
-test('a static preview is only offered once the derived URL serves a build', async () => {
-  // The URL is derived from the slug, not returned by Base44, so it can name a
-  // build that does not exist; the host then answers with a JSON error that an
-  // iframe would render as raw JSON. Hence the probe.
-  const { withStaticPreview } = await import('../lib/server/static-preview');
-  process.env.BASE44_STATIC_PREVIEW_DOMAIN = 'preview.example';
-  const derived = 'https://preview--my-app.preview.example';
+test('the latest build is a one-time sign-in URL for the session user, minted with the workspace key', async () => {
+  const calls = setup({ status: 'exists', embed_url: 'https://reading.example/?ott=once', expires_in: 60 });
+  const response = await request({ action: 'getLatestBuildUrl', appId: 'app_1' });
+  assert.deepEqual(await response.json(), { url: 'https://reading.example/?ott=once' });
+  assert.deepEqual(calls.map(c => new URL(c.url).pathname), ['/api/apps/app_1/users/provisions', '/api/apps/app_1/embed-tokens']);
+  for (const call of calls) {
+    const headers = new Headers(call.init?.headers);
+    assert.equal(headers.get('api_key'), 'b44k_workspace');
+    assert.equal(headers.get('X-Active-Workspace-Id'), 'workspace_1');
+    assert.equal(JSON.parse(String(call.init?.body)).email, 'builder@example.com');
+  }
+  assert.equal(JSON.parse(String(calls[1].init?.body)).target, 'latest_preview');
 
-  const probed: string[] = [];
-  globalThis.fetch = async (url) => {
-    probed.push(String(url));
-    return new Response('<!doctype html><title>App</title>', { headers: { 'content-type': 'text/html' } });
-  };
-  assert.equal((await withStaticPreview({ id: 'app_1', slug: 'my-app' })).static_preview_url, derived);
-  assert.deepEqual(probed, [derived]);
-
-  // A different slug, so the probe cache cannot answer for it.
-  globalThis.fetch = async () =>
-    new Response('{"message":"Preview not available yet"}', { status: 404, headers: { 'content-type': 'application/json' } });
-  assert.equal((await withStaticPreview({ id: 'app_2', slug: 'other' })).static_preview_url, undefined);
+  // Before the first build there is nothing to sign into: no URL, not an error.
+  setup({ error: { code: 'app_has_no_slug' } }, 400);
+  const early = await request({ action: 'getLatestBuildUrl', appId: 'app_1' });
+  assert.equal(early.status, 200);
+  assert.deepEqual(await early.json(), { url: null });
 });
 
 test('the live-updates session opens with the workspace key only after sign-in and app ownership', async () => {

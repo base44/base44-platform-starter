@@ -22,6 +22,7 @@ each part of them lives in one place here:
 | Watch it build (live, instead of polling) | [lib/base44/socket-session.ts](lib/base44/socket-session.ts), [lib/chat/live-updates.ts](lib/chat/live-updates.ts) |
 | Answer the agent's questions | [components/Question.tsx](components/Question.tsx), one UI per `waiting_on.kind` |
 | Publish the app | `publish()` in [components/Builder.tsx](components/Builder.tsx) |
+| [Embed the app](https://docs.base44.com/developers/white-label/embed-the-app) | [lib/base44/embed.ts](lib/base44/embed.ts), used for the latest build in each app card |
 | [Custom instructions](https://docs.base44.com/developers/white-label/custom-instructions) | [lib/base44/custom-instructions.ts](lib/base44/custom-instructions.ts) |
 
 Everything else is Tiny's own product: sign-in, the app list, and the chat UI.
@@ -150,17 +151,23 @@ npm run minimal:build
 API tests cover session checks, ownership, validation, and upstream failures.
 Browser tests use a separate fixture app with mocked Base44 responses.
 
-### Static and live previews
+### Latest build and live previews
 
-Browsing uses `https://preview--{slug}.{BASE44_STATIC_PREVIEW_DOMAIN}`. Set
-`BASE44_STATIC_PREVIEW_DOMAIN` to the preview hosting domain confirmed for your
-Base44 environment. Without it, browsing uses screenshots or placeholders. This URL is derived by Tiny in `lib/server/static-preview.ts`, not returned by Base44.
-Apps without a slug show a screenshot or placeholder; browsing never starts a sandbox.
-Editing requests a live preview and keeps static visible until the live iframe loads.
-A load event only controls the visual transition; it does not verify app health.
-Edited widgets remain live for the page session instead of silently switching to a
-potentially stale static build. Recovery checks the source window and live origin of `preview:requestRefresh` messages, with at most three recovery attempts per preview session and no retries on authorization failures. This observed Base44 message is not a confirmed public contract, so manual refresh remains available. Recovery reloads the iframe using its last parent-supplied path and parameters; cross-origin navigation inside the app cannot be preserved without a supported bridge. No private
-build-status, runtime-auth, or heartbeat endpoints are used.
+Tiny shows two versions of an app, both from documented Base44 calls:
+
+- **Latest build** (app cards, and the stage until the live preview loads): the server
+  signs the builder into the app with [Embed the app](https://docs.base44.com/developers/white-label/embed-the-app)
+  and `target: "latest_preview"` ([lib/base44/embed.ts](lib/base44/embed.ts)). The URL works once and
+  expires in 60 seconds, so [PreviewFrame](components/PreviewFrame.tsx) asks for a new one when it mounts and
+  after each build. It needs no sandbox. Before the first build there is no URL, and the card shows
+  the screenshot or a placeholder.
+- **Live preview** (while editing): [Get preview URL](https://docs.base44.com/api-reference/get-preview-url),
+  step 5 of the build turn. It runs the app's sandbox and shows each change as the agent makes it.
+
+The live frame keeps the latest build visible until it loads. Recovery checks the source window and
+live origin of `preview:requestRefresh` messages, with at most three attempts per preview session and no
+retries on authorization failures. This observed Base44 message is not a confirmed public contract, so
+manual refresh remains available.
 
 ### Reusing the preview component
 
@@ -170,7 +177,7 @@ build-status, runtime-auth, or heartbeat endpoints are used.
 <Base44Preview
   appId={app.id}
   title="App preview"
-  staticUrl={app.static_preview_url}
+  staticUrl={latestBuildUrl}
   screenshotUrl={app.preview_screenshot_url}
   live={editing}
   loadPreview={getPreviewUrl}

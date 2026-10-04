@@ -2,7 +2,6 @@ export type App = {
   id: string;
   name?: string;
   slug?: string | null;
-  static_preview_url?: string;
   preview_screenshot_url?: string;
   logo_url?: string;
   user_description?: string;
@@ -38,6 +37,7 @@ export type AppPage = { apps: App[]; hasMore: boolean; nextSkip: number };
 
 export interface AppClient {
   openBuilderSession(appId: string): Promise<{ serverUrl: string; sessionToken: string }>;
+  getLatestBuildUrl(appId: string): Promise<{ url: string | null }>;
   createApp(prompt: string): Promise<App>;
   getApp(appId: string): Promise<App>;
   sendMessage(appId: string, content: string): Promise<object>;

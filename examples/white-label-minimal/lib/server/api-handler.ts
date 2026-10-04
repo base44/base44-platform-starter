@@ -20,6 +20,7 @@ const actions: Record<string, (body: Body) => unknown[]> = {
     extraUserInput: b.object("extraUserInput"),
   }],
   getPreviewUrl: (b) => [b.id("appId")],
+  getLatestBuildUrl: (b) => [b.id("appId")],
   deployApp: (b) => [b.id("appId")],
   getPublishedUrl: (b) => [b.id("appId")],
 };

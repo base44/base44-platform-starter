@@ -49,6 +49,8 @@ export const sendMessage = (appId: string, content: string) =>
   call("sendMessage", { appId, content });
 export const submitToolCallInput = (input: ToolInput) => call("submitToolCallInput", input);
 export const getPreviewUrl = (appId: string) => call<{ url: string }>("getPreviewUrl", { appId });
+export const getLatestBuildUrl = (appId: string) =>
+  call<{ url: string | null }>("getLatestBuildUrl", { appId });
 export const deployApp = (appId: string) => call("deployApp", { appId });
 export const getPublishedUrl = (appId: string) =>
   call<{ url: string | null }>("getPublishedUrl", { appId });
