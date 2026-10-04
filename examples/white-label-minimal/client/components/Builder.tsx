@@ -8,8 +8,9 @@ import BuilderChat from "./BuilderChat";
 import ReadyCard from "./ReadyCard";
 
 // The builder's chat for one app. The logic is in useBuildTurn; this only shows it.
-export default function Builder({ initialAppId, onCreated, onUpdated, onGoHome }: {
+export default function Builder({ initialAppId, autoFocus, onCreated, onUpdated, onGoHome }: {
   initialAppId?: string;
+  autoFocus?: boolean;
   onCreated?: (app: App) => void;
   onUpdated?: (app: App) => void;
   onGoHome?: () => void;
@@ -41,6 +42,7 @@ export default function Builder({ initialAppId, onCreated, onUpdated, onGoHome }
       )}
       <BuilderChat
         appId={appId}
+        autoFocus={autoFocus}
         messages={messages}
         state={state}
         busy={!!busy}

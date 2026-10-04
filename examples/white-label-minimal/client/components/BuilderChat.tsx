@@ -21,6 +21,7 @@ import ToolActivity from "./ToolActivity";
 
 type Props = {
   appId: string | null;
+  autoFocus?: boolean;
   messages: Message[];
   state: ChatState;
   busy: boolean;
@@ -35,7 +36,7 @@ type Props = {
 // assistant-ui renders part components itself.
 const ChatContext = createContext<Pick<Props, "appId" | "questionsDisabled" | "onAnswer"> | null>(null);
 
-export default function BuilderChat({ appId, messages, state, busy, canSend, questionsDisabled, onSend, onAnswer, children }: Props) {
+export default function BuilderChat({ appId, autoFocus, messages, state, busy, canSend, questionsDisabled, onSend, onAnswer, children }: Props) {
   const loading = state === "loading";
   const waiting = state === "question";
   const visibleMessages = useMemo(() => messages.filter((m) => !m.hidden), [messages]);
@@ -73,6 +74,7 @@ export default function BuilderChat({ appId, messages, state, busy, canSend, que
               aria-label={appId ? "What should change?" : "What would you like to build?"}
               placeholder={waiting ? "Answer the question above…" : appId ? "Describe a change…" : "Describe the app you want…"}
               maxLength={16000}
+              autoFocus={autoFocus}
               rows={1}
               maxRows={4}
             />
