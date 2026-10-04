@@ -70,13 +70,43 @@ provisions a service principal using the workspace key. Builder requests use its
 stored token; they do not provision identities or send credentials to the browser.
 The API handler validates requests and checks app ownership before app operations.
 
-For the chat UI, copy `components/`, `lib/chat/builder-api.ts`, `lib/chat/conversation.ts`,
-and `lib/chat/assistant-messages.ts`. The chat uses assistant-ui's external-store runtime
-with Base44's polled conversation as its source of truth. `Question.tsx` handles
+For the chat UI, copy `components/`, `lib/chat/`, and `lib/base44/socket-session.ts`.
+The chat uses assistant-ui's external-store runtime with Base44's live updates as its
+source of truth (see below). `Question.tsx` handles
 approvals, choices, and secrets; retries preserve the original answer and request ID.
 Preview URLs stay in page memory and remain stable during normal use. A timed-out
 creation may still succeed, so the UI asks users to check before creating again.
 An app can only be resumed here if its ownership was saved successfully.
+
+## Live builder updates
+
+The chat updates live over the Base44 platform socket, through the Platform SDK,
+[`@base44/platform`](https://github.com/base44/javascript-sdk/tree/main/packages/platform).
+
+```text
+components/useBuilderSocket.ts → lib/chat/live-updates.ts → @base44/platform
+lib/chat/builder-api.ts → app/api/base44/route.ts → lib/base44/socket-session.ts
+```
+
+1. **Server** ([socket-session.ts](lib/base44/socket-session.ts)): after the usual
+   sign-in and app-ownership checks, opens a read-only session for one app with the
+   workspace key. `BASE44_SVC_KEY` needs the `apps:watch` scope. Only the session
+   token reaches the browser.
+2. **Browser** ([live-updates.ts](lib/chat/live-updates.ts)): connects with that
+   token and subscribes to the app. A snapshot (status and the last 50 messages)
+   arrives on every connect; then `message.updated`, `message.removed` and
+   `app.status_changed` keep the chat current.
+3. **React** ([useBuilderSocket.ts](components/useBuilderSocket.ts)): holds the
+   state and shows one error with **Reconnect live updates** if the connection stops.
+
+Kept out to stay minimal; add them in production:
+
+- The session is not closed on leave; it expires after an hour. Workspace keys have
+  a limit on open sessions, so close it (`DELETE /api/service/socket-sessions/{id}`)
+  when the builder unmounts.
+- The chat shows the last 50 messages. Load older ones over HTTP
+  (`getConversation`) if you need full history.
+- Generated images stay as placeholders until the next reconnect (`image.resolved`).
 
 ## Deploy to Netlify
 

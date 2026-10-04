@@ -91,6 +91,10 @@ export function createHandler(resolveClient: () => Promise<AppClient>) {
       let result;
       if (p.appId !== undefined) await client.authorize(id("appId"));
       switch (p.action) {
+        case "openBuilderSession":
+          fields("appId");
+          result = await execute(client.openBuilderSession, id("appId"));
+          break;
         case "listApps": {
           fields("skip");
           result = await execute(client.listApps, skip());

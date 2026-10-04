@@ -1,5 +1,59 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page, type Route } from '@playwright/test';
 import type { ToolCall } from '../lib/types';
+
+// Live updates in every test: our server opens a session, then a fake Base44
+// socket serves the fixture's own conversation and app status.
+const APP = 'aaaaaaaaaaaaaaaaaaaaaaaa';
+const sockets = new WeakMap<Page, { appId: string; send: (event: string, data: object) => void; disconnect: () => void }>();
+
+type FixtureMessage = { hidden?: boolean; tool_calls?: Array<{ arguments_string?: string | null }> | null };
+const parse = (text?: string | null) => { try { return JSON.parse(text ?? ''); } catch { return undefined; } };
+// Base44 never sends hidden messages, and sends tool arguments as objects.
+const toSocket = (messages: FixtureMessage[]) => messages.filter(m => !m.hidden).map(({ hidden: _hidden, ...m }) => ({
+  ...m, tool_calls: m.tool_calls?.map(({ arguments_string, ...tool }) => ({ ...tool, arguments: parse(arguments_string) })),
+}));
+
+async function readFixture(page: Page, appId: string) {
+  return page.evaluate(async appId => {
+    const read = (body: object) => fetch('/api/base44', { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ appId, ...body }) }).then(r => r.json());
+    const [app, conversation] = await Promise.all([read({ action: 'getApp' }), read({ action: 'getConversation', skip: 0 })]);
+    return { status: app.status ?? null, messages: conversation.messages ?? [] };
+  }, appId);
+}
+
+// What Base44 pushes as the build moves on: every message, then the app status.
+async function pushUpdates(page: Page) {
+  const socket = sockets.get(page);
+  if (!socket) throw new Error('The builder socket has not connected');
+  const { status, messages } = await readFixture(page, socket.appId);
+  for (const message of toSocket(messages)) socket.send('message.updated', { message });
+  socket.send('app.status_changed', { status });
+}
+
+test.beforeEach(async ({ page }) => {
+  const route = page.route.bind(page);
+  page.route = ((url: string, handler: (route: Route) => unknown, options?: object) => route(url, url === '**/api/base44'
+    ? (r: Route) => r.request().postDataJSON()?.action === 'openBuilderSession'
+      ? r.fulfill({ json: { serverUrl: 'https://socket.example', sessionToken: 'wlst_fixture' } })
+      : handler(r)
+    : handler, options)) as Page['route'];
+  await page.routeWebSocket('**/ws/socket.io/**', socket => {
+    socket.send('0' + JSON.stringify({ sid: 'fixture', upgrades: [], pingInterval: 3600000, pingTimeout: 3600000, maxPayload: 1000000 }));
+    socket.onMessage(async raw => {
+      const packet = raw.toString();
+      if (packet.startsWith('40')) socket.send('40{"sid":"fixture"}');
+      if (!packet.startsWith('42')) return;
+      const [event, room] = JSON.parse(packet.slice(2));
+      if (event !== 'join') return;
+      const appId = room.split('/').pop();
+      const send = (name: string, data: object) => socket.send('42' + JSON.stringify([name, { room, data }]));
+      sockets.set(page, { appId, send, disconnect: () => socket.send('41') });
+      const { status, messages } = await readFixture(page, appId);
+      send('app.snapshot', { status, messages: toSocket(messages) });
+    });
+  });
+});
 
 async function fixture(page: Page, tool?: ToolCall, failFirst = false) {
   const submissions: Record<string, unknown>[] = [];
@@ -11,8 +65,8 @@ async function fixture(page: Page, tool?: ToolCall, failFirst = false) {
     let json: unknown = {};
     if (p.action === 'listApps') return route.fulfill({ json: { apps: [], hasMore: false } });
     switch (p.action) {
-      case 'createApp': creates++; json = { id: 'app_1' }; break;
-      case 'getApp': json = { id: 'app_1', status: { state: 'ready' } }; break;
+      case 'createApp': creates++; json = { id: APP }; break;
+      case 'getApp': json = { id: APP, status: { state: 'ready' } }; break;
       case 'getConversation': json = { messages: [{ id: 'm1', role: 'assistant', content: 'Your app is taking shape.',
         tool_calls: [{ id: "built-file", name: "write_file", status: "success" }, ...(tool ? [{ ...tool, status }] : [])] }] }; break;
       case 'submitToolCallInput':
@@ -24,6 +78,7 @@ async function fixture(page: Page, tool?: ToolCall, failFirst = false) {
       case 'getPublishedUrl': json = { url: deployments ? 'https://published.example/' : null }; break;
     }
     await route.fulfill({ json });
+    if (p.action === 'submitToolCallInput') void pushUpdates(page);
   });
   await page.goto('/');
   await page.getByRole('button', { name: 'Create an app', exact: true }).click();
@@ -97,20 +152,15 @@ test('uncertain create never retries automatically and offers existing-app recov
   await expect(page.getByRole('button', { name: 'Create app', exact: true })).toBeDisabled();
   expect(creates).toBe(1);
 });
-test('read failure pauses polling, resume restores it', async ({ page }) => {
-  await page.clock.install();
+test('an ended live session pauses updates, reconnect restores them', async ({ page }) => {
   await fixture(page);
-  await page.route('**/api/base44', async route => {
-    if (route.request().postDataJSON().action === 'getApp') return route.fulfill({ status: 503, json: { error: 'Temporary read failure' } });
-    return route.fallback();
-  });
-  await page.clock.fastForward(11_000);
-  await expect(page.getByText('Temporary read failure')).toBeVisible();
-  await page.unroute('**/api/base44');
-  await page.route('**/api/base44', route => route.fulfill({ json: route.request().postDataJSON().action === 'getApp'
-    ? { id: 'app_1', status: { state: 'ready' } } : { messages: [] } }));
-  await page.getByRole('button', { name: 'Resume polling' }).click();
-  await expect(page.getByText('Temporary read failure')).toHaveCount(0);
+  const socket = sockets.get(page)!;
+  socket.send('session.ended', { reason: 'revoked' });
+  socket.disconnect();
+  await expect(page.getByText('Live updates paused. Reconnect to continue.')).toBeVisible();
+  await page.getByRole('button', { name: 'Reconnect live updates' }).click();
+  await expect(page.getByText('Live updates paused. Reconnect to continue.')).toHaveCount(0);
+  await expect(page.getByText('Your app is taking shape.')).toBeVisible();
 });
 
 test('live preview stays stable and recovers only from its own expiry message', async ({ page }) => {
@@ -139,26 +189,6 @@ test('real Next route requires authentication for local browser origins and reje
     headers: { Origin: 'https://foreign.example' }, data: { action: 'unknown' },
   });
   expect(foreign.status()).toBe(403);
-});
-
-test('slow conversation reads do not overlap later polling intervals', async ({ page }) => {
-  await page.clock.install();
-  await fixture(page);
-  let reads = 0;
-  let release = () => {};
-  const pending = new Promise<void>(resolve => { release = resolve; });
-  await page.route('**/api/base44', async route => {
-    if (route.request().postDataJSON().action !== 'getConversation') return route.fallback();
-    reads++;
-    await pending;
-    return route.fulfill({ json: { messages: [] } });
-  });
-  await page.clock.fastForward(11_000);
-  await expect.poll(() => reads).toBe(1);
-  await page.clock.fastForward(40_000);
-  expect(reads).toBe(1);
-  release();
-  await expect(page.getByText('Your app is taking shape.')).toBeVisible();
 });
 
 test('rejected access preserves prompt and allows retry without uncertain creation warning', async ({ page }) => {
@@ -215,7 +245,7 @@ test('My apps shows owned cards and opens the editor without marketplace feature
  test('ordinary tool activity is collapsed and assistant messages render Markdown', async ({ page }) => {
   await page.route('**/api/base44', route => {
     const { action } = route.request().postDataJSON();
-    return route.fulfill({ json: action === 'listApps' ? { apps: [], hasMore: false, nextSkip: 0 } : action === 'getConversation' ? { messages: [{ id: 'm1', role: 'assistant', content: '## Your app is ready\n- **Hello world**', tool_calls: [{ id: 't1', name: 'find_replace', status: 'success', arguments_string: JSON.stringify({ file_path: 'src/index.css', find: 'old', replace: 'new' }) }] }] } : { id: 'app_1', name: 'Hello World', status: { state: 'ready' } } });
+    return route.fulfill({ json: action === 'listApps' ? { apps: [], hasMore: false, nextSkip: 0 } : action === 'getConversation' ? { messages: [{ id: 'm1', role: 'assistant', content: '## Your app is ready\n- **Hello world**', tool_calls: [{ id: 't1', name: 'find_replace', status: 'success', arguments_string: JSON.stringify({ file_path: 'src/index.css', find: 'old', replace: 'new' }) }] }] } : { id: APP, name: 'Hello World', status: { state: 'ready' } } });
   });
   await openBuilder(page);
   await page.getByLabel('What would you like to build?').fill('Hello world app');
@@ -228,8 +258,7 @@ test('My apps shows owned cards and opens the editor without marketplace feature
   await page.screenshot({ path: 'test-results/chat-desktop.png', fullPage: true });
 });
 
-test('assistant-ui preserves inline tools across polling and hides internal messages', async ({ page }) => {
-  await page.clock.install();
+test('assistant-ui preserves inline tools across live updates and hides internal messages', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   const sent: string[] = [];
@@ -245,7 +274,7 @@ test('assistant-ui preserves inline tools across polling and hides internal mess
         { name: 'unknown_question', status: 'waiting_for_user_input', waiting_on: { kind: 'choice' }, arguments_string: '{' },
       ] },
     ] } });
-    return route.fulfill({ json: { id: 'app_1', status: { state: 'ready' } } });
+    return route.fulfill({ json: { id: APP, status: { state: 'ready' } } });
   });
   await openBuilder(page);
   await page.getByLabel('What would you like to build?').fill('Build a notes app');
@@ -259,7 +288,7 @@ test('assistant-ui preserves inline tools across polling and hides internal mess
   await page.locator('.tool-activity summary').click();
   await expect(page.locator('.tool-activity')).toContainText('Working');
   complete = true;
-  await page.clock.fastForward(11_000);
+  await pushUpdates(page);
   await expect(page.locator('.tool-activity')).toContainText('File saved');
   await expect(page.locator('.tool-activity')).toHaveAttribute('open', '');
   expect(sent).toEqual([]);
@@ -287,7 +316,6 @@ test('assistant-ui composer sends a follow-up once and Shift+Enter inserts a new
 });
 
 test('preview card waits for build completion and hides during follow-up submission', async ({ page }) => {
-  await page.clock.install();
   let state = 'processing';
   let releaseSend: (() => void) | undefined;
   await page.route('**/api/base44', async route => {
@@ -301,7 +329,7 @@ test('preview card waits for build completion and hides during follow-up submiss
     if (action === 'getConversation') return route.fulfill({ json: { messages: [
       { id: 'm1', role: 'assistant', content: 'Your scoreboard is live.', tool_calls: [{ id: 'write', name: 'write_file', status: 'success' }] },
     ] } });
-    return route.fulfill({ json: { id: 'app_1', name: 'Scoreboard', status: { state } } });
+    return route.fulfill({ json: { id: APP, name: 'Scoreboard', status: { state } } });
   });
   await openBuilder(page);
   await page.getByLabel('What would you like to build?').fill('Build a scoreboard');
@@ -312,7 +340,7 @@ test('preview card waits for build completion and hides during follow-up submiss
   await expect(card).toHaveCount(0);
 
   state = 'ready';
-  await page.clock.fastForward(2_100);
+  await pushUpdates(page);
   await expect(card).toBeVisible();
   await page.getByLabel('What should change?').fill('Add a reset button');
   await page.getByRole('button', { name: 'Send prompt', exact: true }).click();
@@ -323,12 +351,11 @@ test('preview card waits for build completion and hides during follow-up submiss
   await expect(card).toHaveCount(0);
 
   state = 'ready';
-  await page.clock.fastForward(2_100);
+  await pushUpdates(page);
   await expect(card).toBeVisible();
 });
 
-test('first prompt stays visible through creation and empty polls, then merges once', async ({ page }) => {
-  await page.clock.install();
+test('first prompt stays visible through creation and an empty snapshot, then merges once', async ({ page }) => {
   let releaseCreate: (() => void) | undefined;
   let includeMessage = false;
   const prompt = 'Build a four-player scoreboard';
@@ -338,7 +365,7 @@ test('first prompt stays visible through creation and empty polls, then merges o
     if (action === 'createApp') await new Promise<void>(resolve => { releaseCreate = resolve; });
     if (action === 'getConversation') return route.fulfill({ json: { messages: includeMessage
       ? [{ id: 'server-user', role: 'user', content: prompt }] : [] } });
-    return route.fulfill({ json: { id: 'app_1', status: { state: 'processing' } } });
+    return route.fulfill({ json: { id: APP, status: { state: 'processing' } } });
   });
   await openBuilder(page);
   await page.getByLabel('What would you like to build?').fill(prompt);
@@ -351,7 +378,7 @@ test('first prompt stays visible through creation and empty polls, then merges o
   await expect(page.getByText(prompt, { exact: true })).toBeVisible();
   await expect(page.getByText('No messages yet.', { exact: true })).toHaveCount(0);
   includeMessage = true;
-  await page.clock.fastForward(2_100);
+  await pushUpdates(page);
   await expect(page.locator('.from-user')).toHaveCount(1);
   await expect(page.getByText(prompt, { exact: true })).toHaveCount(1);
 });
@@ -381,7 +408,7 @@ test('failed creation removes the optimistic bubble and restores the draft', asy
     const { action } = route.request().postDataJSON();
     return route.fulfill({ json: action === 'listApps' ? { apps: [], hasMore: false } : action === 'getConversation'
       ? { messages: [{ id: 'u1', role: 'user', content: 'say hello world' }, { id: 'a1', role: 'assistant', content: 'Hello world! What would you like to build?' }] }
-      : { id: 'app_1', name: 'say hello world', status: { state: 'ready' } } });
+      : { id: APP, name: 'say hello world', status: { state: 'ready' } } });
   });
   await openBuilder(page);
   await page.getByLabel('What would you like to build?').fill('say hello world');
@@ -523,7 +550,7 @@ test('remove persists, handles failures, and New app lives in the topbar', async
 test('editing shows a loader until the conversation arrives', async ({ page }) => {
   let release!: () => void;
   const conversationReady = new Promise<void>(resolve => { release = resolve; });
-  const app = { id: 'app_1', name: 'Reading list', status: { state: 'ready' } };
+  const app = { id: APP, name: 'Reading list', status: { state: 'ready' } };
   await page.route('**/api/base44', async route => {
     const { action } = route.request().postDataJSON();
     if (action === 'getConversation') {

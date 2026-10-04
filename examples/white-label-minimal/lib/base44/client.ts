@@ -62,7 +62,7 @@ export function createBase44Client(accessToken: string) {
   }
 
   // Whether a derived static preview URL actually serves a build. Cached
-  // because getApp is polled every two seconds while an app is building.
+  // because getApp runs on every build.
   const probes = new Map<string, { ok: boolean; at: number }>();
   const probeTtl = 60_000;
   async function servesABuild(url: string) {
