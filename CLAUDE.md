@@ -30,7 +30,7 @@ Next.js App Router · TypeScript · Tailwind 4 · Postgres + Prisma · NextAuth 
 | 2. One Base44 identity per user | `src/lib/base44Link.ts`, `src/app/api/base44/link/route.ts` |
 | 3. A server-side allow-list in front of Base44's REST API | `src/app/api/base44/platform/route.ts` |
 | 4. A public data API the built apps call | `src/app/api/sunny/route.ts`, `src/lib/builderInstructions.ts` |
-| 5. Signed inbound webhooks from Base44 | `src/app/api/base44/webhooks/route.ts`, `src/lib/base44WebhookSignature.ts`, `src/lib/base44WebhookEvents.ts`, `src/lib/base44AppMirror.ts` |
+| 5. Signed inbound webhooks from Base44 | `src/app/api/base44/webhooks/route.ts`, `src/lib/base44WebhookSignature.ts` |
 
 ## Conventions
 
@@ -46,22 +46,13 @@ Next.js App Router · TypeScript · Tailwind 4 · Postgres + Prisma · NextAuth 
   token to a caller. Vended tokens stay server-side. The webhook receiver joins an event to a user
   through `emailForServiceExternalId()` there, which returns an email and nothing else.
 - **An inbound webhook is untrusted until its signature verifies.** `src/lib/base44WebhookSignature.ts`
-  is the boundary: the URL is public, so the event type, the app id and above all
-  `owner_service_external_id` — which decides whose rows the projection touches — are all
-  attacker-controlled until it returns ok. Verify the **raw** body text, never a re-serialized one.
-  Verification material is `BASE44_WEBHOOK_PUBLIC_KEYS` and nothing else: required, pinned at
-  deploy time, no network call on the request path, rotation applied by pinning both keys through
-  the overlap. It is a public key, so it is the one `BASE44_*` variable that is not a secret.
-  `app.deleted.v1` is a *trash* signal, restorable for 30 days; never purge on it — and mind that
-  the stakes are no longer cosmetic: `src/lib/base44AppMirror.ts` removes the shell's own rows for a
-  deleted app, so a forged event would be data loss against a named user.
-- **`src/lib/base44AppMirror.ts` is what the shell does about an event**, as opposed to what it
-  records. It removes the `Widget` and `AppOwnership` rows for a deleted app and puts the ownership
-  row back on a restore, and it raises the notice the browser claims through
-  `POST /api/base44/app-notices`. Every removal goes through `entityCrud.ts` with an actor built
-  from the event's resolved owner, so the RLS predicate — not the event — decides which rows are
-  reachable; that file's read and write paths are untouched. `Base44AppState` is scoped by hand
-  (`ownerEmail`), the same documented carve-out `appInstall.ts` and `marketplace.ts` hold.
+  is the boundary: the URL is public, so `owner_service_external_id` — which decides whose pins get
+  removed — is attacker-controlled until it returns ok. Verify the **raw** body text. Keys come from
+  `BASE44_WEBHOOK_PUBLIC_KEYS` only (public keys, not secrets); pin both through a rotation.
+- **The receiver keeps no state.** It acts on `app.deleted.v1` only, by deleting the owner's
+  `Widget` rows through `entityCrud.ts`; that is idempotent and order-safe, so there is no event
+  ledger. `app.deleted.v1` is trash, restorable for 30 days: never touch `AppOwnership` on it — a
+  trashed app already drops out of `listApps`, and a restored one comes back on its own.
 - **Server-only secrets** (`BASE44_SVC_KEY`, workspace id, platform host) live in env and are never
   shipped to the client, and never caller-supplied — a request-controlled host would be an SSRF and
   a request-controlled workspace id would defeat the tenancy boundary.
@@ -91,14 +82,12 @@ npm run base44:smoke     # boundaries 2–3: token containment, allow-list, sess
 npm run embed:smoke      # the embed gate: authored-or-installed, and a refusal is an answer
 npm run sunny:smoke     # boundary 4: the public contract, action by action
 npm run webhook:register # boundary 5: register the endpoint, print the key to pin (deploy-time)
-npm run webhook:smoke    # boundary 5: the inbound signature, both key sources, negative controls
-npm run webhook:projection:smoke   # boundary 5: removal, notice claim, restore, replayed delete
+npm run webhook:smoke    # boundary 5: the inbound signature, negative controls
 ```
 
 The smoke suites need `npm run dev` running, write throwaway rows to `DATABASE_URL` and clean up
-after themselves. Don't point them at a database you care about. Two exceptions: `webhook:smoke`
-needs neither (it mints its own keypair and stubs the key-set fetch), and
-`webhook:projection:smoke` needs the database but not the server.
+after themselves. Don't point them at a database you care about. One exception: `webhook:smoke`
+needs neither — it mints its own keypair.
 
 ## Docs
 

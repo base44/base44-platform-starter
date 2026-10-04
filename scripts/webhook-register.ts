@@ -3,15 +3,7 @@
  * the public key the receiver verifies against.
  *
  *   npm run webhook:register -- --url https://your-shell.example.com
- *   npm run webhook:register -- --url https://… --events app.deleted.v1,app.restored.v1
  *   npm run webhook:register -- --activate <endpoint id>
- *
- * `--events` defaults to every type this receiver handles. Narrowing it is the
- * useful case: a subscription is what makes Base44 write an outbox row at all,
- * so registering for less is less traffic rather than traffic that gets
- * filtered afterwards. Unknown names are passed through and left to the platform
- * to refuse — the catalog grows, and a script holding its own allowlist would
- * reject a type that is perfectly valid upstream.
  *
  * Registration is a **deploy-time** action, which is why it is a script and not
  * a route: a platform brings a workspace online once, and nothing a user does
@@ -35,9 +27,9 @@
  * a second one. */
 
 import { orgId, platformHost, webhookKey } from "../src/lib/base44Config";
-import { HANDLED_EVENT_TYPES } from "../src/lib/base44WebhookEventTypes";
 
-const HANDLED = new Set<string>(HANDLED_EVENT_TYPES);
+// The receiver acts on deletions only; subscribing to less means Base44 sends less.
+const EVENT_TYPES = ["app.deleted.v1"];
 
 // Functions, not constants: these read required env vars, and at module scope a
 // missing one throws before main() can catch it — a stack trace where
@@ -79,33 +71,6 @@ function targetUrl(): string {
   }
   const base = raw.replace(/\/+$/, "");
   return base.endsWith("/api/base44/webhooks") ? base : `${base}/api/base44/webhooks`;
-}
-
-/**
- * The types to subscribe to: `--events` (repeatable, and comma- or
- * space-separated), else `BASE44_WEBHOOK_EVENT_TYPES`, else every type this
- * receiver handles.
- */
-function eventTypes(): string[] {
-  const flags = flagValues("--events");
-  const fromEnv = process.env.BASE44_WEBHOOK_EVENT_TYPES ?? "";
-  const asked = flags.length > 0 || fromEnv.trim().length > 0;
-
-  const named = [...new Set(
-    [...flags, fromEnv]
-      .join(" ")
-      .split(/[\s,]+/)
-      .map((type) => type.trim())
-      .filter((type) => type.length > 0),
-  )];
-
-  // Asked for explicitly and resolved to nothing — `--events ","`, say. Falling
-  // back to all five here would subscribe to more than was requested, which is
-  // the one wrong answer.
-  if (asked && named.length === 0) {
-    throw new Error("--events (or BASE44_WEBHOOK_EVENT_TYPES) named no event types.");
-  }
-  return named.length > 0 ? named : [...HANDLED_EVENT_TYPES];
 }
 
 /** Bare or `Bearer` — Base44's workspace-key auth takes either. Never a JWT. */
@@ -189,18 +154,11 @@ async function main() {
   }
 
   const url = targetUrl();
-  const selected = eventTypes();
+  const selected = EVENT_TYPES;
   console.log(`registering ${url}`);
   console.log(`  workspace   ${orgId()} at ${platformHost()}`);
   console.log(`  events      ${selected.join(", ")}`);
 
-  // Said before the call, not after: Base44 will accept these happily and
-  // deliver them, and this receiver will answer 2xx and do nothing. The platform
-  // cannot warn about it — only this side knows what it handles.
-  const ignored = selected.filter((type) => !HANDLED.has(type));
-  if (ignored.length > 0) {
-    console.log(`  note        this receiver ignores ${ignored.join(", ")} — 2xx, no effect`);
-  }
   console.log("");
 
   const result = await register(url, selected);
