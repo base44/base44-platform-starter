@@ -1,4 +1,5 @@
 import "server-only";
+import type { App } from "../types";
 
 // Base44 does not return a static preview URL; we derive it from the slug.
 // The derived URL can name a build that does not exist yet, and the host then
@@ -6,7 +7,11 @@ import "server-only";
 // it first, and cache the result because getApp is polled every two seconds.
 const probes = new Map<string, { ok: boolean; at: number }>();
 
-export async function staticPreviewUrl(slug: string | null | undefined) {
+export async function withStaticPreview(app: App): Promise<App> {
+  return { ...app, static_preview_url: await staticPreviewUrl(app.slug) };
+}
+
+async function staticPreviewUrl(slug: string | null | undefined) {
   const domain = process.env.BASE44_STATIC_PREVIEW_DOMAIN;
   if (!domain || !/^[a-z0-9.-]+$/i.test(domain)) return undefined;
   if (!slug || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(slug)) return undefined;

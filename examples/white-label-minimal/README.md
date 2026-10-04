@@ -41,8 +41,9 @@ and workspace are available here too.
 
 Start with [lib/base44/client.ts](lib/base44/client.ts). It contains the Base44
 endpoints and request payloads for creation, conversation, tool answers, preview,
-and publishing. Copy it with `lib/base44/http.ts`, `lib/base44/static-preview.ts`,
-`lib/base44/config.ts`, `lib/base44/error.ts`, `lib/base44/custom-instructions.ts`, and `lib/types.ts`. It uses `fetch` and `server-only`, with
+and publishing. Copy it with `lib/base44/http.ts`, `lib/base44/config.ts`, `lib/base44/error.ts`,
+`lib/base44/custom-instructions.ts`, and `lib/types.ts`. Every endpoint it calls is described in
+Base44's [OpenAPI spec](https://app.base44.com/api/openapi.json), if you prefer to generate a typed client. It uses `fetch` and `server-only`, with
 no Sunny imports. Set `BASE44_PLATFORM_HOST` to your Base44 HTTPS origin and
 adapt `lib/base44/custom-instructions.ts` to your product. New apps use the first 80
 characters of the prompt as their initial name.
@@ -106,7 +107,7 @@ Browser tests use a separate fixture app with mocked Base44 responses.
 
 Browsing uses `https://preview--{slug}.{BASE44_STATIC_PREVIEW_DOMAIN}`. Set
 `BASE44_STATIC_PREVIEW_DOMAIN` to the preview hosting domain confirmed for your
-Base44 environment. Without it, browsing uses screenshots or placeholders. This URL is derived by Tiny, not returned by Base44.
+Base44 environment. Without it, browsing uses screenshots or placeholders. This URL is derived by Tiny in `lib/server/static-preview.ts`, not returned by Base44.
 Apps without a slug show a screenshot or placeholder; browsing never starts a sandbox.
 Editing requests a live preview and keeps static visible until the live iframe loads.
 A load event only controls the visual transition; it does not verify app health.

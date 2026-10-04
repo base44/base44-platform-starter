@@ -2,6 +2,14 @@ import "server-only";
 import { Base44Error } from "./error";
 import { getBase44Config } from "./config";
 
+// What a Base44 status means for the person using the app.
+const hints: Record<number, string> = {
+  401: "Reconnect your workspace.",
+  403: "Check the account’s workspace access.",
+  409: "The app is not ready for this yet. Ask the agent to fix it.",
+  429: "Rate limit reached. Wait before trying again.",
+};
+
 type Options = {
   body?: object | URLSearchParams;
   headers?: Record<string, string>;
@@ -31,7 +39,9 @@ export async function base44Fetch(path: string, { body, headers, timeout = 30_00
     throw new Base44Error("Base44 did not return a response. The operation may still be running.", 504);
   }
   if (!response.ok) {
-    throw errorFor?.(response.status) ?? new Base44Error(`Base44 returned ${response.status}.`, response.status);
+    const { status } = response;
+    const hint = hints[status] ?? "Refresh the app state before repeating an operation.";
+    throw errorFor?.(status) ?? new Base44Error(`Base44 returned ${status}. ${hint}`, status);
   }
   const text = await response.text();
   if (!text) return null;
