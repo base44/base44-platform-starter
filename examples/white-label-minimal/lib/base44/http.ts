@@ -4,32 +4,36 @@ import { getBase44Config } from "./config";
 
 // What a Base44 status means for the person using the app.
 const hints: Record<number, string> = {
-  401: "Reconnect your workspace.",
-  403: "Check the account’s workspace access.",
+  401: "Check the server's Base44 access token.",
+  403: "Check the access token's workspace permissions.",
   409: "The app is not ready for this yet. Ask the agent to fix it.",
   429: "Rate limit reached. Wait before trying again.",
 };
 
 type Options = {
-  body?: object | URLSearchParams;
+  body?: object;
   headers?: Record<string, string>;
   timeout?: number;
-  errorFor?: (status: number) => Base44Error;
 };
 
-/** POST when there is a body, GET otherwise. Every failure is a Base44Error that is safe to show. */
-export async function base44Fetch(path: string, { body, headers, timeout = 30_000, errorFor }: Options = {}) {
-  const { host } = getBase44Config();
-  const form = body instanceof URLSearchParams;
+/**
+ * Calls Base44 as the integration account. POST when there is a body, GET otherwise.
+ * Every failure is a Base44Error that is safe to show.
+ */
+export async function base44Fetch(path: string, { body, headers, timeout = 30_000 }: Options = {}) {
+  const { host, token, workspaceId } = getBase44Config();
   let response: Response;
   try {
     response = await fetch(`${host}${path}`, {
       method: body ? "POST" : "GET",
       headers: {
-        "Content-Type": form ? "application/x-www-form-urlencoded" : "application/json",
+        Authorization: `Bearer ${token}`,
+        // Capability checks read the active workspace, not the request body.
+        "X-Active-Workspace-Id": workspaceId,
+        "Content-Type": "application/json",
         ...headers,
       },
-      body: form ? body : body && JSON.stringify(body),
+      body: body && JSON.stringify(body),
       cache: "no-store",
       redirect: "error",
       signal: AbortSignal.timeout(timeout),
@@ -41,7 +45,7 @@ export async function base44Fetch(path: string, { body, headers, timeout = 30_00
   if (!response.ok) {
     const { status } = response;
     const hint = hints[status] ?? "Refresh the app state before repeating an operation.";
-    throw errorFor?.(status) ?? new Base44Error(`Base44 returned ${status}. ${hint}`, status);
+    throw new Base44Error(`Base44 returned ${status}. ${hint}`, status);
   }
   const text = await response.text();
   if (!text) return null;

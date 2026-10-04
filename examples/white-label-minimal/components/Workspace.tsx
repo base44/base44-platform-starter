@@ -3,7 +3,7 @@ import type { App } from "../lib/types";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
-import { ArrowLeft, Grid2X2, Loader2, LogOut, MessageSquare, Plus, Sparkles, Unplug, X } from "lucide-react";
+import { ArrowLeft, Grid2X2, Loader2, LogOut, MessageSquare, Plus, Sparkles, X } from "lucide-react";
 import TinySunnyLogo from "./TinySunnyLogo";
 import * as api from "../lib/chat/builder-api";
 import Builder from "./Builder";
@@ -14,7 +14,6 @@ export default function Workspace({ name }: { name: string }) {
   const [apps, setApps] = useState<App[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [needsConnection, setNeedsConnection] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
   const [inApp, setInApp] = useState(false);
   // What the stage shows. Kept apart from `editor` so an app created mid-chat
@@ -48,10 +47,8 @@ export default function Workspace({ name }: { name: string }) {
       }
       setApps(all);
       setError("");
-      setNeedsConnection(false);
     } catch (err) {
-      if (err instanceof api.ApiError && err.status === 428) setNeedsConnection(true);
-      else setError(err instanceof Error ? err.message : "Could not load your apps.");
+      setError(err instanceof Error ? err.message : "Could not load your apps.");
     } finally {
       setLoading(false);
     }
@@ -105,30 +102,6 @@ export default function Workspace({ name }: { name: string }) {
       setRemoving(null);
     }
   }
-  async function connect() {
-    setLoading(true);
-    setError("");
-    try {
-      await api.setConnection("connect");
-      setNeedsConnection(false);
-      await load();
-    } catch (err) {
-      setError((err as Error).message);
-      setLoading(false);
-    }
-  }
-  async function disconnect() {
-    setError("");
-    try {
-      await api.setConnection("disconnect");
-      backToApps();
-      setApps([]);
-      setNeedsConnection(true);
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  }
-
   return (
     <div className="workspace">
       <header className="topbar">
@@ -136,15 +109,10 @@ export default function Workspace({ name }: { name: string }) {
           <TinySunnyLogo />
         </Link>
         <div className="account">
-          <button className="secondary" onClick={() => openApp()} disabled={needsConnection}>
+          <button className="secondary" onClick={() => openApp()}>
             <Plus size={16} /> New app
           </button>
           <span>{name}</span>
-          {!needsConnection && !loading && (
-            <button className="icon-button" aria-label="Disconnect workspace" title="Disconnect workspace" onClick={disconnect}>
-              <Unplug size={17} />
-            </button>
-          )}
           <button className="icon-button" aria-label="Sign out" onClick={() => signOut({ callbackUrl: "/" })}>
             <LogOut size={17} />
           </button>
@@ -160,16 +128,7 @@ export default function Workspace({ name }: { name: string }) {
                   <button className="secondary" onClick={() => load()}>Try again</button>
                 </div>
               )}
-              {needsConnection ? (
-                <div className="empty-state">
-                  <MessageSquare size={28} />
-                  <h2>Your ideas start here</h2>
-                  <p>Connect your workspace to build your first app.</p>
-                  <button disabled={loading} onClick={connect}>
-                    {loading ? "Connecting…" : "Connect workspace"}
-                  </button>
-                </div>
-              ) : loading && !apps.length ? (
+              {loading && !apps.length ? (
                 <div className="empty-state" role="status">
                   <Loader2 className="spin" />
                   <p>Loading your apps…</p>

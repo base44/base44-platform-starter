@@ -1,12 +1,13 @@
 # Tiny Sunny
 
-A minimal Base44 integration: sign in, connect a workspace, create an app,
-chat with the builder, answer its questions, preview, and publish.
+A minimal Base44 integration: sign in, create an app, chat with the builder,
+answer its questions, preview, and publish.
 
-This example uses the [service-user tenancy model](https://base44-docs-white-label-rewrite.mintlify.site/white-label/tenancy-and-credentials#service-users).
-Each builder gets a Base44 service user that owns their apps. Your backend provisions
-that identity using a workspace API key, then uses the service user's access token
-to create and manage apps. Both credentials stay on the server.
+It follows Base44's [tenancy model](https://docs.base44.com/developers/white-label/tenancy-and-credentials):
+one Base44 account owns every app, and your server calls Base44 with that account's
+personal access token. Base44 cannot tell your builders apart, so Tiny keeps them
+apart itself: it records which builder owns each app and checks that on every call.
+The token never reaches the browser.
 
 ## Run locally
 
@@ -18,22 +19,22 @@ cp examples/white-label-minimal/.env.example examples/white-label-minimal/.env.l
 ```
 
 Fill in `.env.local` with Sunny's Google OAuth credentials, Auth.js secret,
-migrated Prisma database, and Base44 workspace service key. Keep `NEXTAUTH_URL`
-set to `http://127.0.0.1:3001`, then run:
+migrated Prisma database, and the integration account's
+[personal access token](https://docs.base44.com/Workspaces/Personal-access-tokens) and workspace ID.
+Create the token in your enterprise workspace, with access to all apps and full permission.
+Keep `NEXTAUTH_URL` set to `http://127.0.0.1:3001`, then run:
 
 ```sh
 npm run minimal:dev
 ```
 
-Open [Tiny Sunny](http://127.0.0.1:3001), sign in, and select **Connect workspace**.
-Apps are saved in Sunny's ownership table, so existing apps in the same database
-and workspace are available here too.
+Open [Tiny Sunny](http://127.0.0.1:3001) and sign in.
 
 ## Copy the integration
 
 | Folder | Responsibility |
 | --- | --- |
-| `lib/base44/` | Base44 API calls, identity lifecycle, and custom instructions |
+| `lib/base44/` | Base44 API calls, credentials, and custom instructions |
 | `lib/server/` | Authentication and request handling |
 | `lib/storage/` | Database access and app ownership |
 | `lib/chat/` | Browser API calls and conversation helpers |
@@ -58,21 +59,16 @@ components/Builder.tsx → lib/chat/builder-api.ts → app/api/base44/route.ts
 [lib/server/app-service.ts](lib/server/app-service.ts) is where your application plugs in:
 
 - [server/auth.ts](lib/server/auth.ts) supplies the verified user from your session.
-- [base44/identity.ts](lib/base44/identity.ts) provisions a service user and mints a 1-hour
-  token for it, reusing the stored token until it expires.
 - [storage/app-repository.ts](lib/storage/app-repository.ts) saves ownership and scopes app access to that user.
 
-[prisma/schema.prisma](prisma/schema.prisma) defines identity links and app ownership.
+[prisma/schema.prisma](prisma/schema.prisma) defines app ownership.
 [lib/storage/db.ts](lib/storage/db.ts) connects through `DATABASE_URL`. The Prisma client is generated
 on install and build; run `npm run db:generate` from the example after schema edits.
 
-Google login and Base44 connection are separate. `/api/base44/connection`
-connects or disconnects a builder. Connecting provisions a service user with the workspace key,
-which needs the `service_users:provision` and `user_tokens:mint` scopes. Builder requests use the
-stored token and never send credentials to the browser. Minting is rate-limited per workspace,
-so reuse each token for its lifetime rather than minting per request. Tokens are stored in plain
-text here; encrypt them at rest in production.
-The API handler validates requests and checks app ownership before app operations.
+Every Base44 call sends `Authorization: Bearer <token>` and `X-Active-Workspace-Id`, and
+new apps are created with `organization_id`, so they use your workspace's design system,
+skills, and plan. The API handler validates each request and checks that the signed-in
+builder owns the app before any app operation.
 
 For the chat UI, copy `components/`, `lib/chat/builder-api.ts`, `lib/chat/conversation.ts`,
 and `lib/chat/assistant-messages.ts`. The chat uses assistant-ui's external-store runtime

@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { createHandler } from '../lib/server/api-handler';
-import { createBase44Client } from '../lib/base44/client';
+import { base44 } from '../lib/base44/client';
 import { Base44Error } from '../lib/base44/error';
 let signedIn = true;
 const POST = createHandler(async () => {
   if (!signedIn) throw new Base44Error('Sign in to continue.', 401);
-  return { ...createBase44Client('user-token-canary'), authorize: async (id: string) => {
+  return { ...base44, authorize: async (id: string) => {
     if (id === 'other_app') throw new Base44Error('App not found.', 404);
   }, removeApp: async () => ({}), listApps: async () => ({ apps: [], hasMore: false, nextSkip: 0 }) };
 });
@@ -16,8 +16,9 @@ const originalFetch = globalThis.fetch;
 const originalEnv = { ...process.env };
 afterEach(() => { signedIn = true; globalThis.fetch = originalFetch; process.env = { ...originalEnv }; });
 function setup(reply: unknown = { id: 'app_1' }, status = 200) {
-  process.env.BASE44_ORG_ID = 'workspace_1';
   process.env.BASE44_PLATFORM_HOST = 'https://platform.example';
+  process.env.BASE44_ACCESS_TOKEN = 'pat-canary';
+  process.env.BASE44_WORKSPACE_ID = 'workspace_1';
   const calls: { url: string; init?: RequestInit }[] = [];
   globalThis.fetch = async (url, init) => {
     calls.push({ url: String(url), init });
@@ -52,16 +53,15 @@ test('rejects foreign origins, nonlocal hosts, non-JSON and oversized bodies', a
   assert.equal((await request({ action: 'createApp', prompt: 'x'.repeat(65000) })).status, 413);
   assert.equal(calls.length, 0);
 });
-test('creation uses the user token without organization routing', async () => {
+test('creation authenticates as the integration account in the configured workspace', async () => {
   const calls = setup({ id: 'app_1', name: 'Build a reading list', user_description: 'Build a reading list', custom_instructions: customInstructions, api_key: 'should-not-return' });
-  delete process.env.BASE44_ORG_ID;
   const response = await request({ action: 'createApp', prompt: 'Build a reading list' });
   assert.deepEqual(await response.json(), { id: 'app_1', name: 'Build a reading list', user_description: 'Build a reading list' });
   const init = calls[0].init!;
-  assert.equal(new Headers(init.headers).get('authorization'), 'Bearer user-token-canary');
-  assert.equal(new Headers(init.headers).get('X-Active-Workspace-Id'), null);
+  assert.equal(new Headers(init.headers).get('authorization'), 'Bearer pat-canary');
+  assert.equal(new Headers(init.headers).get('X-Active-Workspace-Id'), 'workspace_1');
   const body = JSON.parse(String(init.body));
-  assert.equal(Object.hasOwn(body, 'organization_id'), false);
+  assert.equal(body.organization_id, 'workspace_1');
   assert.equal(body.name, 'Build a reading list');
   assert.equal(body.initial_message.content, 'Build a reading list');
   assert.equal(body.custom_instructions, customInstructions);
