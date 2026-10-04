@@ -6,7 +6,7 @@ import { getEmbedUrl } from '../lib/base44/embed';
 import { Base44Error } from '../lib/base44/error';
 import { openLiveUpdates } from '../lib/base44/live-updates';
 import { resolveAppPage } from '../lib/storage/app-list';
-import { createAppRepository } from '../lib/storage/app-repository';
+import { requireOwner } from '../lib/storage/ownership';
 import { prisma } from '../lib/storage/db';
 
 const originalFetch = globalThis.fetch;
@@ -116,7 +116,8 @@ test('a builder can only reach apps they own', async () => {
     query = args.where;
     return null;
   }) as unknown as typeof prisma.appOwnership.findFirst;
-  await assert.rejects(createAppRepository({ email: 'builder@example.com' }).authorize('other_app'), { status: 404 });
+  await assert.rejects(requireOwner('builder@example.com', 'other_app'), { status: 404 });
+  await assert.rejects(requireOwner('builder@example.com', '../other'), { status: 400 });
   assert.deepEqual(query, { createdBy: 'builder@example.com', appId: 'other_app' });
 });
 

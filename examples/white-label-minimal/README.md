@@ -17,7 +17,7 @@ each part of them lives in one place here:
 | Docs | Code |
 | --- | --- |
 | [Tenancy and credentials](https://docs.base44.com/developers/white-label/tenancy-and-credentials) | [lib/base44/config.ts](lib/base44/config.ts), [lib/base44/request.ts](lib/base44/request.ts) |
-| Keeping builders apart | [app/actions.ts](app/actions.ts), [lib/storage/app-repository.ts](lib/storage/app-repository.ts) |
+| Keeping builders apart | [app/actions.ts](app/actions.ts), [lib/storage/ownership.ts](lib/storage/ownership.ts) |
 | [The build turn](https://docs.base44.com/developers/white-label/the-build-turn), steps 1–6 | [lib/base44/build-turn.ts](lib/base44/build-turn.ts), one function per call, numbered by step |
 | Watch it build (live, instead of polling) | [lib/base44/live-updates.ts](lib/base44/live-updates.ts), [lib/chat/live-updates.ts](lib/chat/live-updates.ts) |
 | Answer the agent's questions | [components/Question.tsx](components/Question.tsx), one UI per `waiting_on.kind` |
@@ -78,7 +78,7 @@ components/Builder.tsx → app/actions.ts → lib/base44/build-turn.ts
 [app/actions.ts](app/actions.ts) holds Tiny's server actions, and is where your application plugs in:
 
 - [server/auth.ts](lib/server/auth.ts) supplies the verified user from your session.
-- [storage/app-repository.ts](lib/storage/app-repository.ts) saves ownership and scopes app access to that user.
+- [storage/ownership.ts](lib/storage/ownership.ts) records which builder created each app, and checks it.
 
 [prisma/schema.prisma](prisma/schema.prisma) defines app ownership.
 [lib/storage/db.ts](lib/storage/db.ts) connects through `DATABASE_URL`. The Prisma client is generated
