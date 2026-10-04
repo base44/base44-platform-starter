@@ -1,21 +1,11 @@
 /**
- * Cross-page announcements about a built app, for the two cases a page has no
- * other way to learn about.
+ * Cross-page announcement that a built app was rebuilt.
  *
- * **Rebuilt.** A rebuilt or redeployed app is served from the same URL, so an
+ * A rebuilt or redeployed app is served from the same URL, so an
  * iframe has no reason to refetch and the user keeps seeing the old bundle.
  * Keyed by app id: a dashboard holds several.
- *
- * **Removed.** Base44 deleted the app and the shell has dropped its rows — see
- * src/lib/base44AppMirror.ts. The removal already happened server-side; this is
- * how a page that is *already open* stops showing it, rather than waiting for a
- * reload.
- *
- * **Changed.** Any deletion or restore the shell was told about. The list a page
- * holds is a copy of `listAppsForUser`, so the one correct response is to read
- * it again — a restored app can only reappear that way.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 export const APP_REBUILT = "app-rebuilt";
 
@@ -46,56 +36,4 @@ export function useAppRebuildNonce(appId: string | null | undefined): number {
 export function withNonce(url: string | null, nonce: number): string | null {
   if (!url || !nonce) return url;
   return `${url}${url.includes("?") ? "&" : "?"}v=${nonce}`;
-}
-
-/** An app Base44 deleted, which the shell has stopped carrying. */
-export const APP_REMOVED = "base44-app-removed";
-
-export function announceAppRemoved(appId: string): void {
-  if (typeof window === "undefined") return;
-  window.dispatchEvent(new CustomEvent(APP_REMOVED, { detail: { appId } }));
-}
-
-/**
- * Calls `onRemoved(appId)` when an app the shell was carrying goes away.
- *
- * Ref-held so an inline arrow does not rebind — and miss an event — every
- * render, matching `useMarketChanges`.
- */
-export function useAppRemoved(onRemoved: (appId: string) => void): void {
-  const latest = useRef(onRemoved);
-  useEffect(() => {
-    latest.current = onRemoved;
-  }, [onRemoved]);
-
-  useEffect(() => {
-    const fire = (e: Event) => {
-      const appId = (e as CustomEvent<{ appId?: string }>).detail?.appId;
-      if (appId) latest.current(appId);
-    };
-    window.addEventListener(APP_REMOVED, fire);
-    return () => window.removeEventListener(APP_REMOVED, fire);
-  }, []);
-}
-
-/** The set of apps a user has changed server-side; any open list is stale. */
-export const APPS_CHANGED = "base44-apps-changed";
-
-export function announceAppsChanged(): void {
-  if (typeof window === "undefined") return;
-  window.dispatchEvent(new CustomEvent(APPS_CHANGED));
-}
-
-/** Calls `onChanged()` whenever the user's apps change server-side. Ref-held like `useAppRemoved`. */
-export function useAppsChanged(onChanged: () => void): void {
-  const latest = useRef(onChanged);
-  useEffect(() => {
-    latest.current = onChanged;
-  }, [onChanged]);
-
-  useEffect(() => {
-    const fire = () => latest.current();
-    window.addEventListener(APPS_CHANGED, fire);
-    return () => window.removeEventListener(APPS_CHANGED, fire);
-  }, []);
 }

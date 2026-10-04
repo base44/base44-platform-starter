@@ -1,6 +1,7 @@
 import "server-only";
 import { requireUser } from "./auth";
 import { withStaticPreview } from "./static-preview";
+import { openSocketSession } from "../base44/socket-session";
 import { base44 } from "../base44/client";
 import { createAppRepository } from "../storage/app-repository";
 import { resolveAppPage } from "../storage/app-list";
@@ -16,6 +17,7 @@ export async function getAppClient(): Promise<AppClient> {
     ...base44,
     getApp,
     authorize: apps.authorize,
+    openBuilderSession: openSocketSession,
     removeApp: apps.remove,
     async createApp(prompt) {
       const app = await base44.createApp(prompt);

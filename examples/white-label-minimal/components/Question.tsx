@@ -167,7 +167,7 @@ export default function Question({
           )}
           {busy && <p role="status">Sending answer…</p>}
           {error && (
-            <p role="alert">{error} Resume polling to check the outcome, or retry the original answer.</p>
+            <p role="alert">{error} Reconnect live updates to check the outcome, or retry the original answer.</p>
           )}
         </>
       )}
