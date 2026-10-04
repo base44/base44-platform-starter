@@ -1,6 +1,6 @@
 import "server-only";
 import { requireUser } from "./auth";
-import { base44, getEmbedUrl, openLiveUpdates } from "../base44/client";
+import * as base44 from "../base44/client";
 import { Base44Error } from "../base44/error";
 import { createAppRepository } from "../storage/app-repository";
 import { resolveAppPage } from "../storage/app-list";
@@ -15,12 +15,11 @@ export async function getAppClient(): Promise<AppClient> {
   return {
     ...base44,
     authorize: apps.authorize,
-    openLiveUpdates,
     // Every preview is the app signed in as the builder: the latest build in
     // cards, the running sandbox while editing.
-    getLatestBuildUrl: (id) => getEmbedUrl(id, user.email, "latest_preview"),
+    getLatestBuildUrl: (id) => base44.getEmbedUrl(id, user.email, "latest_preview"),
     async getPreviewUrl(id) {
-      const { url } = await getEmbedUrl(id, user.email, "live_preview");
+      const { url } = await base44.getEmbedUrl(id, user.email, "live_preview");
       if (!url) throw new Base44Error("The live preview is not available yet. Try refreshing.", 502);
       return { url };
     },

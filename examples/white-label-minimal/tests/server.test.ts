@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { createHandler } from '../lib/server/api-handler';
-import { base44, getEmbedUrl, openLiveUpdates } from '../lib/base44/client';
+import * as base44 from '../lib/base44/client';
+const { getEmbedUrl } = base44;
 import { Base44Error } from '../lib/base44/error';
 let signedIn = true;
 const POST = createHandler(async () => {
   if (!signedIn) throw new Base44Error('Sign in to continue.', 401);
-  return { ...base44, openLiveUpdates,
+  return { ...base44,
     getLatestBuildUrl: (id: string) => getEmbedUrl(id, 'builder@example.com', 'latest_preview'),
     getPreviewUrl: async (id: string) => {
       const { url } = await getEmbedUrl(id, 'builder@example.com', 'live_preview');
