@@ -179,7 +179,7 @@ test('real Next route requires authentication for local browser origins and reje
 
 test('rejected access preserves prompt and allows retry without uncertain creation warning', async ({ page }) => {
   await page.route('**/api/base44', route => route.fulfill({ status: 401, contentType: 'application/json',
-    body: JSON.stringify({ error: 'Sign in to continue.', outcome: 'not_started' }) }));
+    body: JSON.stringify({ error: 'Sign in to continue.' }) }));
   await openBuilder(page);
   await page.getByLabel('What would you like to build?').fill('Hello world');
   await page.getByRole('button', { name: 'Create app', exact: true }).click();

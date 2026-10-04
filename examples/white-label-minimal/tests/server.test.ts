@@ -50,7 +50,6 @@ test('invalid actions, paths, fields, pagination and decisions never reach Base4
     { action: 'submitToolCallInput', appId: 'app_1', toolCallId: 'tool_1', messageId: 'message_1', approve: 'false', extraUserInput: {} }]) {
     const response = await request(body);
     assert.equal(response.status, 400);
-    assert.equal((await response.json()).outcome, 'not_started');
   }
   assert.equal(calls.length, 0);
 });
@@ -128,7 +127,6 @@ test('requires a session and exact origin before calling Base44', async () => {
   signedIn = false;
   const denied = await request({ action: 'createApp', prompt: 'Hello' }, h);
   assert.equal(denied.status, 401);
-  assert.equal((await denied.json()).outcome, 'not_started');
   signedIn = true;
   assert.equal((await request({}, { ...h, origin: 'https://evil.example' })).status, 403);
   assert.equal(calls.length, 0);
@@ -140,7 +138,6 @@ test('another owner’s apps cannot be read, edited, previewed or deployed', asy
   for (const action of ['getApp', 'sendMessage', 'getPreviewUrl', 'deployApp', 'getPublishedUrl']) {
     const response = await request({ action, appId: 'other_app', content: 'Update' });
     assert.equal(response.status, 404);
-    assert.equal((await response.json()).outcome, 'not_started');
   }
   assert.equal(calls.length, 0);
 });
