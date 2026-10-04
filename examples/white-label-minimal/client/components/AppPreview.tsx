@@ -21,6 +21,7 @@ export default function AppPreview({ app, title, live = false, showControls = tr
 }) {
   const building = app.status?.state === "processing";
   const [latestUrl, setLatestUrl] = useState<string | null>(null);
+  const [latestRefused, setLatestRefused] = useState<string | null>(null);
   const [liveUrl, setLiveUrl] = useState<string | null>(null);
   const [liveLoaded, setLiveLoaded] = useState(false);
   const [error, setError] = useState("");
@@ -31,7 +32,11 @@ export default function AppPreview({ app, title, live = false, showControls = tr
     if (building) return;
     let current = true;
     unwrap(actions.getLatestBuildUrl(app.id)).then(
-      (result) => current && setLatestUrl(result.url),
+      (result) => {
+        if (!current) return;
+        setLatestUrl(result.url);
+        setLatestRefused(result.refused);
+      },
       () => {},
     );
     return () => {
@@ -64,6 +69,9 @@ export default function AppPreview({ app, title, live = false, showControls = tr
     underneath = <iframe key={latestUrl} title={title} src={latestUrl} {...frameProps} />;
   } else if (app.preview_screenshot_url) {
     underneath = <img className="preview-fallback" src={app.preview_screenshot_url} alt={`${title} screenshot`} />;
+  } else if (latestRefused === "privileged_user" && !live) {
+    // Base44 signs in end users only, and this viewer is a member of the Base44 workspace.
+    underneath = <div className="widget-placeholder">You are a member of this Base44 workspace, so Base44 shows you the preview only in the editor. Open the app to see it.</div>;
   } else if (live && !error) {
     underneath = <div className="widget-placeholder" role="status">Starting your preview…</div>;
   } else {

@@ -92,9 +92,12 @@ export async function getPreviewUrl(appId: string) {
   return returnErrors(async () => {
     const user = await requireUser();
     await requireOwner(user.email, appId);
-    const { url } = await getEmbedUrl(appId, user.email, "live_preview");
-    if (!url) throw new Base44Error("The live preview is not available yet. Try refreshing.", 502);
-    return { url };
+    const { url, refused } = await getEmbedUrl(appId, user.email, "live_preview");
+    if (url) return { url };
+    // Base44 signs in end users only. A member of your Base44 workspace, such as
+    // you trying the example, gets the editor's sandbox preview instead.
+    if (refused === "privileged_user") return buildTurn.getSandboxPreviewUrl(appId);
+    throw new Base44Error("The live preview is not available yet. Try refreshing.", 502);
   });
 }
 

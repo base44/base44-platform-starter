@@ -576,3 +576,15 @@ test('editing shows a loader until the conversation arrives', async ({ page }) =
   await expect(page.getByText('Loading conversation…', { exact: true })).toHaveCount(0);
   await expect(page.getByLabel('What should change?')).toBeEnabled();
 });
+
+test('a workspace member sees why a card has no preview', async ({ page }) => {
+  const app = { id: 'reading', name: 'Reading list', status: { state: 'ready' } };
+  await page.route('**/api/base44', route => {
+    const { action } = route.request().postDataJSON();
+    if (action === 'listApps') return route.fulfill({ json: { apps: [app], hasMore: false } });
+    if (action === 'getLatestBuildUrl') return route.fulfill({ json: { url: null, refused: 'privileged_user' } });
+    return route.fulfill({ json: app });
+  });
+  await page.goto('/');
+  await expect(page.locator('.app-widget')).toContainText('You are a member of this Base44 workspace');
+});
