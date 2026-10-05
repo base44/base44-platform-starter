@@ -83,7 +83,10 @@ export async function getLatestBuildUrl(appId: string) {
   return returnErrors(async () => {
     const user = await requireUser();
     await requireOwner(user.email, appId);
-    return getEmbedUrl(appId, user.email, "latest_preview");
+    const { url, refused } = await getEmbedUrl(appId, user.email, "latest_preview");
+    // A member of your Base44 workspace gets the editor's sandbox preview instead, as in getPreviewUrl.
+    if (refused === "privileged_user") return buildTurn.getSandboxPreviewUrl(appId);
+    return { url };
   });
 }
 
