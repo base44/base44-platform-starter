@@ -17,22 +17,38 @@ import PublishDialog from "@/components/market/PublishDialog";
 
 function LivePreview({ app }) {
   const [version, setVersion] = useState(0);
+  const [loaded, setLoaded] = useState(false);
   const frameRef = useRef(null);
   const rebuildNonce = useAppRebuildNonce(app.id);
-  const { url, error } = useSandboxPreview(app.id, `${rebuildNonce}:${app.last_git_commit_hash || ""}:${app.status?.state || ""}:${version}`);
+  // A sandbox mid-build answers with a 400 or a half-written bundle, so nothing is framed until it settles.
+  const building = app.status?.state === "processing";
+  const { url, error } = useSandboxPreview(building ? null : app.id, `${rebuildNonce}:${app.last_git_commit_hash || ""}:${app.status?.state || ""}:${version}`);
   const { src: framedUrl } = useEmbedSrc(app.id, url, rebuildNonce + version, "live_preview");
   useAppFrameAuth(frameRef, app.id, framedUrl);
+  useEffect(() => { setLoaded(false); }, [framedUrl]);
+  const status = building ? "Building your app…" : error || (loaded ? "" : "Starting your preview…");
 
   return <div className="sunny-apps-live" aria-label={`${app.name || "Untitled"} preview`}>
-    {url
-      ? <iframe ref={frameRef} key={framedUrl} src={framedUrl} title={`${app.name || "Untitled"} preview`} allow="fullscreen" />
-      : <div className="sunny-apps-placeholder" role="status">
-          {!error && <Loader2 className="animate-spin" size={20} />}
-          {error || "Starting your preview…"}
-        </div>}
+    <div className="sunny-apps-live-frame">
+      {!building && framedUrl && <iframe
+        ref={frameRef}
+        key={framedUrl}
+        src={framedUrl}
+        title={`${app.name || "Untitled"} preview`}
+        onLoad={() => setLoaded(true)}
+        style={{ visibility: loaded ? "visible" : "hidden" }}
+        allow="fullscreen"
+      />}
+      {status && <div className="sunny-apps-card-loading" role="status">
+        <div className="sunny-apps-card-loading-content">
+          <span>{status}</span>
+          {!error && <div className="sunny-apps-card-loading-track" aria-hidden="true"><span /></div>}
+        </div>
+      </div>}
+    </div>
     <div className="sunny-apps-preview-controls">
-      <span>{url ? "Live preview" : error || "Starting live preview…"}</span>
-      <button onClick={() => setVersion((value) => value + 1)}>Refresh preview</button>
+      <span>{status || "Live preview"}</span>
+      <button disabled={building} onClick={() => setVersion((value) => value + 1)}>Refresh preview</button>
     </div>
   </div>;
 }
