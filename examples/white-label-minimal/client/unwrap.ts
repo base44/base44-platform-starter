@@ -1,6 +1,6 @@
 import type { ActionResult } from "../types";
 
-class ActionError extends Error {
+export class ActionError extends Error {
   constructor(message: string, public status: number) {
     super(message);
   }

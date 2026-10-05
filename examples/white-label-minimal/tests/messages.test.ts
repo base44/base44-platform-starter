@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { getChatState } from '../client/chat-state';
-import { mergeOptimisticMessages, toMessage, upsertMessage } from '../client/messages';
+import { toMessage, upsertMessage } from '../client/messages';
 import type { Message } from '../types';
 
 test('socket messages convert to the shape the chat renders', () => {
@@ -21,23 +21,9 @@ test('upsert replaces a message by id and appends new ones', () => {
   assert.deepEqual(upsertMessage(messages, { id: 'm3', content: 'three' }).map(m => m.id), ['m1', 'm2', 'm3']);
 });
 
-test('a pending prompt survives empty snapshots and merges once without confusing repeated text', () => {
-  const first: Message = { id: 'local:1', role: 'user', content: 'Add a button' };
-  const pending = [{ message: first, knownIds: [] }];
-  assert.deepEqual(mergeOptimisticMessages([], pending), [first]);
-  const server: Message = { ...first, id: 'server:1' };
-  const reply: Message = { id: 'reply', role: 'assistant', content: 'Done' };
-  assert.deepEqual(mergeOptimisticMessages([reply], pending), [first, reply]);
-  assert.deepEqual(mergeOptimisticMessages([server, reply], pending), [first, reply]);
-  const second = { ...first, id: 'local:2' };
-  const repeated = [...pending, { message: second, knownIds: [server.id, reply.id] }];
-  assert.deepEqual(mergeOptimisticMessages([server, reply], repeated), [first, reply, second]);
-  assert.deepEqual(mergeOptimisticMessages([server, reply, { ...server, id: 'server:2' }], repeated), [first, reply, second]);
-});
-
 test('an app is ready only when the latest turn wrote code and finished', () => {
   const app = { id: 'app_1', status: { state: 'ready' } };
-  const state = (messages: Message[]) => getChatState(app, messages, false, '');
+  const state = (messages: Message[]) => getChatState(app, messages, false);
   const built: Message = { id: 'built', role: 'assistant', tool_calls: [{ name: 'write_file', status: 'success' }] };
   assert.equal(state([{ id: 'hello', role: 'assistant', content: 'Hello!' }]), 'idle');
   assert.equal(state([built]), 'ready');

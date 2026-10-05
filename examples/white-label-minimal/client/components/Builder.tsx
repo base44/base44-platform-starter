@@ -1,26 +1,27 @@
 "use client";
-import { createContext, useContext, useEffect } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import {
   AssistantRuntimeProvider,
   useExternalStoreRuntime,
   type ToolCallMessagePartComponent,
 } from "@assistant-ui/react";
 import { Loader2 } from "lucide-react";
-import type { App, ToolCall } from "../../types";
+import * as actions from "../../server/actions";
+import type { App, ToolCall, ToolInput } from "../../types";
+import { getChatState } from "../chat-state";
 import { toAssistantMessage } from "../messages";
-import { useBuildTurn } from "../useBuildTurn";
+import { ActionError, unwrap } from "../unwrap";
+import { useLiveApp } from "../useLiveApp";
 import Question from "./Question";
 import ReadyCard from "./ReadyCard";
 import ToolActivity from "./ToolActivity";
 import { Thread } from "./assistant-ui/thread";
 
-type BuildTurn = ReturnType<typeof useBuildTurn>;
+// What ToolPart, which assistant-ui renders itself, needs to answer a question.
+const AnswerContext = createContext<{ appId: string | null; disabled: boolean; answer: (input: ToolInput) => Promise<void> } | null>(null);
 
-// Hands the build turn to ToolPart, which assistant-ui renders itself.
-const TurnContext = createContext<BuildTurn | null>(null);
-
-// The builder's chat for one app. The logic is in useBuildTurn; assistant-ui's
-// Thread renders the conversation.
+// The builder's chat for one app: steps 1, 3 and 4 of the build turn are the
+// functions below, step 2 is useLiveApp, and assistant-ui's Thread renders it.
 export default function Builder({ initialAppId, autoFocus, onCreated, onUpdated, onGoHome }: {
   initialAppId?: string;
   autoFocus?: boolean;
@@ -28,37 +29,70 @@ export default function Builder({ initialAppId, autoFocus, onCreated, onUpdated,
   onUpdated?: (app: App) => void;
   onGoHome?: () => void;
 }) {
-  const turn = useBuildTurn(initialAppId ?? null, onCreated);
-  const { app, appId, state, busy } = turn;
+  const [appId, setAppId] = useState(initialAppId ?? null);
+  const { app, messages, paused, reconnect } = useLiveApp(appId);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const state = getChatState(app, messages, paused);
+  // Base44 ignores new prompts while a question is open or a build runs.
+  const canSend = !sending && (state === "idle" || state === "ready" || state === "failed");
 
   useEffect(() => {
     if (app) onUpdated?.(app);
   }, [app, onUpdated]);
 
-  // assistant-ui shows Tiny's messages. They come from Base44's live updates, so
-  // the chat state stays in useBuildTurn.
+  // 1. Create the app from the first prompt; send every later prompt as a chat message.
+  async function send(prompt: string) {
+    setSending(true);
+    setError("");
+    try {
+      if (appId) {
+        await unwrap(actions.sendMessage(appId, prompt));
+      } else {
+        const created = await unwrap(actions.createApp(prompt));
+        setAppId(created.id);
+        onCreated?.(created);
+      }
+      return true;
+    } catch (err) {
+      // Base44 holds Send message open until the whole turn ends, so a timeout
+      // means the turn is still running. Live updates show how it ends.
+      if (appId && err instanceof ActionError && err.status === 504) return true;
+      setError(err instanceof Error ? err.message : "Request failed.");
+      return false;
+    } finally {
+      setSending(false);
+    }
+  }
+
+  // 4. Send the answer back.
+  async function answer(input: ToolInput) {
+    await unwrap(actions.submitToolCallInput(input));
+  }
+
+  // assistant-ui shows the messages from live updates and hands new prompts to send().
   const runtime = useExternalStoreRuntime({
-    messages: turn.messages,
+    messages: messages ?? [],
     convertMessage: toAssistantMessage,
-    isRunning: !!busy || state === "building",
-    isDisabled: !turn.canSend,
+    isRunning: sending || state === "building",
+    isDisabled: !canSend,
     onNew: async (message) => {
       const text = message.content.map((part) => (part.type === "text" ? part.text : "")).join("\n");
       // assistant-ui clears the draft on send; put it back if sending failed.
-      if (!(await turn.send(text))) runtime.thread.composer.setText(text);
+      if (!(await send(text))) runtime.thread.composer.setText(text);
     },
   });
 
   return (
     <div className="builder">
-      {turn.error && (
+      {(error || paused) && (
         <p role="alert">
-          {turn.error}{" "}
-          {state === "paused" && <button className="secondary" onClick={turn.reconnect}>Reconnect live updates</button>}
+          {error || "Live updates paused. Reconnect to continue."}{" "}
+          {paused && <button className="secondary" onClick={reconnect}>Reconnect live updates</button>}
         </p>
       )}
 
-      <TurnContext.Provider value={turn}>
+      <AnswerContext.Provider value={{ appId, disabled: paused, answer }}>
         <AssistantRuntimeProvider runtime={runtime}>
           <Thread
             inputLabel={appId ? "What should change?" : "What would you like to build?"}
@@ -68,51 +102,49 @@ export default function Builder({ initialAppId, autoFocus, onCreated, onUpdated,
             ToolFallback={ToolPart}
             footer={
               <>
-                {state === "ready" && !busy && appId && <ReadyCard appId={appId} name={app?.name} onGoHome={onGoHome} />}
-                <Status state={state} busy={busy} />
+                {state === "ready" && !sending && appId && <ReadyCard appId={appId} name={app?.name} onGoHome={onGoHome} />}
+                <Status state={state} sending={sending} creating={!appId} />
               </>
             }
           />
         </AssistantRuntimeProvider>
-      </TurnContext.Provider>
+      </AnswerContext.Provider>
     </div>
   );
 }
 
-// assistant-ui renders each tool call itself and asks for this component: a
-// question while Base44 waits for the builder, the agent's activity otherwise.
+// 3. Answer the agent's questions. assistant-ui renders each tool call with this
+// component: a question while Base44 waits for the builder, activity otherwise.
 const ToolPart: ToolCallMessagePartComponent = ({ toolCallId, artifact }) => {
-  const turn = useContext(TurnContext)!;
+  const { appId, disabled, answer } = useContext(AnswerContext)!;
   const { tool, messageId } = artifact as { tool: ToolCall; messageId: string };
   const asking = tool.status === "waiting_for_user_input" || tool.waiting_on?.kind;
-  if (!asking || !turn.appId) return <ToolActivity tool={tool} />;
+  if (!asking || !appId) return <ToolActivity tool={tool} />;
   return (
     <Question
       key={`${toolCallId}:${tool.status}`}
       tool={tool}
       messageId={messageId}
-      appId={turn.appId}
-      disabled={!!turn.busy || turn.state === "paused"}
-      onSubmit={turn.answer}
+      appId={appId}
+      disabled={disabled}
+      onSubmit={answer}
     />
   );
 };
 
 // The line under the chat that says where the build turn stands.
-function Status({ state, busy }: Pick<BuildTurn, "state" | "busy">) {
+function Status({ state, sending, creating }: { state: string; sending: boolean; creating: boolean }) {
   let text = "";
-  if (busy === "create") text = "Creating app…";
-  else if (busy === "send") text = "Sending prompt…";
-  else if (busy === "answer") text = "Answering question…";
-  else if (state === "loading") text = "Loading conversation…";
+  if (state === "loading") text = "Loading conversation…";
   else if (state === "paused") text = "Connection paused";
   else if (state === "question") text = "Waiting for your answer";
   else if (state === "building") text = "Building…";
+  else if (sending) text = creating ? "Creating app…" : "Sending prompt…";
   else if (state === "failed") text = "The build failed. Send a follow-up prompt to try again.";
   if (!text) return null;
   return (
     <div className="build-progress" role="status">
-      {(busy || state === "loading" || state === "building") && <Loader2 size={12} className="spin" />}
+      {(sending || state === "loading" || state === "building") && <Loader2 size={12} className="spin" />}
       {text}
     </div>
   );
