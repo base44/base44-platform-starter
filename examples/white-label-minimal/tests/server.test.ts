@@ -61,7 +61,7 @@ test('answers keep the same request ID when retried, and a rejection is an answe
 
 test('previews sign the builder in with the workspace key', async () => {
   const calls = setup({ status: 'exists', embed_url: 'https://reading.example/?ott=once', expires_in: 60 });
-  assert.deepEqual(await getEmbedUrl('app_1', 'builder@example.com', 'live_preview'), { url: 'https://reading.example/?ott=once' });
+  assert.deepEqual(await getEmbedUrl('app_1', 'builder@example.com', 'live_preview'), { url: 'https://reading.example/?ott=once', refused: null });
   assert.deepEqual(calls.map(c => new URL(c.url).pathname), ['/api/apps/app_1/users/provisions', '/api/apps/app_1/embed-tokens']);
   for (const call of calls) {
     assert.equal(headers(call.init).get('api_key'), 'b44k_workspace');
@@ -72,7 +72,10 @@ test('previews sign the builder in with the workspace key', async () => {
 
 test('before the first build there is no preview; a Base44 failure never leaks its body', async () => {
   setup({ error: { code: 'app_has_no_slug' } }, 400);
-  assert.deepEqual(await getEmbedUrl('app_1', 'builder@example.com', 'latest_preview'), { url: null });
+  assert.deepEqual(await getEmbedUrl('app_1', 'builder@example.com', 'latest_preview'), { url: null, refused: 'app_has_no_slug' });
+  // A member of the Base44 workspace is not an end user, so Base44 says why.
+  setup({ error: { code: 'privileged_user' } }, 403);
+  assert.deepEqual(await getEmbedUrl('app_1', 'builder@example.com', 'latest_preview'), { url: null, refused: 'privileged_user' });
 
   setup({ error: 'token-canary' }, 500);
   await assert.rejects(getEmbedUrl('app_1', 'builder@example.com', 'live_preview'), (error: Base44Error) => {
@@ -152,4 +155,12 @@ test('live updates open with the workspace key, and a refusal says how to fix it
     assert.match(error.message, /apps:watch/);
     return true;
   });
+});
+
+test('the sandbox preview URL gets a scheme and its one-time preview token', async () => {
+  const calls = setup({ preview_url: 'preview-app1.platform.example', preview_token: 'token-canary' });
+  const { url } = await buildTurn.getSandboxPreviewUrl('app_1');
+  assert.equal(calls[0].url, 'https://platform.example/api/apps/app_1/sandbox/preview-url');
+  assert.equal(new URL(url).origin, 'https://preview-app1.platform.example');
+  assert.equal(new URL(url).searchParams.get('_preview_token'), 'token-canary');
 });

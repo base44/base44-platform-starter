@@ -23,12 +23,14 @@ export async function getEmbedUrl(
       auth,
       body: { email, target },
     });
-    return { url: token.embed_url as string };
+    return { url: token.embed_url as string, refused: null };
   } catch (error) {
-    // For example app_has_no_slug before the first build: nothing to show yet.
+    // Base44 said no, for example app_has_no_slug before the first build, or
+    // privileged_user for a member of your Base44 workspace: sign-in tokens are
+    // for end users only.
     if (error instanceof Base44Error && error.status < 500) {
       console.warn(`[embed] ${appId} ${target}: ${error.status} ${error.code ?? ""}`);
-      return { url: null };
+      return { url: null, refused: error.code ?? null };
     }
     throw error;
   }

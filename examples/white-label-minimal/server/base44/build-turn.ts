@@ -74,7 +74,17 @@ export async function submitToolCallInput(input: ToolInput) {
   return {};
 }
 
-// 5. Show the preview: see embed.ts, which signs the builder in.
+// 5. Show the preview. Tiny signs the builder into it instead (embed.ts), and
+//    uses this only for viewers Base44 will not sign in. The preview token is
+//    short-lived: never cache or log it.
+export async function getSandboxPreviewUrl(appId: string) {
+  const data = await base44(`/api/apps/${appId}/sandbox/preview-url`, { timeout: BUILD_TURN_TIMEOUT });
+  // Usually a host without a scheme.
+  const address = data.preview_url.includes("://") ? data.preview_url : `https://${data.preview_url}`;
+  const url = new URL(httpsUrl(address));
+  if (data.preview_token) url.searchParams.set("_preview_token", data.preview_token);
+  return { url: url.href };
+}
 
 // 6. Publish the app.
 export async function deployApp(appId: string) {
