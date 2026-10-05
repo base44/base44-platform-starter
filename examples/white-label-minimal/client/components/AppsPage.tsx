@@ -4,8 +4,10 @@ import type { App } from "../../types";
 import AppWidget from "./AppWidget";
 
 // The home page: the builder's apps, or a way to create the first one.
-export default function AppsPage({ apps, loading, removing, error, onRetry, onCreate, onOpen, onRemove }: {
+export default function AppsPage({ apps, openId, hidden, loading, removing, error, onRetry, onCreate, onOpen, onRemove }: {
   apps: App[];
+  openId?: string;
+  hidden: boolean;
   loading: boolean;
   removing: boolean;
   error: string;
@@ -40,6 +42,7 @@ export default function AppsPage({ apps, loading, removing, error, onRetry, onCr
           <AppWidget
             key={app.id}
             app={app}
+            open={app.id === openId}
             removing={removing || loading}
             onEdit={() => onOpen(app)}
             onRemove={() => onRemove(app)}
@@ -50,7 +53,7 @@ export default function AppsPage({ apps, loading, removing, error, onRetry, onCr
   }
 
   return (
-    <main className="apps-page">
+    <main className={`apps-page ${openId ? "has-open-app" : ""}`} hidden={hidden}>
       <div className="apps-content">
         {error && (
           <div role="alert" className="error">

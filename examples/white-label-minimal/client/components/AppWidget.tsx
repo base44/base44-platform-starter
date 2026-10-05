@@ -4,8 +4,10 @@ import type { App } from "../../types";
 import AppPreview from "./AppPreview";
 
 // A card on the apps page. It shows the app's latest build, which starts no sandbox.
-export default function AppWidget({ app, removing, onEdit, onRemove }: {
+// Open, it fills the stage and loads the live sandbox over that build.
+export default function AppWidget({ app, open, removing, onEdit, onRemove }: {
   app: App;
+  open: boolean;
   removing: boolean;
   onEdit: () => void;
   onRemove: () => void;
@@ -14,7 +16,7 @@ export default function AppWidget({ app, removing, onEdit, onRemove }: {
   const building = app.status?.state === "processing";
 
   return (
-    <article className="app-widget" aria-label={name}>
+    <article className={`app-widget ${open ? "is-open" : ""}`} aria-label={name}>
       <header className="widget-heading">
         <h2>{name}</h2>
         {building && <Loader2 size={14} className="spin" aria-label="Building" />}
@@ -28,12 +30,12 @@ export default function AppWidget({ app, removing, onEdit, onRemove }: {
         </div>
       </header>
       <div className="widget-preview">
-        {building ? (
+        {building && !open ? (
           <div className="widget-placeholder" role="status">
             <Loader2 size={20} className="spin" aria-hidden="true" /> Generating your app…
           </div>
         ) : (
-          <AppPreview app={app} title={`${name} widget preview`} showControls={false} />
+          <AppPreview app={app} live={open} title={open ? `${name} preview` : `${name} widget preview`} showControls={open} />
         )}
       </div>
     </article>
