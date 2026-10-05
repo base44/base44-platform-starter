@@ -120,10 +120,10 @@ test('input sends declared secrets, then the stage preview refreshes', async ({ 
   await expect(page.getByLabel('What should change?')).toBeEnabled();
   expect(f.submissions[0].extraUserInput).toEqual({ secrets: { WEATHER_KEY: 'fixture-secret' } });
   expect(f.counts().deployments).toBe(0);
-  await expect(page.locator('.stage-body iframe')).toHaveAttribute('src', /fixture-/);
-  const initialPreview = await page.locator('.stage-body iframe').getAttribute('src');
-  await page.locator('.stage-body').getByRole('button', { name: 'Refresh preview' }).click();
-  await expect(page.locator('.stage-body iframe')).not.toHaveAttribute('src', initialPreview!);
+  await expect(page.locator('.app-widget.is-open iframe')).toHaveAttribute('src', /fixture-/);
+  const initialPreview = await page.locator('.app-widget.is-open iframe').getAttribute('src');
+  await page.locator('.app-widget.is-open').getByRole('button', { name: 'Refresh preview' }).click();
+  await expect(page.locator('.app-widget.is-open iframe')).not.toHaveAttribute('src', initialPreview!);
   expect(await page.evaluate(() => ({ local: Object.keys(localStorage), session: Object.keys(sessionStorage) }))).toEqual({ local: [], session: [] });
   expect(f.counts().creates).toBe(1);
   // Nothing in the UI deploys any more; the action itself is covered server-side.
@@ -465,7 +465,7 @@ test('the card, the chat thumbnail and the stage show the same app', async ({ pa
   await page.goto('/');
   await expect(page.frameLocator('.app-widget iframe').getByRole('heading', { name: 'Reading app' })).toBeVisible();
   await page.getByRole('button', { name: 'Edit Reading list', exact: true }).click();
-  await expect(page.frameLocator('.stage-body iframe:not(.preview-loading-frame)').getByRole('heading', { name: 'Reading app' })).toBeVisible();
+  await expect(page.frameLocator('.app-widget.is-open iframe:not(.preview-loading-frame)').getByRole('heading', { name: 'Reading app' })).toBeVisible();
   await expect(page.locator('.delivery iframe')).toHaveCount(0);
 });
 
@@ -525,6 +525,7 @@ test('remove persists, handles failures, and New app lives in the topbar', async
 
  test('browsing never starts sandboxes; editing keeps static until live loads', async ({ page }) => {
   let requests = 0;
+  let latestRequests = 0;
   let release: (() => void) | undefined;
   await page.route('https://static.example/**', route => route.fulfill({ contentType: 'text/html', body: '<h1>Static build</h1>' }));
   await page.route('https://live.example/**', async route => {
@@ -533,7 +534,7 @@ test('remove persists, handles failures, and New app lives in the topbar', async
   });
   const app = { id: 'reading', name: 'Reading list', status: { state: 'ready' } };
   await page.route('**/api/base44', route => {
-    if (route.request().postDataJSON().action === 'getLatestBuildUrl') return route.fulfill({ json: { url: 'https://static.example/app' } });
+    if (route.request().postDataJSON().action === 'getLatestBuildUrl') { latestRequests++; return route.fulfill({ json: { url: 'https://static.example/app' } }); }
     const { action } = route.request().postDataJSON();
     if (action === 'getPreviewUrl') { requests++; return route.fulfill({ json: { url: 'https://live.example/app' } }); }
     return route.fulfill({ json: action === 'listApps' ? { apps: [app], hasMore: false } : action === 'getConversation' ? { messages: [] } : app });
@@ -543,12 +544,17 @@ test('remove persists, handles failures, and New app lives in the topbar', async
   expect(requests).toBe(0);
   await page.getByRole('button', { name: 'Edit Reading list', exact: true }).click();
   await expect.poll(() => !!release).toBe(true);
-  await expect(page.frameLocator('.stage-body iframe:not(.preview-loading-frame)').getByRole('heading', { name: 'Static build' })).toBeVisible();
+  await expect(page.frameLocator('.app-widget.is-open iframe:not(.preview-loading-frame)').getByRole('heading', { name: 'Static build' })).toBeVisible();
   expect(requests).toBeGreaterThanOrEqual(1);
   release!();
-  await expect(page.locator('.stage-body iframe')).toHaveCount(1);
-  await expect(page.frameLocator('.stage-body iframe').getByRole('heading', { name: 'Live build' })).toBeVisible();
+  await expect(page.locator('.app-widget.is-open iframe')).toHaveCount(1);
+  await expect(page.frameLocator('.app-widget.is-open iframe').getByRole('heading', { name: 'Live build' })).toBeVisible();
   await page.screenshot({ path: 'test-results/static-live-preview.png' });
+  // Back on the apps page the card is the same iframe: nothing reloads.
+  const latest = latestRequests;
+  await page.getByRole('button', { name: 'All apps', exact: true }).click();
+  await expect(page.frameLocator('.app-widget iframe').getByRole('heading', { name: 'Live build' })).toBeVisible();
+  expect(latestRequests).toBe(latest);
 });
 
 test('editing shows a loader until the conversation arrives', async ({ page }) => {

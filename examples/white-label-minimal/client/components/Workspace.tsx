@@ -8,7 +8,6 @@ import { useApps } from "../useApps";
 import AppsPage from "./AppsPage";
 import Builder from "./Builder";
 import EditorPanel from "./EditorPanel";
-import AppPreview from "./AppPreview";
 import TinySunnyLogo from "./TinySunnyLogo";
 
 // Tiny's one screen: the apps page or an open app, with the assistant beside it.
@@ -19,6 +18,8 @@ export default function Workspace({ name }: { name: string }) {
   const [editor, setEditor] = useState<{ app: App | null; key: number }>({ app: null, key: 0 });
   const [panelOpen, setPanelOpen] = useState(false);
   const title = editor.app?.name || "";
+  // An open app that has a card is that card, enlarged, so its preview never reloads.
+  const openId = showApp && apps.apps.some((app) => app.id === editor.app?.id) ? editor.app?.id : undefined;
 
   function openApp(app: App | null) {
     setEditor((current) => ({ app, key: current.key + 1 }));
@@ -63,27 +64,26 @@ export default function Workspace({ name }: { name: string }) {
       </header>
 
       <div className="workspace-body">
-        {showApp ? (
-          <main className="app-stage">
+        <div className="app-stage">
+          {showApp && (
             <header className="stage-heading">
               <button className="secondary" onClick={backToApps}>
                 <ArrowLeft size={16} /> All apps
               </button>
               <strong>{title || "New app"}</strong>
             </header>
+          )}
+          {showApp && !openId && (
             <div className="stage-body">
-              {editor.app ? (
-                <AppPreview key={editor.app.id} app={editor.app} live title={`${editor.app.name || "Untitled"} preview`} />
-              ) : (
-                <div className="widget-placeholder">
-                  Describe what you want to build. The preview appears here once the app exists.
-                </div>
-              )}
+              <div className="widget-placeholder">
+                Describe what you want to build. The preview appears here once the app exists.
+              </div>
             </div>
-          </main>
-        ) : (
+          )}
           <AppsPage
             apps={apps.apps}
+            openId={openId}
+            hidden={showApp && !openId}
             loading={apps.loading}
             removing={apps.removing}
             error={apps.error}
@@ -92,7 +92,7 @@ export default function Workspace({ name }: { name: string }) {
             onOpen={openApp}
             onRemove={(app) => void apps.remove(app)}
           />
-        )}
+        </div>
 
         <EditorPanel
           title={title || "Build an app"}

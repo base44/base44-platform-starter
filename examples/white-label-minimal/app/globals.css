@@ -506,3 +506,14 @@ iframe {
   .stage-body { padding: 16px 20px 20px; }
 }
 }
+
+/* the open app is its card, enlarged: the other cards hide but keep their previews loaded */
+.app-stage > .apps-page { flex: 1; min-height: 0; }
+.apps-page.has-open-app { overflow: hidden; }
+.apps-page.has-open-app .apps-content { height: 100%; padding: 24px 32px 32px; }
+.apps-page.has-open-app .apps-grid { height: 100%; grid-template-columns: 1fr; }
+.apps-page.has-open-app .app-widget:not(.is-open) { display: none; }
+.app-widget.is-open { height: 100%; }
+.app-widget.is-open .widget-heading { display: none; }
+.app-widget.is-open .widget-preview { height: 100%; }
+@media (max-width: 600px) { .apps-page.has-open-app .apps-content { padding: 16px 20px 20px; } }
