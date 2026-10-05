@@ -7,7 +7,7 @@ import {
 } from "@assistant-ui/react";
 import { Loader2 } from "lucide-react";
 import * as actions from "../../server/actions";
-import type { App, ToolCall, ToolInput } from "../../types";
+import type { App, ToolCall } from "../../types";
 import { getChatState } from "../chat-state";
 import { toAssistantMessage } from "../messages";
 import { unwrap } from "../unwrap";
@@ -18,10 +18,10 @@ import ToolActivity from "./ToolActivity";
 import { Thread } from "./assistant-ui/thread";
 
 // What ToolPart, which assistant-ui renders itself, needs to answer a question.
-const AnswerContext = createContext<{ appId: string | null; disabled: boolean; answer: (input: ToolInput) => Promise<void> } | null>(null);
+const AnswerContext = createContext<{ appId: string | null; disabled: boolean } | null>(null);
 
-// The builder's chat for one app: steps 1, 3 and 4 of the build turn are the
-// functions below, step 2 is useLiveApp, and assistant-ui's Thread renders it.
+// The builder's chat for one app: step 1 is send(), step 2 is useLiveApp, steps 3
+// and 4 are ToolPart, and assistant-ui's Thread renders it.
 export default function Builder({ initialAppId, autoFocus, onCreated, onUpdated, onGoHome }: {
   initialAppId?: string;
   autoFocus?: boolean;
@@ -61,11 +61,6 @@ export default function Builder({ initialAppId, autoFocus, onCreated, onUpdated,
     }
   }
 
-  // 4. Send the answer back.
-  async function answer(input: ToolInput) {
-    await unwrap(actions.submitToolCallInput(input));
-  }
-
   // assistant-ui shows the messages from live updates and hands new prompts to send().
   const runtime = useExternalStoreRuntime({
     messages: messages ?? [],
@@ -88,7 +83,7 @@ export default function Builder({ initialAppId, autoFocus, onCreated, onUpdated,
         </p>
       )}
 
-      <AnswerContext.Provider value={{ appId, disabled: paused, answer }}>
+      <AnswerContext.Provider value={{ appId, disabled: paused }}>
         <AssistantRuntimeProvider runtime={runtime}>
           <Thread
             inputLabel={appId ? "What should change?" : "What would you like to build?"}
@@ -109,10 +104,11 @@ export default function Builder({ initialAppId, autoFocus, onCreated, onUpdated,
   );
 }
 
-// 3. Answer the agent's questions. assistant-ui renders each tool call with this
-// component: a question while Base44 waits for the builder, activity otherwise.
+// 3. Answer the agent's questions, and 4. send the answer back. assistant-ui renders
+// each tool call with this component: a question while Base44 waits for the builder,
+// activity otherwise.
 const ToolPart: ToolCallMessagePartComponent = ({ toolCallId, artifact }) => {
-  const { appId, disabled, answer } = useContext(AnswerContext)!;
+  const { appId, disabled } = useContext(AnswerContext)!;
   const { tool, messageId } = artifact as { tool: ToolCall; messageId: string };
   const asking = tool.status === "waiting_for_user_input" || tool.waiting_on?.kind;
   if (!asking || !appId) return <ToolActivity tool={tool} />;
@@ -123,7 +119,7 @@ const ToolPart: ToolCallMessagePartComponent = ({ toolCallId, artifact }) => {
       messageId={messageId}
       appId={appId}
       disabled={disabled}
-      onSubmit={answer}
+      onSubmit={async (input) => { await unwrap(actions.submitToolCallInput(input)); }}
     />
   );
 };

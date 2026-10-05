@@ -90,8 +90,8 @@ before it calls Base44.
 
 In the browser, [client/useLiveApp.ts](client/useLiveApp.ts) is step 2: the app and its chat,
 kept current by live updates. [components/Builder.tsx](client/components/Builder.tsx) holds the
-other steps as plain functions, `send()` and `answer()`, and assistant-ui's Thread renders the
-chat. A prompt appears once Base44 sends it back. `Question.tsx` handles
+other steps: `send()` for prompts and `ToolPart` for answers, and assistant-ui's Thread renders
+the chat. A prompt appears once Base44 sends it back. `Question.tsx` handles
 approvals, choices, and secrets; retries preserve the original answer and request ID.
 A timed-out creation may still succeed, and the error says so.
 
