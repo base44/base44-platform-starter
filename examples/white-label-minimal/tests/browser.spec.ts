@@ -155,7 +155,7 @@ test('rejected access preserves prompt and allows retry without uncertain creati
   await openBuilder(page);
   await page.getByLabel('What would you like to build?').fill('Hello world');
   await page.getByRole('button', { name: 'Create app', exact: true }).click();
-  await expect(page.locator('aside[role=alert]')).toContainText('Sign in to continue.');
+  await expect(page.locator('.builder [role=alert]')).toContainText('Sign in to continue.');
   await expect(page.getByRole('button', { name: 'Create app', exact: true })).toBeEnabled();
   await expect(page.getByLabel('What would you like to build?')).toHaveValue('Hello world');
   await expect(page.getByText('Creation may have succeeded.', { exact: false })).toHaveCount(0);
@@ -375,7 +375,7 @@ test('first prompt stays visible through creation and an empty snapshot, then me
   await page.getByLabel('What would you like to build?').fill(prompt);
   await page.getByRole('button', { name: 'Create app', exact: true }).click();
   await expect(page.getByText(prompt, { exact: true })).toBeVisible();
-  await expect(page.locator('.from-assistant')).toHaveCount(0);
+  await expect(page.locator('[data-role=assistant]')).toHaveCount(0);
   await expect.poll(() => !!releaseCreate).toBe(true);
   releaseCreate!();
   await expect(page.getByText('Building…', { exact: true })).toBeVisible();
@@ -383,7 +383,7 @@ test('first prompt stays visible through creation and an empty snapshot, then me
   await expect(page.getByText('No messages yet.', { exact: true })).toHaveCount(0);
   includeMessage = true;
   await pushUpdates(page);
-  await expect(page.locator('.from-user')).toHaveCount(1);
+  await expect(page.locator('[data-role=user]')).toHaveCount(1);
   await expect(page.getByText(prompt, { exact: true })).toHaveCount(1);
 });
 
@@ -399,12 +399,12 @@ test('failed creation removes the optimistic bubble and restores the draft', asy
   const input = page.getByLabel('What would you like to build?');
   await input.fill('Build a scoreboard');
   await page.getByRole('button', { name: 'Create app', exact: true }).click();
-  await expect(page.locator('.from-user')).toHaveCount(1);
+  await expect(page.locator('[data-role=user]')).toHaveCount(1);
   await expect.poll(() => !!failCreate).toBe(true);
   failCreate!();
   await expect(input).toHaveValue('Build a scoreboard');
-  await expect(page.locator('.from-user')).toHaveCount(0);
-  await expect(page.locator('aside[role=alert]')).toBeVisible();
+  await expect(page.locator('[data-role=user]')).toHaveCount(0);
+  await expect(page.locator('.builder [role=alert]')).toBeVisible();
 });
 
  test('a greeting-only reply never claims the app is ready', async ({ page }) => {

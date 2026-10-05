@@ -67,26 +67,19 @@ export function mergeOptimisticMessages(
 }
 
 // Converts a message to assistant-ui's shape. Each tool call carries the original
-// call, so the chat can show it as a question or as activity.
+// call, which ToolPart shows as a question or as activity.
 export function toAssistantMessage(message: Message): ThreadMessageLike {
-  const role = message.role === "user" ? "user" : "assistant";
-  const tools = role === "assistant" ? (message.tool_calls ?? []) : [];
+  if (message.role === "user") return { id: message.id, role: "user", content: message.content ?? "" };
   return {
     id: message.id,
-    role,
+    role: "assistant",
     content: [
       ...(message.content ? [{ type: "text" as const, text: message.content }] : []),
-      ...tools.map((tool, index) => ({
+      ...(message.tool_calls ?? []).map((tool, index) => ({
         type: "tool-call" as const,
         toolCallId: tool.id || `${message.id}:tool:${index}`,
         toolName: tool.name || "Agent action",
-        argsText: tool.arguments_string || "",
         artifact: { tool, messageId: message.id },
-        ...(tool.results != null ? { result: tool.results } : {}),
-        isError: tool.status === "error" || tool.status === "stopped",
-        ...(tool.status === "waiting_for_user_input"
-          ? { interrupt: { type: "human" as const, payload: tool.waiting_on } }
-          : {}),
       })),
     ],
   };

@@ -1,7 +1,7 @@
 import type { App, Message } from "../types";
 
 // Where the build turn stands, from the builder's point of view.
-export type ChatState =
+type ChatState =
   | "loading"   // the chat has not arrived yet
   | "paused"    // live updates stopped
   | "question"  // the agent waits for the builder's answer

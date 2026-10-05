@@ -7,7 +7,7 @@ import { getChatState } from "./chat-state";
 import { mergeOptimisticMessages, toMessage, upsertMessage, type OptimisticMessage } from "./messages";
 import { unwrap } from "./unwrap";
 
-export type Busy = "create" | "send" | "answer" | null;
+type Busy = "create" | "send" | "answer" | null;
 
 // The browser side of "The build turn": watch the app build over live updates,
 // send the builder's prompts, and answer the agent's questions. Every Base44
