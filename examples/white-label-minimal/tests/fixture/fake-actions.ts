@@ -24,3 +24,4 @@ export const getPublishedUrl = (appId: string) => call("getPublishedUrl", { appI
 export const getLatestBuildUrl = (appId: string) => call("getLatestBuildUrl", { appId });
 export const getPreviewUrl = (appId: string) => call("getPreviewUrl", { appId });
 export const openLiveUpdates = (appId: string) => call("openLiveUpdates", { appId });
+export const closeLiveUpdates = (appId: string, sessionId: string) => call("closeLiveUpdates", { appId, sessionId });

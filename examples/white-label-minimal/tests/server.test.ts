@@ -4,7 +4,7 @@ import * as buildTurn from '../server/base44/build-turn';
 import { customInstructions } from '../server/base44/custom-instructions';
 import { getEmbedUrl } from '../server/base44/embed';
 import { Base44Error } from '../server/base44/error';
-import { openLiveUpdates } from '../server/base44/live-updates';
+import { closeLiveUpdates, openLiveUpdates } from '../server/base44/live-updates';
 import { resolveAppPage } from '../server/app-list';
 import { requireOwner } from '../server/ownership';
 import { prisma } from '../server/db';
@@ -144,7 +144,9 @@ test('apps missing in Base44 do not hide valid apps or break pagination', async 
 
 test('live updates open with the workspace key, and a refusal says how to fix it', async () => {
   const calls = setup({ session_id: 'session_1', session_token: 'wlst_canary', socket_url: 'https://platform.example/ws' });
-  assert.deepEqual(await openLiveUpdates('app_1'), { serverUrl: 'https://platform.example', sessionToken: 'wlst_canary' });
+  assert.deepEqual(await openLiveUpdates('app_1'), {
+    serverUrl: 'https://platform.example', sessionId: 'session_1', sessionToken: 'wlst_canary',
+  });
   assert.equal(calls[0].url, 'https://platform.example/api/service/socket-sessions');
   assert.equal(headers(calls[0].init).get('authorization'), 'Bearer b44k_workspace');
   assert.deepEqual(body(calls[0].init), { app_ids: ['app_1'] });
@@ -155,6 +157,17 @@ test('live updates open with the workspace key, and a refusal says how to fix it
     assert.match(error.message, /apps:watch/);
     return true;
   });
+});
+
+test('closing live updates ends the session, and an ended session is not an error', async () => {
+  const calls = setup(null);
+  await closeLiveUpdates('session_1');
+  assert.equal(calls[0].url, 'https://platform.example/api/service/socket-sessions/session_1');
+  assert.equal(calls[0].init.method, 'DELETE');
+  assert.equal(headers(calls[0].init).get('authorization'), 'Bearer b44k_workspace');
+
+  setup({ error: { code: 'session_not_found' } }, 404);
+  await closeLiveUpdates('session_1');
 });
 
 test('the sandbox preview URL gets a scheme and its one-time preview token', async () => {

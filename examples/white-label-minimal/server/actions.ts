@@ -112,6 +112,14 @@ export async function openLiveUpdates(appId: string) {
   });
 }
 
+export async function closeLiveUpdates(appId: string, sessionId: string) {
+  return returnErrors(async () => {
+    const user = await requireUser();
+    await requireOwner(user.email, appId);
+    await liveUpdates.closeLiveUpdates(sessionId);
+  });
+}
+
 // Next.js hides thrown error messages from the browser in production, so an
 // action returns its error instead of throwing it.
 async function returnErrors<T>(action: () => Promise<T>): Promise<ActionResult<T>> {

@@ -3,7 +3,7 @@ import { getBase44Config } from "./config";
 import { Base44Error } from "./error";
 
 type Options = {
-  method?: "GET" | "POST";
+  method?: "GET" | "POST" | "DELETE";
   body?: object;
   headers?: Record<string, string>;
   // Defaults to the integration account's personal access token.
