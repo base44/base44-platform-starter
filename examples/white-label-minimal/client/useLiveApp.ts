@@ -18,9 +18,18 @@ export function useLiveApp(appId: string | null) {
     if (!appId) return;
     let stopped = false;
     let live: { close(): void } | undefined;
+    let sessionId: string | undefined;
+
+    // Ends the session on Base44 too, so it does not count toward the key's
+    // open-session limit until it expires.
+    function endSession() {
+      if (sessionId) actions.closeLiveUpdates(appId!, sessionId).catch(() => {});
+      sessionId = undefined;
+    }
 
     function pause() {
       live?.close();
+      endSession();
       setPaused(true);
     }
 
@@ -28,13 +37,31 @@ export function useLiveApp(appId: string | null) {
       setApp(await unwrap(actions.getApp(appId!)));
     }
 
+    // Tiny's server opens each session with the workspace key. A new session
+    // replaces the previous one.
+    async function openSession() {
+      const session = await unwrap(actions.openLiveUpdates(appId!));
+      endSession();
+      sessionId = session.sessionId;
+      if (stopped) endSession();
+      return session;
+    }
+
     async function connect() {
-      // Tiny's server opens each session with the workspace key.
-      const { serverUrl } = await unwrap(actions.openLiveUpdates(appId!));
+      const first = await openSession();
       if (stopped) return;
+      let firstToken: string | undefined = first.sessionToken;
       const client = new Base44PlatformClient({
-        serverUrl,
-        getSessionToken: async () => (await unwrap(actions.openLiveUpdates(appId!))).sessionToken,
+        serverUrl: first.serverUrl,
+        // The SDK asks again only when the session has ended; then open a new one.
+        async getSessionToken() {
+          if (firstToken) {
+            const token = firstToken;
+            firstToken = undefined;
+            return token;
+          }
+          return (await openSession()).sessionToken;
+        },
       });
       const builder = client.builder.init({ onError: pause });
       live = builder;
@@ -67,6 +94,7 @@ export function useLiveApp(appId: string | null) {
     return () => {
       stopped = true;
       live?.close();
+      endSession();
     };
   }, [appId, attempt]);
 

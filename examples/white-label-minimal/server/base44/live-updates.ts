@@ -3,7 +3,7 @@ import { Base44Error } from "./error";
 import { base44, workspaceKey } from "./request";
 
 // Live updates: a read-only socket session for one app. The browser receives
-// only the session token, never the workspace key.
+// the session token and session id, never the workspace key. The id cannot open a socket.
 export async function openLiveUpdates(appId: string) {
   try {
     const session = await base44("/api/service/socket-sessions", {
@@ -11,10 +11,28 @@ export async function openLiveUpdates(appId: string) {
       auth: { Authorization: `Bearer ${workspaceKey()}` },
       body: { app_ids: [appId] },
     });
-    return { serverUrl: new URL(session.socket_url).origin, sessionToken: session.session_token as string };
+    return {
+      serverUrl: new URL(session.socket_url).origin,
+      sessionId: session.session_id as string,
+      sessionToken: session.session_token as string,
+    };
   } catch (error) {
     if (!(error instanceof Base44Error) || error.status === 504) throw error;
     throw new Base44Error(liveUpdatesProblem(error), 503);
+  }
+}
+
+// Ends a session when the builder leaves, so it does not count toward the key's
+// open-session limit until it expires.
+export async function closeLiveUpdates(sessionId: string) {
+  try {
+    await base44(`/api/service/socket-sessions/${encodeURIComponent(sessionId)}`, {
+      method: "DELETE",
+      auth: { Authorization: `Bearer ${workspaceKey()}` },
+    });
+  } catch (error) {
+    // Already ended or expired.
+    if (!(error instanceof Base44Error) || error.status !== 404) throw error;
   }
 }
 

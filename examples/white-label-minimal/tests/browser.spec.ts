@@ -34,9 +34,14 @@ async function pushUpdates(page: Page) {
 test.beforeEach(async ({ page }) => {
   const route = page.route.bind(page);
   page.route = ((url: string, handler: (route: Route) => unknown, options?: object) => route(url, url === '**/api/base44'
-    ? (r: Route) => r.request().postDataJSON()?.action === 'openLiveUpdates'
-      ? r.fulfill({ json: { serverUrl: 'https://socket.example', sessionToken: 'wlst_fixture' } })
-      : handler(r)
+    ? (r: Route) => {
+      const action = r.request().postDataJSON()?.action;
+      if (action === 'openLiveUpdates') {
+        return r.fulfill({ json: { serverUrl: 'https://socket.example', sessionId: 'session_fixture', sessionToken: 'wlst_fixture' } });
+      }
+      if (action === 'closeLiveUpdates') return r.fulfill({ json: {} });
+      return handler(r);
+    }
     : handler, options)) as Page['route'];
   await page.routeWebSocket('**/ws/socket.io/**', socket => {
     socket.send('0' + JSON.stringify({ sid: 'fixture', upgrades: [], pingInterval: 3600000, pingTimeout: 3600000, maxPayload: 1000000 }));
