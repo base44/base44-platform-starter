@@ -10,7 +10,7 @@ import * as actions from "../../server/actions";
 import type { App, ToolCall, ToolInput } from "../../types";
 import { getChatState } from "../chat-state";
 import { toAssistantMessage } from "../messages";
-import { ActionError, unwrap } from "../unwrap";
+import { unwrap } from "../unwrap";
 import { useLiveApp } from "../useLiveApp";
 import Question from "./Question";
 import ReadyCard from "./ReadyCard";
@@ -46,19 +46,15 @@ export default function Builder({ initialAppId, autoFocus, onCreated, onUpdated,
     setSending(true);
     setError("");
     try {
-      if (appId) {
-        await unwrap(actions.sendMessage(appId, prompt));
-      } else {
+      if (appId) await unwrap(actions.sendMessage(appId, prompt));
+      else {
         const created = await unwrap(actions.createApp(prompt));
         setAppId(created.id);
         onCreated?.(created);
       }
       return true;
     } catch (err) {
-      // Base44 holds Send message open until the whole turn ends, so a timeout
-      // means the turn is still running. Live updates show how it ends.
-      if (appId && err instanceof ActionError && err.status === 504) return true;
-      setError(err instanceof Error ? err.message : "Request failed.");
+      setError((err as Error).message);
       return false;
     } finally {
       setSending(false);

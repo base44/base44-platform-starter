@@ -86,13 +86,19 @@ test('network failures are uncertain, not retried, and safe to display', async (
   setup();
   let calls = 0;
   globalThis.fetch = async () => { calls++; throw Error('secret-canary'); };
-  await assert.rejects(buildTurn.sendMessage('app_1', 'Update'), (error: Base44Error) => {
+  await assert.rejects(buildTurn.deployApp('app_1'), (error: Base44Error) => {
     assert.equal(error.status, 504);
     assert.match(error.message, /may still be running/);
     assert.doesNotMatch(error.message, /canary/);
     return true;
   });
   assert.equal(calls, 1);
+});
+
+test('a send that outlasts the timeout is still running, not failed', async () => {
+  setup();
+  globalThis.fetch = async () => { throw Error('timeout'); };
+  assert.deepEqual(await buildTurn.sendMessage('app_1', 'Update'), {});
 });
 
 test('an app that was never published has no link; an unsafe link is refused', async () => {
