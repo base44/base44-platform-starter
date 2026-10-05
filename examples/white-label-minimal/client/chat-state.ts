@@ -1,7 +1,7 @@
 import type { App, Message } from "../types";
 
 // Where the build turn stands, from the builder's point of view.
-export type ChatState =
+type ChatState =
   | "loading"   // the chat has not arrived yet
   | "paused"    // live updates stopped
   | "question"  // the agent waits for the builder's answer
@@ -10,9 +10,9 @@ export type ChatState =
   | "ready"     // the app is built and can be published
   | "idle";     // waiting for a prompt
 
-export function getChatState(app: App | null, messages: Message[], loading: boolean, liveError: string): ChatState {
-  if (loading) return "loading";
-  if (liveError) return "paused";
+export function getChatState(app: App | null, messages: Message[] | null, paused: boolean): ChatState {
+  if (paused) return "paused";
+  if (!messages) return "loading";
   if (hasOpenQuestion(messages)) return "question";
   if (app?.status?.state === "processing") return "building";
   if (app?.status?.state === "error") return "failed";

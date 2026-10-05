@@ -1,3 +1,19 @@
+/* Tailwind is only for assistant-ui's Thread. Tiny's own styles sit in the base
+   layer, under Tailwind's utilities, and Tailwind's reset is left out. */
+@layer theme, base, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@source "../client";
+
+@theme inline {
+  --color-background: var(--surface-sunken);
+  --color-foreground: #1e1f21;
+  --color-card: #ffffff;
+  --color-muted: #e2e7ee;
+  --color-border: var(--border);
+}
+
+@layer base {
 :root {
   color-scheme: light;
   --navy: #0e2e56;
@@ -169,7 +185,7 @@ h1 {
   margin-bottom: 24px;
 }
 .error,
-.builder aside {
+.builder > [role=alert] {
   background: #fff2e7;
   padding: 12px 16px;
   border-radius: 6px;
@@ -377,22 +393,7 @@ iframe {
 .editor-heading strong { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .editor-heading > div { min-width: 0; }
 .builder { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; padding: 0; font-size: 12px; }
-.builder-chat { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
 .builder p { line-height: 1.6; }
-.conversation { flex: 1; min-height: 80px; overflow-y: auto; overscroll-behavior: contain; padding: 16px; }
-.conversation .chat-message { display: flex; gap: 10px; border: 0; padding: 0; margin-bottom: 16px; }
-.chat-message.from-user { flex-direction: row-reverse; }
-.message-avatar { display: grid; place-items: center; flex-shrink: 0; width: 24px; height: 24px; background: #f6f6f6; border: 1px solid var(--border); border-radius: 4px; color: var(--muted); }
-.message-body { min-width: 0; max-width: 82%; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
-.from-user .message-body { align-items: flex-end; }
-.message-bubble { background: white; border: 1px solid var(--border); border-radius: 4px; padding: 8px 12px; overflow-wrap: anywhere; line-height: 1.6; }
-.from-user .message-bubble, .from-user .message-avatar { background: var(--navy); color: white; border-color: var(--navy); }
-.message-bubble p { margin: 0 0 8px; }
-.message-bubble > :last-child { margin-bottom: 0; }
-.from-user p { white-space: pre-wrap; }
-.message-bubble h1, .message-bubble h2, .message-bubble h3 { font-size: 13px; margin: 10px 0 6px; letter-spacing: normal; font-weight: 600; }
-.message-bubble ul, .message-bubble ol { padding-left: 18px; }
-.message-bubble pre { padding: 8px; background: #f6f6f6; border-radius: 4px; }
 .tool-activity { width: 100%; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; font-size: 11px; margin: 4px 0 0; }
 .tool-activity summary { display: flex; align-items: center; gap: 8px; background: #f6f6f6; padding: 8px 12px; color: #1e1f21; }
 .tool-activity summary > span:not(.sr-only):not(.tool-dot) { font-family: ui-monospace, monospace; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -401,23 +402,16 @@ iframe {
 .tool-dot { width: 6px; height: 6px; border-radius: 50%; background: #929394; flex-shrink: 0; }
 .tool-activity > div { padding: 8px 12px; border-top: 1px solid var(--border); background: white; }
 .tool-activity pre { font-size: 11px; line-height: 1.5; }
-.composer { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 8px; flex-shrink: 0; border: 1px solid var(--border); border-radius: var(--radius-inset); background: white; padding: 12px; margin: 0 14px 14px; box-shadow: var(--shadow-card); }
-.composer textarea { flex: 1; width: 0; margin: 0; padding: 9px 10px; font-size: 14px; line-height: 20px; height: 40px; min-height: 40px; max-height: 112px; resize: none; border-radius: 4px; }
-.composer .send-button { flex-shrink: 0; height: 38px; width: 38px; padding: 0; border-radius: 4px; }
-.composer > small { width: 100%; }
-.delivery { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; margin: 16px 0 8px 34px; padding: 14px 16px; border: 1px solid var(--border); background: white; border-radius: 8px; }
+.delivery { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; margin: 0 8px 16px; padding: 14px 16px; border: 1px solid var(--border); background: white; border-radius: 8px; }
 .delivery strong { font-size: 13px; font-weight: 600; }
 .delivery button, .delivery .button { align-self: stretch; font-size: 12px; padding: 9px 12px; border-radius: 4px; }
 .ready-badge { display: inline-flex; align-items: center; gap: 5px; margin: 0; padding: 3px 8px 3px 6px; border-radius: 999px; background: var(--ready-surface); color: var(--ready-ink); font-size: 11px; font-weight: 500; line-height: 1; }
-.build-progress { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; margin: 12px 0 12px 34px; }
-.builder > details, .builder > aside { max-height: 35%; overflow: auto; flex-shrink: 0; margin: 12px; }
-.chat-welcome { display: flex; min-height: 100%; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 32px 0; }
-.chat-welcome h2 { font-size: 20px; font-weight: 500; margin: 0 0 4px; }
+.build-progress { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; margin: 0 8px 12px; }
+.builder > details, .builder > [role=alert] { max-height: 35%; overflow: auto; flex-shrink: 0; margin: 12px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 @media (max-width: 600px) {
   .builder { padding: 0; }
-  .composer { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
-  .composer textarea, input:not([type="radio"]):not([type="checkbox"]) { font-size: 16px; }
+  textarea, input:not([type="radio"]):not([type="checkbox"]) { font-size: 16px; }
 }
 
 .editor-heading button { flex-shrink: 0; white-space: nowrap; }
@@ -438,7 +432,6 @@ iframe {
 .preview-controls { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; font-size: 11px; color: var(--muted); background: white; border-top: 1px solid var(--border); }
 .preview-controls button { flex-shrink: 0; padding: 5px 8px; font-size: 11px; }
 
-.conversation-loading { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 160px; color: var(--muted); font-size: 14px; }
 
 
 /* editing an app that already exists, in the logo's colours */
@@ -511,4 +504,5 @@ iframe {
 @media (max-width: 600px) {
   .stage-heading { padding: 12px 20px; }
   .stage-body { padding: 16px 20px 20px; }
+}
 }

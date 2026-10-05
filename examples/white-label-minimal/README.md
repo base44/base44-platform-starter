@@ -19,9 +19,9 @@ each part of them lives in one place here:
 | [Tenancy and credentials](https://docs.base44.com/developers/white-label/tenancy-and-credentials) | [server/base44/config.ts](server/base44/config.ts), [server/base44/request.ts](server/base44/request.ts) |
 | Keeping builders apart | [server/actions.ts](server/actions.ts), [server/ownership.ts](server/ownership.ts) |
 | [The build turn](https://docs.base44.com/developers/white-label/the-build-turn), steps 1–6 | [server/base44/build-turn.ts](server/base44/build-turn.ts), one function per call, numbered by step |
-| Watch it build (live, instead of polling) | [server/base44/live-updates.ts](server/base44/live-updates.ts), [client/useBuildTurn.ts](client/useBuildTurn.ts) |
+| Watch it build (live, instead of polling) | [server/base44/live-updates.ts](server/base44/live-updates.ts), [client/useLiveApp.ts](client/useLiveApp.ts) |
 | Answer the agent's questions | [components/Question.tsx](client/components/Question.tsx), one UI per `waiting_on.kind` |
-| Publish the app | `publish()` in [components/Builder.tsx](client/components/Builder.tsx) |
+| Publish the app | `publish()` in [components/ReadyCard.tsx](client/components/ReadyCard.tsx) |
 | [Embed the app](https://docs.base44.com/developers/white-label/embed-the-app) | [server/base44/embed.ts](server/base44/embed.ts), used for every preview |
 | [Custom instructions](https://docs.base44.com/developers/white-label/custom-instructions) | [server/base44/custom-instructions.ts](server/base44/custom-instructions.ts) |
 
@@ -88,9 +88,10 @@ new apps are created with `organization_id`, so they use your workspace's design
 skills, and plan. Each server action checks who is signed in and, for an app, that they own it,
 before it calls Base44.
 
-In the browser, [client/useBuildTurn.ts](client/useBuildTurn.ts) is the whole build turn: it opens
-live updates, sends prompts and answers questions. The components only show it. The chat uses
-assistant-ui's external-store runtime with Base44's live updates as its source of truth (see below). `Question.tsx` handles
+In the browser, [client/useLiveApp.ts](client/useLiveApp.ts) is step 2: the app and its chat,
+kept current by live updates. [components/Builder.tsx](client/components/Builder.tsx) holds the
+other steps: `send()` for prompts and `ToolPart` for answers, and assistant-ui's Thread renders
+the chat. A prompt appears once Base44 sends it back. `Question.tsx` handles
 approvals, choices, and secrets; retries preserve the original answer and request ID.
 A timed-out creation may still succeed, and the error says so.
 
@@ -100,15 +101,15 @@ The chat updates live over the Base44 platform socket, through the Platform SDK,
 [`@base44/platform`](https://github.com/base44/javascript-sdk/tree/main/packages/platform).
 
 ```text
-client/useBuildTurn.ts → server/actions.ts → server/base44/live-updates.ts
-client/useBuildTurn.ts → @base44/platform
+client/useLiveApp.ts → server/actions.ts → server/base44/live-updates.ts
+client/useLiveApp.ts → @base44/platform
 ```
 
 1. **Server** ([server/base44/live-updates.ts](server/base44/live-updates.ts)): after the usual
    sign-in and app-ownership checks, opens a read-only session for one app with the
    workspace key. `BASE44_SVC_KEY` needs the `apps:watch` scope. Only the session
    token reaches the browser.
-2. **Browser** ([useBuildTurn.ts](client/useBuildTurn.ts), step 2): creates the platform
+2. **Browser** ([useLiveApp.ts](client/useLiveApp.ts), step 2): creates the platform
    client with that token and subscribes to the app. A snapshot (status and the last 50
    messages) arrives on every connect; then `message.updated`, `message.removed` and
    `app.status_changed` keep the chat current. If the connection stops, the builder sees

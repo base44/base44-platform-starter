@@ -35,12 +35,16 @@ export async function createApp(prompt: string): Promise<App> {
   return toApp(app);
 }
 
-// Every later prompt goes through Send chat message.
+// Every later prompt goes through Send chat message. Base44 holds the request
+// open until the whole turn ends, so a timeout means the turn is still running.
+// Live updates report how it ends.
 export async function sendMessage(appId: string, content: string) {
   await base44(`/api/apps/${appId}/chat/message`, {
     method: "POST",
     body: { content },
     timeout: BUILD_TURN_TIMEOUT,
+  }).catch((error) => {
+    if (!(error instanceof Base44Error && error.status === 504)) throw error;
   });
   return {};
 }
