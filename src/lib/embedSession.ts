@@ -78,7 +78,7 @@ export async function embedSessionFor(
   if (!CLEAN_ID.test(appId)) throw new EmbedError("invalid app id", "invalid_request", 400);
 
   const provisions = `/api/apps/${appId}/users/provisions`;
-  const mint = `/api/apps/${appId}/embed-tokens`;
+  const mint = `/api/apps/${appId}/embed-url`;
   // Absent for the published app rather than "live_site": that is the mint's
   // default, and an older mint refuses a field it does not know.
   const mintBody = target ? { email, target } : { email };

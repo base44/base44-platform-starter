@@ -18,7 +18,7 @@ export async function getEmbedUrl(
       auth,
       body: { email, role: "user" },
     });
-    const token = await base44(`/api/apps/${appId}/embed-tokens`, {
+    const token = await base44(`/api/apps/${appId}/embed-url`, {
       method: "POST",
       auth,
       body: { email, target },

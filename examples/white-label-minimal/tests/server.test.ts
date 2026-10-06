@@ -62,7 +62,7 @@ test('answers keep the same request ID when retried, and a rejection is an answe
 test('previews sign the builder in with the workspace key', async () => {
   const calls = setup({ status: 'exists', embed_url: 'https://reading.example/?ott=once', expires_in: 60 });
   assert.deepEqual(await getEmbedUrl('app_1', 'builder@example.com', 'live_preview'), { url: 'https://reading.example/?ott=once', refused: null });
-  assert.deepEqual(calls.map(c => new URL(c.url).pathname), ['/api/apps/app_1/users/provisions', '/api/apps/app_1/embed-tokens']);
+  assert.deepEqual(calls.map(c => new URL(c.url).pathname), ['/api/apps/app_1/users/provisions', '/api/apps/app_1/embed-url']);
   for (const call of calls) {
     assert.equal(headers(call.init).get('api_key'), 'b44k_workspace');
     assert.equal(body(call.init).email, 'builder@example.com');
