@@ -67,6 +67,7 @@
     "typescript": "^5"
   },
   "workspaces": [
-    "examples/white-label-minimal"
+    "examples/white-label-minimal",
+    "examples/tiny-sunny"
   ]
 }
