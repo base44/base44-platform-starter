@@ -10,6 +10,7 @@ import { announceMarketChanged, useMarketChanges } from "@/lib/marketEvents";
 import { marketPublishState } from "@/lib/marketPublishState";
 import { APP_REBUILT } from "@/lib/appRefresh";
 import PublishDialog from "@/components/market/PublishDialog";
+import ListingPreview, { APP_SANDBOX } from "@/components/market/ListingPreview";
 
 /**
  * The app market.
@@ -18,9 +19,6 @@ import PublishDialog from "@/components/market/PublishDialog";
  * embedding triggers the handshake, and who the app acts for is resolved server-side
  * from the viewer token. Installing and pinning to Home are separate acts.
  */
-
-/** The market's embed runs somebody else's code, so it is confined. */
-const APP_SANDBOX = "allow-scripts allow-same-origin allow-forms allow-popups";
 
 const post = async (path, body) => {
   const res = await fetch(path, {
@@ -198,12 +196,20 @@ function ListingCard({ listing, busy, onInstall, onOpen, onUnpublish, onPin, onU
   const canUninstall = listing.installed && !listing.is_author;
   const canDelist = listing.is_author && listing.status === "published";
 
+  const initial = listing.title[0].toUpperCase();
+  // Under a live preview this only shows while the app loads; a card the viewer cannot
+  // open yet has nothing else to show, so it gets the initial and the tagline instead.
   const thumbnail = listing.screenshot_url ? (
     <img src={listing.screenshot_url} alt="" className="h-full w-full object-cover object-top" />
+  ) : canOpen ? (
+    <span className="select-none font-display text-4xl text-muted-foreground/20">{initial}</span>
   ) : (
-    <span className="select-none font-display text-4xl text-muted-foreground/20">
-      {listing.title[0].toUpperCase()}
-    </span>
+    <div className="flex flex-col items-center gap-2.5 px-6 text-center">
+      <span className="flex h-12 w-12 select-none items-center justify-center rounded-lg bg-secondary font-display text-xl text-muted-foreground">
+        {initial}
+      </span>
+      {listing.tagline && <p className="line-clamp-2 text-xs text-muted-foreground">{listing.tagline}</p>}
+    </div>
   );
 
   return (
@@ -231,9 +237,7 @@ function ListingCard({ listing, busy, onInstall, onOpen, onUnpublish, onPin, onU
       </header>
 
       <div className="sunny-apps-card-preview flex-col overflow-hidden">
-        <div className="flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden bg-card">
-          {thumbnail}
-        </div>
+        <ListingPreview listing={listing} live={canOpen} fallback={thumbnail} />
         <div className="w-full flex-shrink-0 border-t border-border bg-card px-3.5 py-2.5 text-left">
           {listing.tagline && <p className="truncate text-xs text-muted-foreground">{listing.tagline}</p>}
           <p className="text-[11px] text-muted-foreground">
