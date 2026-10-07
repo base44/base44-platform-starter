@@ -34,6 +34,7 @@ export type ListingCard = {
   title: string;
   tagline: string | null;
   category: string | null;
+  /** The author's display name: their full name, else the local part of their email. */
   author: string;
   app_slug: string | null;
   app_url: string | null;
@@ -61,7 +62,10 @@ async function toCards(actor: RlsActor, listings: MarketplaceListing[]): Promise
   const appIds = listings.map((l) => l.appId);
   if (!appIds.length) return [];
 
-  const [counts, mine, pinned] = await Promise.all([
+  // `User` is not owner-scoped — it is the account table, not a user's data — so a
+  // direct read is correct here. It resolves the author's email to a name for display.
+  const authorEmails = [...new Set(listings.map((l) => l.createdBy))];
+  const [counts, mine, pinned, authors] = await Promise.all([
     prisma.appInstall.groupBy({
       by: ["appId"],
       where: { appId: { in: appIds } },
@@ -75,8 +79,13 @@ async function toCards(actor: RlsActor, listings: MarketplaceListing[]): Promise
       where: { appId: { in: appIds }, ...ownerFields(actor) },
       select: { appId: true },
     }),
+    prisma.user.findMany({
+      where: { email: { in: authorEmails } },
+      select: { email: true, fullName: true },
+    }),
   ]);
 
+  const nameBy = new Map(authors.map((u) => [u.email, u.fullName]));
   const countBy = new Map(counts.map((c) => [c.appId, c._count._all]));
   const mineIds = new Set(mine.map((m) => m.appId));
   const pinnedIds = new Set(pinned.map((w) => w.appId));
@@ -86,7 +95,7 @@ async function toCards(actor: RlsActor, listings: MarketplaceListing[]): Promise
     title: l.title,
     tagline: l.tagline,
     category: l.category,
-    author: l.createdBy,
+    author: nameBy.get(l.createdBy) || l.createdBy.split("@")[0],
     app_slug: l.appSlug,
     app_url: l.appUrl,
     screenshot_url: l.screenshotUrl,
