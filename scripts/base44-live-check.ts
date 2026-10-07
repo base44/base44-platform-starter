@@ -1,31 +1,34 @@
 /**
  * Manual live checklist for the Base44 bridge (docs/base44-identity.md).
  *
- * This is NOT part of `npm test` and never will be: it **writes to a live Base44
- * tenant**, provisioning a real service principal and minting real tokens. It
- * exists because `scripts/base44-smoke.ts` deliberately skips `connect` when a
- * key is present.
+ * This is NOT part of `npm test` and never will be: it **calls a live Base44
+ * workspace** with the integration account's real access token. It exists
+ * because `scripts/base44-smoke.ts` deliberately never reaches upstream.
  *
  * Usage:
- *   npx tsx --env-file=.env scripts/base44-live-check.ts <email> [--deprovision]
+ *   npx tsx --env-file=.env scripts/base44-live-check.ts <email> [--app <app id>]
  *
- * Run it against a throwaway email FIRST. A throwaway principal owns no apps, so
- * `--deprovision` can clean it up safely — whereas deprovisioning a real user's
- * principal transfers their built apps to the workspace owner.
+ * `<email>` is the shell user to act as; a cookie is forged for them the same way
+ * the smoke suite does. `listApps` answers with the apps *that user* built, so a
+ * throwaway address sees an empty list and that is a pass. To exercise an
+ * app-scoped call, name an app in the folder with `--app`: the script records a
+ * temporary `AppOwnership` row for the email, reads the app, and removes the row
+ * again. Nothing here creates, changes or deploys an app.
  *
- * Needs `npm run dev` on :3000 and NEXTAUTH_SECRET in .env (it forges a session
- * cookie the same way the smoke suite does).
+ * Needs `npm run dev` on :3000 and NEXTAUTH_SECRET in .env.
  */
 
+import { prisma } from "../src/lib/prisma";
 import { sessionCookie } from "./session-cookie";
 
 const BASE_URL = process.env.SMOKE_BASE_URL ?? "http://localhost:3000";
 
 const email = process.argv[2]?.toLowerCase();
-const DEPROVISION = process.argv.includes("--deprovision");
+const appFlag = process.argv.indexOf("--app");
+const APP_ID = appFlag > -1 ? process.argv[appFlag + 1] : null;
 
 if (!email || !email.includes("@")) {
-  console.error("usage: base44-live-check.ts <email> [--deprovision]");
+  console.error("usage: base44-live-check.ts <email> [--app <app id>]");
   process.exit(2);
 }
 
@@ -49,8 +52,8 @@ function safe(value: unknown): string {
 async function main() {
   const cookie = await sessionCookie({ email, role: "user", roleCheckedAt: Date.now() });
 
-  async function post(path: string, body: unknown) {
-    const res = await fetch(`${BASE_URL}${path}`, {
+  async function post(body: unknown) {
+    const res = await fetch(`${BASE_URL}/api/base44/platform`, {
       method: "POST",
       headers: { "content-type": "application/json", cookie },
       body: JSON.stringify(body),
@@ -61,73 +64,63 @@ async function main() {
     } catch {
       /* leave null */
     }
-    return { status: res.status, body: (parsed ?? {}) as Record<string, unknown> };
+    return { status: res.status, body: parsed as Record<string, unknown> | unknown[] | null };
   }
 
   console.log(`\nLive Base44 bridge check as ${email}`);
-  console.log(`(writes to a live tenant — see docs/base44-identity.md)\n`);
+  console.log(`(calls a live workspace with the integration account's token)\n`);
 
-  console.log("1. status before connect");
-  const before = await post("/api/base44/link", { action: "status" });
-  console.log(`   → ${before.status} ${safe(before.body)}`);
-  check("status is 200", before.status === 200);
-  check("no token in the body", !/ey[A-Za-z0-9_-]{10}/.test(JSON.stringify(before.body)));
-
-  console.log("\n2. connect — provision a principal, then mint");
-  const connected = await post("/api/base44/link", { action: "connect" });
-  console.log(`   → ${connected.status} ${safe(connected.body)}`);
-  check("connect is 200", connected.status === 200, `got ${connected.status}`);
-  check("linked:true", connected.body.linked === true);
-  check("no token in the body", !/ey[A-Za-z0-9_-]{10}/.test(JSON.stringify(connected.body)));
-  check("no b44k_ key in the body", !/b44k_/.test(JSON.stringify(connected.body)));
-
-  console.log("\n3. status after connect");
-  const after = await post("/api/base44/link", { action: "status" });
-  console.log(`   → ${after.status} ${safe(after.body)}`);
-  check("linked:true", after.body.linked === true);
-
-  console.log("\n4. the money test — does the minted token work on REST?");
-  const apps = await post("/api/base44/platform", { action: "listApps", params: { limit: 5 } });
-  console.log(`   → ${apps.status} ${safe(apps.body)}`);
-  check("listApps is 200", apps.status === 200, `got ${apps.status} ${safe(apps.body)}`);
+  console.log("1. status — is the bridge configured here?");
+  const status = await post({ action: "status" });
+  console.log(`   → ${status.status} ${safe(status.body)}`);
+  check("status is 200", status.status === 200, `got ${status.status}`);
   check(
-    'not the 403 "scoped to MCP" branch',
-    apps.status !== 403,
-    "the minted token's client_id looks like an MCP prefix",
+    "no token in the body",
+    !/ey[A-Za-z0-9_-]{10}/.test(JSON.stringify(status.body)) && !/b44k_/.test(JSON.stringify(status.body)),
   );
 
-  const list = (apps.body.data ?? apps.body.items ?? apps.body) as unknown;
-  const arr = Array.isArray(list) ? list : [];
-  console.log(`   apps returned: ${arr.length}`);
+  console.log("\n2. the money test — does the access token work on REST?");
+  const apps = await post({ action: "listApps", limit: 5 });
+  console.log(`   → ${apps.status} ${safe(apps.body)}`);
+  check("listApps is 200", apps.status === 200, `got ${apps.status} ${safe(apps.body)}`);
+  check("...not 501, which would mean Base44 refused the token", apps.status !== 501);
+  const arr = Array.isArray(apps.body) ? apps.body : [];
+  check("...and answers with an array", Array.isArray(apps.body));
+  console.log(`   apps this user built: ${arr.length}`);
 
-  if (arr.length > 0) {
-    const first = arr[0] as Record<string, unknown>;
-    const appId = String(first.id ?? first._id ?? "");
-    console.log(`\n5. getApp on ${appId}`);
-    const one = await post("/api/base44/platform", { action: "getApp", params: { appId } });
-    console.log(`   → ${one.status} ${safe(one.body)}`);
-    check("getApp is 200", one.status === 200, `got ${one.status}`);
+  if (!APP_ID) {
+    console.log("\n3. getApp — SKIPPED, pass --app <id> to read one app");
   } else {
-    console.log("\n5. getApp — SKIPPED, listApps returned nothing");
-  }
+    console.log(`\n3. getApp on ${APP_ID}, as its temporary owner`);
+    const before = await post({ action: "getApp", appId: APP_ID });
+    check("without an AppOwnership row the proxy answers 404", before.status === 404, `got ${before.status}`);
 
-  if (DEPROVISION) {
-    console.log("\n6. disconnect (does NOT deprovision — by design)");
-    const off = await post("/api/base44/link", { action: "disconnect" });
-    console.log(`   → ${off.status} ${safe(off.body)}`);
-    check("disconnect is 200", off.status === 200);
-    console.log(
-      "\n   NOTE: the service principal still exists upstream. deprovisionPrincipal()\n" +
-        "   is not wired to a route on purpose — call it from a REPL if you truly want\n" +
-        "   it gone, and only for a principal that owns no apps.",
-    );
+    await prisma.appOwnership.upsert({
+      where: { appId_createdBy: { appId: APP_ID, createdBy: email } },
+      create: { appId: APP_ID, appName: "live-check", createdBy: email },
+      update: {},
+    });
+    try {
+      const one = await post({ action: "getApp", appId: APP_ID });
+      console.log(`   → ${one.status} ${safe(one.body)}`);
+      check("with the row, getApp is 200", one.status === 200, `got ${one.status}`);
+      const listedNow = await post({ action: "listApps", limit: 50 });
+      const ids = (Array.isArray(listedNow.body) ? listedNow.body : []).map(
+        (a) => (a as { id?: string }).id,
+      );
+      check("...and listApps now includes it", ids.includes(APP_ID), `saw ${ids.length} apps`);
+    } finally {
+      await prisma.appOwnership.deleteMany({ where: { appId: APP_ID, createdBy: email, appName: "live-check" } });
+    }
   }
 
   console.log(`\n${failures === 0 ? "all live checks passed." : `${failures} check(s) FAILED.`}`);
   process.exit(failures === 0 ? 0 : 1);
 }
 
-main().catch((err) => {
-  console.error("live check threw:", err);
-  process.exit(1);
-});
+main()
+  .catch((err) => {
+    console.error("live check threw:", err);
+    process.exit(1);
+  })
+  .finally(() => prisma.$disconnect());

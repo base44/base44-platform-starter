@@ -113,7 +113,7 @@ async function main() {
   });
   check("signIn accepts a mixed-case address", mixedCase === true);
   const lowered = await prisma.user.findUnique({ where: { email: ADMIN_EMAIL } });
-  check("the email is stored lowercased", !!lowered, "AppOwnership/Base44Link match on lowercase");
+  check("the email is stored lowercased", !!lowered, "AppOwnership rows match on lowercase");
   check(
     "no duplicate row was created",
     (await prisma.user.count({ where: { email: { startsWith: TAG } } })) === 2,

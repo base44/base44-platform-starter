@@ -27,8 +27,8 @@ repository later.
 
 Use the shared-account tenancy model in this minimal example. It is the shortest path through the
 App Management API and keeps attention on the build loop. Clearly label it as a local learning
-example, not a safe public multi-user deployment. Link readers to the full Sunny service-user
-implementation for the production tenancy model.
+example, not a safe public multi-user deployment. Link readers to the full Sunny implementation,
+which uses the same one-account model and adds the per-user ownership gate production needs.
 
 ## Scope
 
@@ -158,8 +158,8 @@ Avoid a separate types file unless shared types make at least three of these fil
   3001 so Sunny can run alongside the example. The route requires a loopback Host,
   an exactly matching Origin, JSON content type, and a bounded request body. This
   is not a multi-user authorization system; every reachable app belongs to the shared account.
-- **Credentials:** use a personal API key in the `api_key` header (not Sunny's
-  service-user Bearer token), plus the workspace header on every upstream call.
+- **Credentials:** the integration account's personal access token as a Bearer token
+  (the same credential Sunny uses), plus the workspace header on every upstream call.
 - **Pagination:** the API returns messages oldest first, but `skip` and `limit`
   count backward from the newest message. Poll the latest 20, page backward until
   overlapping known history, and replace matching IDs so changing tool statuses
@@ -239,7 +239,7 @@ The module must:
 - Never accept a host, workspace ID, or credential from the browser.
 
 Use the existing Sunny platform route as behavioral reference, but rewrite the minimal path directly
-instead of copying its service-user, ownership, folder, and compatibility concerns.
+instead of copying its ownership, folder, and compatibility concerns.
 
 ### 3. Add the closed local API route
 
@@ -319,7 +319,7 @@ The package README should include:
 - A diagram showing `browser -> local API route -> Base44`.
 - A warning that the shared account owns every created app.
 - A warning not to expose this package as an unrestricted public deployment.
-- A link to Sunny's service-user implementation for production multi-user tenancy.
+- A link to Sunny's ownership gate for production multi-user tenancy.
 - A guide-to-code table that points each documentation concept to one source file.
 
 The root README should distinguish the two references:

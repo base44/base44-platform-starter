@@ -55,14 +55,9 @@ enum ListingStatus {
   delisted
 }
 
-enum Base44LinkStatus {
-  pending
-  linked
-}
-
 /// Shell users. Created/upserted on Google sign-in, matched by email — which is
-/// what lets the email-keyed AppOwnership and Base44Link rows exist before their
-/// owner has ever signed in here.
+/// what lets the email-keyed AppOwnership rows exist before their owner has ever
+/// signed in here.
 /// `role` is a manual DB flag: flip to `admin` by hand. It grants no RLS bypass —
 /// see src/lib/rls.ts.
 model User {
@@ -149,6 +144,13 @@ model Widget {
 }
 
 /// Register of which shell user owns which Base44 app. One row per (app, owner).
+///
+/// Every app lives in the one Base44 account the integration authenticates with,
+/// so Base44 itself has no idea which shell user built what — this row is the only
+/// record, and the platform proxy refuses app-scoped calls without it. Written by
+/// the proxy when it creates an app; a client can read and delete its own rows but
+/// never create one (src/lib/entities.ts), or it could claim another builder's app.
+/// `src/lib/appOwnership.ts` is the module that answers "is this app theirs".
 model AppOwnership {
   id      String  @id @default(cuid())
   appId   String  @map("app_id")
@@ -164,60 +166,14 @@ model AppOwnership {
   @@map("app_ownerships")
 }
 
-/// Per-user Base44 platform credentials (service principal + minted token).
-/// SECRET-BEARING: must never reach the client. Reached only from server code via
-/// src/lib/base44Link.ts, keyed by email — never through the generic entity CRUD,
-/// which refuses this entity outright.
-model Base44Link {
-  id String @id @default(cuid())
-
-  /// The shell user this link belongs to. Lookup key.
-  appUserEmail String @unique @map("app_user_email")
-
-  /// This user's Base44 *service principal* id — opaque, stable, and
-  /// deliberately NOT an email: Base44 derives a non-routable synthetic address
-  /// from it, so putting a real address here would be the impersonation vector
-  /// the synthetic-principal design exists to remove. Derived deterministically
-  /// (see principalId() in src/lib/base44Link.ts), so deleting this row and
-  /// reconnecting lands on the SAME principal rather than orphaning the apps it
-  /// owns. Persisted anyway, because it is the only thing that maps a Base44
-  /// workspace member back to a Sunny user.
-  serviceExternalId String? @unique @map("service_external_id")
-
-  status       Base44LinkStatus @default(pending)
-  accessToken  String?          @map("access_token")
-  /// Kept only so `disconnect` can revoke it — the bridge re-mints on expiry
-  /// rather than running a refresh exchange.
-  refreshToken String?          @map("refresh_token")
-  /// Now ~1h out, not ~30d: vended principal tokens are minted short-lived.
-  expiresAt    DateTime?        @map("expires_at")
-
-  organizationId       String? @map("organization_id")
-  /// The principal's synthetic Base44 address
-  /// (`{slug}-{hash}@{org}.svc.base44.invalid`). Non-routable, debug only —
-  /// never the user's real email, which is why it is safe to store here.
-  base44UserEmail      String? @map("base44_user_email")
-  /// True once POST /api/service/users has returned for this principal. A row
-  /// that predates provisioning stays false and needs one reconnect.
-  principalProvisioned Boolean @default(false) @map("principal_provisioned")
-
-  createdBy String   @map("created_by")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@index([createdBy])
-  @@map("base44_links")
-}
-
-
 /// An app its author has offered to other Sunny users.
 ///
 /// The one model whose reads are not owner-scoped: a published listing is public by
 /// intent. Writes stay owner-only, and src/lib/marketplace.ts is the only module that
 /// touches it — a documented carve-out from scopedWhere, not a precedent.
 ///
-/// The `app*` fields are snapshotted at publish time because an installer's Base44
-/// principal cannot see another user's app to resolve them later, which is also why
+/// The `app*` fields are snapshotted at publish time because the platform proxy answers
+/// only to an app's author, so an installer cannot resolve them later, which is also why
 /// publishing requires a deployed app.
 model MarketplaceListing {
   id String @id @default(cuid())
@@ -253,7 +209,7 @@ model MarketplaceListing {
 /// you installed or authored, and deleting the row revokes on the next call.
 ///
 /// It used to be the `Widget` row, which welded "I want this app" to "I want it on my
-/// home page". SENSITIVE like Base44Link — reached only through src/lib/appInstall.ts,
+/// home page". SENSITIVE — reached only through src/lib/appInstall.ts,
 /// never the generic entity CRUD.
 model AppInstall {
   id String @id @default(cuid())

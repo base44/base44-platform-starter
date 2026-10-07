@@ -13,6 +13,7 @@
 
 import type { AppInstall } from "@prisma/client";
 
+import { ownsApp } from "@/lib/appOwnership";
 import { isPublished } from "@/lib/marketplace";
 import { prisma } from "@/lib/prisma";
 import { ownerFields, type RlsActor } from "@/lib/rls";
@@ -71,7 +72,7 @@ export async function install(
 
   const [offered, authored] = await Promise.all([
     isPublished(appId),
-    prisma.appOwnership.findFirst({ where: { appId, ...owner }, select: { id: true } }),
+    ownsApp(actor, appId),
   ]);
   if (!offered && !authored) {
     throw new InstallError("That app is not available to install.", "not_available", 404);

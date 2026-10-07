@@ -124,10 +124,17 @@ export const ENTITY_FIELDS: Record<UserOwnedModel, Fields> = {
     height: field("height", { kind: "int" }),
     col_span: field("colSpan", { kind: "int" }),
   },
+  /**
+   * Readable and deletable by its owner, never created or updated from a client.
+   * Every app upstream belongs to the one integration account, so this row is the
+   * only thing that says which shell user may drive an app — a client that could
+   * write it could claim any app in the folder. The platform proxy writes it
+   * (src/lib/appOwnership.ts) in the same request that creates the app.
+   */
   AppOwnership: {
     ...AUTO_FIELDS,
-    app_id: field("appId", { kind: "string" }, { required: true }),
-    app_name: field("appName", { kind: "string" }, { nullable: true }),
+    app_id: field("appId", { kind: "string" }, { writable: false }),
+    app_name: field("appName", { kind: "string" }, { nullable: true, writable: false }),
   },
 };
 
@@ -135,8 +142,9 @@ export const ENTITY_FIELDS: Record<UserOwnedModel, Fields> = {
  * URL segment → model. Base44's REST used the model name verbatim (`/entities/Board`);
  * lowercase is accepted too so callers need not care about casing.
  *
- * The allowlist is exactly `USER_OWNED_MODELS`: `Base44Link` is secret-bearing and
- * must not be reachable here (gotcha 3), and `User` is served by /api/me.
+ * The allowlist is exactly `USER_OWNED_MODELS`: `AppInstall` and `MarketplaceListing`
+ * have their own modules and are not reachable here (gotcha 3), and `User` is
+ * served by /api/me.
  */
 const BY_SEGMENT = new Map<string, UserOwnedModel>(
   USER_OWNED_MODELS.flatMap((m) => [[m, m] as const, [m.toLowerCase(), m] as const]),

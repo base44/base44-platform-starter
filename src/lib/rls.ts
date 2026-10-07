@@ -18,8 +18,10 @@
  *
  *
  * Deliberately NOT covered here:
- *   - Base44Link — secret-bearing, admin-only under Base44 RLS. Server-only
- *     access keyed by email, never through generic CRUD.
+ *   - AppInstall, MarketplaceListing — each has its own module (src/lib/appInstall.ts,
+ *     src/lib/marketplace.ts) and is never reached through generic CRUD. AppOwnership
+ *     *is* covered, but a client may only read and delete its own rows; the platform
+ *     proxy writes them (src/lib/appOwnership.ts).
  *   - /api/sunny — its own boundary (CORS + a viewer token, no session cookie). It
  *     queries Prisma directly, but with the predicates from this file and the same
  *     split: readWhere() for its reads, scopedWhere() for its writes, both keyed to

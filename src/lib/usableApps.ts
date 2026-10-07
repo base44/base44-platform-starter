@@ -2,10 +2,11 @@
  * Every app this user can open: built and installed.
  *
  * Two sources that cannot be merged upstream — built apps come live from the Base44
- * folder, installed ones from the listing snapshot, because an installer's principal
- * cannot see another user's app. Hence `slug`: it means "addressable by convention",
- * which an installed app is not, and `DashboardWidgets` reads its absence as "use the
- * URL you were given". The Apps page and the Add-widget picker both read through here.
+ * folder, installed ones from the listing snapshot, because the platform proxy
+ * answers only for apps the caller built, so an installer cannot ask it about
+ * someone else's. Hence `slug`: it means "addressable by convention", which an
+ * installed app is not, and `DashboardWidgets` reads its absence as "use the URL you
+ * were given". The Apps page and the Add-widget picker both read through here.
  */
 
 import * as platform from "@/lib/base44Platform";
@@ -75,7 +76,7 @@ async function marketInstalls(): Promise<UsableApp[]> {
 }
 
 async function builtApps(): Promise<UsableApp[]> {
-  const apps = (await platform.listAppsForUser({ limit: 50 })) as Base44App[];
+  const apps = (await platform.listApps({ limit: 50 })) as Base44App[];
   return apps.map((app) => ({
     id: app.id,
     name: app.name || "Untitled",

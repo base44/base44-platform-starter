@@ -85,7 +85,7 @@ function CardApp({ app }) {
 }
 
 export default function MyTools() {
-  const { b44Linked } = useAuth();
+  const { builderAvailable } = useAuth();
   const { activeApp: selected, stageOpen: inApp, setStageOpen: setInApp, openApp: openBuilderApp, showAssistant } = useBuilderPanel();
   const [apps, setApps] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -99,7 +99,7 @@ export default function MyTools() {
   const loadApps = useCallback(async () => {
     setLoading(true);
     try {
-      const list = await platform.listAppsForUser({ limit: 50 });
+      const list = await platform.listApps({ limit: 50 });
       setApps(list);
       setError("");
     } catch (err) {
@@ -110,9 +110,9 @@ export default function MyTools() {
   }, []);
 
   useEffect(() => {
-    if (b44Linked === true) void loadApps();
-    if (b44Linked === false) setLoading(false);
-  }, [b44Linked, loadApps]);
+    if (builderAvailable === true) void loadApps();
+    if (builderAvailable === false) setLoading(false);
+  }, [builderAvailable, loadApps]);
   useEffect(() => {
     if (!selected) {
       lastStageAppId.current = null;
@@ -125,7 +125,7 @@ export default function MyTools() {
     lastStageAppId.current = selected.id;
   }, [selected, loading, setInApp]);
   useEffect(() => {
-    if (loading || b44Linked !== true || handledRequestedApp.current) return;
+    if (loading || builderAvailable !== true || handledRequestedApp.current) return;
     const requested = new URLSearchParams(window.location.search).get("app");
     if (!requested) {
       handledRequestedApp.current = true;
@@ -137,7 +137,7 @@ export default function MyTools() {
       setInApp(true);
       if (selected?.id !== match.id) openBuilderApp(match);
     }
-  }, [loading, b44Linked, apps, selected?.id, openBuilderApp, setInApp]);
+  }, [loading, builderAvailable, apps, selected?.id, openBuilderApp, setInApp]);
   const refreshPublished = useCallback(() => {
     fetch("/api/marketplace", {
       method: "POST",

@@ -10,11 +10,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { hasInstall } from "@/lib/appInstall";
+import { ownsApp } from "@/lib/appOwnership";
 import { errorResponse, jsonError } from "@/lib/apiResponse";
 import { requireSessionUser } from "@/lib/auth";
 import { MissingConfigError } from "@/lib/base44Config";
 import { EMBED_TARGETS, EmbedError, embedSessionFor, type EmbedTarget } from "@/lib/embedSession";
-import { prisma } from "@/lib/prisma";
 
 export async function POST(req: NextRequest) {
   try {
@@ -30,10 +30,7 @@ export async function POST(req: NextRequest) {
 
     const [installed, authored] = await Promise.all([
       hasInstall(actor, appId),
-      prisma.appOwnership.findFirst({
-        where: { appId, createdBy: actor.email },
-        select: { id: true },
-      }),
+      ownsApp(actor, appId),
     ]);
     if (!installed && !authored) return jsonError(403, "app_not_installed");
 

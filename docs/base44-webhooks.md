@@ -10,8 +10,10 @@ deleted app indefinitely.
 
 1. Verifies the signature (`src/lib/base44WebhookSignature.ts`). Nothing else runs before this.
 2. Echoes the `challenge` for `webhook.test.v1` — that is how the endpoint activates.
-3. On `app.deleted.v1`, maps `owner_service_external_id` to a Sunny user via
-   `emailForServiceExternalId()` and deletes that user's `Widget` rows for the app.
+3. On `app.deleted.v1`, looks up who built `app_id` in `AppOwnership` (`ownersOf()` in
+   `src/lib/appOwnership.ts`) and deletes those users' `Widget` rows for the app. Nothing in the
+   payload names a Sunny user — upstream every app belongs to the one integration account — and
+   nothing needs to.
 4. Answers 2xx to everything else.
 
 It keeps no state. Deleting pins is idempotent, so a redelivery is harmless, and a restore never puts

@@ -8,8 +8,9 @@
  * returns the `RlsActor` shape that `scopedWhere()` expects. Nothing else should
  * read the session directly for authorization.
  *
- * Note this is the shell's *own* auth — it has nothing to do with Base44's. The
- * per-user Base44 identity is minted separately, in src/lib/base44Link.ts.
+ * Note this is the shell's *own* auth — it has nothing to do with Base44's. Shell
+ * users have no Base44 identity at all: one integration account builds every app
+ * (src/lib/base44Config.ts), and src/lib/appOwnership.ts says whose each one is.
  */
 
 import { cache } from "react";
@@ -105,8 +106,7 @@ export const authConfig: NextAuthConfig = {
   callbacks: {
     /**
      * Upsert the shell `User` row. Emails are lowercased everywhere, which is
-     * what makes the email-keyed AppOwnership / Base44Link rows match at first
-     * sign-in.
+     * what makes the email-keyed AppOwnership rows match at first sign-in.
      *
      * `role` is deliberately absent from both `create` and `update`: the column
      * defaults to `user` on insert and must never be overwritten on sign-in, so

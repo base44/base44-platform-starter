@@ -45,9 +45,9 @@ export class EmbedError extends Error {
 }
 
 /**
- * The workspace key, not the viewer's token: a user's service principal cannot
- * administer another user's app, which is the market case. Nothing here is
- * caller-supplied.
+ * The workspace key, not the integration account's access token: provisioning app
+ * users and minting embed sign-in tokens are workspace-key endpoints. Nothing here
+ * is caller-supplied.
  */
 function headers() {
   return {

@@ -1,255 +1,170 @@
-# Per-user Base44 identity: service principals and minted tokens
+# One Base44 account behind the whole platform
 
-How your platform acts on Base44 *as each of your own users*. This is step 2 of the
-[README](../README.md) walkthrough, in full.
+How your platform authenticates to Base44, and whose job it is to keep your users apart. This is
+step 2 of the [README](../README.md) walkthrough, in full. The canonical description is Base44's own:
+[Tenancy and credentials](https://docs.base44.com/developers/white-label/tenancy-and-credentials).
 
-Reference implementation: `src/lib/base44Link.ts` (the only module that reads or writes tokens) and
-`src/app/api/base44/link/route.ts` (the three-action route in front of it).
-
----
-
-## The problem
-
-Your product has users. Those users build Base44 apps through your UI. Who owns the apps?
-
-**One shared API key** is the tempting answer and the wrong one:
-
-- every app ever built belongs to a single account, so "show me my apps" is impossible;
-- there's no offboarding — you can't remove one user's access without breaking everyone's;
-- one leaked key is the whole platform.
-
-**Real Base44 accounts per user** (SSO-provisioning each user's actual email as a workspace member,
-then minting for it) works, but produces login-capable accounts for people who never asked for one,
-and a key that can both provision and mint those is an impersonate-anyone primitive.
-
-**Service principals** are the middle path, and what this repo uses.
-
-## What a service principal is
-
-A workspace-owned robot identity, one per end user, that can never log in:
-
-- no password;
-- no SSO external id, so no login path can resolve it;
-- a synthetic, non-routable address — `{slug}-{hash}@{workspaceId}.svc.base44.invalid`. RFC 2606
-  reserves `.invalid`, so it can never receive mail;
-- addressed by an **opaque `service_external_id` that you choose**;
-- default role `editor`, clamped by the workspace to the vendable ceiling.
-
-Everything below follows from "it's a robot, not a person."
+Reference implementation: `src/lib/base44Config.ts` (where the credential lives),
+`src/app/api/base44/platform/route.ts` (where it is used) and `src/lib/appOwnership.ts` (who built
+what).
 
 ---
 
-## Choosing the external id
+## The model
+
+**One Base44 account sits behind your whole integration.** It owns every app your builders create,
+and its personal access token authenticates every call you make.
+
+Four parties, and only two of them exist on Base44's side:
+
+| Role | Who | Where they exist |
+| --- | --- | --- |
+| Base44 | The execution harness: builds, previews, deploys | — |
+| Your platform | Sign-in, tenancy, billing, UI | Your database |
+| A **builder** | Your user, describing and building apps through your UI | **Your database only** |
+| An **end user** | Someone using a published app without building | Your database, plus an app user Base44 provisions for the embed |
+
+No Base44 identity exists for the builder at all. Base44 sees one account building everything, and
+says so plainly: *keeping your builders apart is yours to enforce.* Scoping each builder to their
+own apps, and hiding other builders' apps, is entirely up to you.
+
+That is the whole design. Everything below is what follows from it.
+
+---
+
+## The credential
+
+A **personal access token** for the integration account, sent as `Authorization: Bearer <token>` on
+every Apps API call, together with the workspace:
 
 ```ts
-// src/lib/base44Link.ts
-export function principalId(email: string): string {
-  const digest = createHash("sha256").update(`${orgId()}:${email.toLowerCase()}`).digest("hex");
-  return `sunny-${digest.slice(0, 32)}`;
+headers: {
+  Authorization: `Bearer ${accessToken()}`,   // WHO — always the integration account
+  "X-Active-Workspace-Id": orgId(),           // WHERE — Base44 checks permissions against this
+  "Content-Type": "application/json",
 }
 ```
 
-Three properties, each load-bearing:
+Three rules for the token:
 
-**Deterministic, not random.** The id is your only handle on the principal that owns a user's apps.
-If it were random and stored only on the link row, disconnecting (which deletes the row) and
-reconnecting would provision a *second* principal — and strand the first one's apps under an
-identity nothing points at any more. Recomputing from the email means reconnect always lands on the
-same principal.
+- **Create it in your enterprise workspace**, not the account's personal workspace, or your builds
+  miss the design system, skills and plan you set up there.
+- **The account needs Editor or higher** in that workspace. Viewers and guests can't create apps,
+  and deploy only succeeds for an Editor.
+- **It is the most sensitive value you hold.** It can do anything the account can, to every app
+  your platform has ever built. Server-only, never caller-supplied, never installed into a built app
+  (`APP_SECRETS` is the allow-list for that, and it does not contain it).
 
-**Not the email.** Base44 builds the principal's address out of this value. Passing a real address
-is exactly the impersonation surface the synthetic design removes, and it would publish every one of
-your users' email addresses in the workspace member list.
+It lands in env as `BASE44_ACCESS_TOKEN`, next to `BASE44_ORG_ID` (the workspace id),
+`BASE44_PLATFORM_HOST` and `BASE44_APPS_FOLDER_ID`. See `.env.example`.
 
-**Unsalted.** This is an identifier, not a credential — knowing it buys nothing without a workspace
-key, and a secret salt would be one more thing whose loss orphans every principal. The workspace id
-is in the hash so the same person in a different workspace is a different principal.
+There is no per-user token to mint, store, refresh or revoke, and no "Connect" step in the UI. The
+builder is either configured on a deployment or it is not; `POST /api/base44/platform
+{action:"status"}` answers which, from config alone.
 
-The same reasoning applies to `display_name`: it reaches the workspace member list, so keep the real
-address out of it. The workspace admin sees an opaque robot; the id ↔ person mapping lives in your
-database, which is where it belongs.
+### What the workspace key is still for
+
+`BASE44_SVC_KEY`, the `b44k_` workspace API key, does **not** build apps. It is for the two things
+only a workspace key can do: signing a viewer into an embedded app — provisioning an app user and
+minting an embed sign-in token (`src/lib/embedSession.ts`) — and registering the outbound webhook
+endpoint. It is optional: without it the builder still works, and embedded apps load signed out.
 
 ---
 
-## The endpoints
+## Keeping builders apart
 
-All three take the workspace API key in `Authorization` **bare — no `Bearer` prefix**. That's the
-format Base44's workspace-key auth accepts; `Bearer` is for the *minted* tokens.
+Since upstream every app has the same owner, "which apps are mine?" and "may I edit this app?" are
+questions only your database can answer. In this repo the answer is `AppOwnership`: one row per
+(app, builder), and `src/lib/appOwnership.ts` is the module that reads it for authorization.
 
-### Provision
+The platform proxy enforces it in three places:
 
-```http
-POST {BASE44_PLATFORM_HOST}/api/service/users
-Authorization: {BASE44_PROVISION_KEY}
-Content-Type: application/json
-
-{ "service_external_id": "sunny-9f2c…", "display_name": "Sunny user 9f2c…" }
+```
+createApp          → create upstream, then recordOwnership(actor, app.id) — same request
+listApps           → list the folder upstream, keep only ids the caller owns
+every other action → ownsApp(actor, appId) first; 404 otherwise, before any upstream call
 ```
 
-```json
-{
-  "service_external_id": "sunny-9f2c…",
-  "user_id": "…",
-  "email": "sunny-9f2c…@{workspaceId}.svc.base44.invalid",
-  "role": "editor",
-  "created": true
-}
+The 404 is deliberate: the folder is shared by every builder, and "that exists but isn't yours"
+tells a caller more than "no such app". It is also the answer they would get for an id that was
+never created, so the two cases stay indistinguishable.
+
+Two rules make this hold:
+
+**Ownership is written server-side, in the request that creates the app.** Never from the browser.
+A client that could insert an `AppOwnership` row could claim any app in the folder, so the generic
+entity API lets a user read and delete their own rows ("forget this app") and refuses to create or
+update one — `src/lib/entities.ts` marks every field read-only.
+
+**Reads have no admin bypass.** Like `AppInstall`, ownership matches on the caller's own email. An
+admin's My apps page shows their own apps, not everyone's. Reading another user's rows through an
+admin session is one thing; handing them the controls of another user's app is another.
+
+The same module answers for the embed and token routes (`/api/embed`, `/api/sunny/token`): an app
+is reachable by its author *or* by someone who installed it, and nobody else.
+
+### Apps with no row
+
+An app in the folder with no `AppOwnership` row — built before ownership was tracked, or by another
+tool against the same folder — is visible to nobody here, and no action reaches it. Recover one by
+inserting its row for the right user.
+
+---
+
+## Lifecycle
+
+```
+set up      create the token in the enterprise workspace (Editor+) → env → deploy
+            `status` answers 200 configured; the builder UI appears
+
+build       browser → /api/base44/platform {action} → ownership check → Bearer <token> → Base44
+            every app lands in the one account, filed into your folder
+
+offboard    delete the user's AppOwnership (and AppInstall, Widget) rows
+            their apps stay in the account — reassign by inserting rows for someone else, or
+            delete the apps upstream; nothing upstream needs to change for the *user*
+
+rotate      create a new token, deploy it, revoke the old one
+            no per-user state to migrate: every stored id is an app id, not a credential
+
+401 upstream  the token was revoked or expired → 501 bridge_misconfigured, loudly logged
+              a deployment problem, not something a user can fix by retrying
 ```
 
-Scope: `service_users:provision`. Idempotent on `(workspace, service_external_id)` — an existing
-principal returns `created: false`, so calling it on every Connect is safe.
+### Failure classes
 
-Send **no `role`**: the endpoint defaults to `editor` and clamps anything above the vendable ceiling
-anyway, so naming it adds a field you can get wrong for no capability you don't already have.
-
-| Status | Meaning | What to do |
+| Failure | Meaning | Response |
 | --- | --- | --- |
-| `403` | The workspace isn't enabled for this (an enterprise capability plus a launch allowlist) | Surface it as configuration, not a user error |
-| `409` | Something already occupies the synthetic address | **Refuse.** The address is workspace-namespaced and non-routable, so a pre-existing occupant with no membership is an anomaly, not an account to adopt |
-| `2xx` with a non-`.invalid` address | Upstream handed you a *real* account | Refuse. Assert the domain before you mint — otherwise you're about to vend a token that acts as a human |
-
-### Mint
-
-```http
-POST {BASE44_PLATFORM_HOST}/api/service/user-tokens
-Authorization: {BASE44_SVC_KEY}
-Content-Type: application/json
-
-{ "service_external_id": "sunny-9f2c…" }
-```
-
-```json
-{ "access_token": "…", "refresh_token": "…", "expires_in": 3600 }
-```
-
-Scope: `user_tokens:mint`. No OAuth dance — no redirect, no consent screen, no PKCE.
-
-- The body carries **only** the external id. There's no `scope` field: the endpoint pins
-  `apps:read apps:write offline` itself, because REST enforces no scopes and a narrower string would
-  advertise a boundary it can't honour.
-- The workspace comes from the **key**, never the request. That's the cross-tenant guarantee: there
-  is nothing in the request that could point at another workspace.
-- **Mint never auto-provisions.** Unknown principal → `404`.
-- Tokens live ~1h. (The platform default is far longer; short is better — see
-  [revocation](#revocation-and-offboarding).)
-- Rate limit: ~60 mints/60s **per workspace**, shared across all your users. At one mint per active
-  user per hour that's roughly 3600 concurrent users of headroom. If it ever binds, the fix is the
-  refresh exchange, not a longer TTL.
-
-### Revoke (refresh token only)
-
-```http
-POST {BASE44_PLATFORM_HOST}/oauth/revoke
-Content-Type: application/x-www-form-urlencoded
-
-token={refresh_token}&client_id=svc_delegate
-```
-
-RFC 7009. Only the refresh token is revocable — the access token is a self-contained JWT and stays
-valid until it expires. Best-effort: a failed revoke must not strand the user in a linked state they
-can't leave.
-
-`client_id` must be a **non-MCP** prefix. A token whose `client_id` starts with one of Base44's MCP
-prefixes (`chatgpt_`, `claude_`, `cursor_`, `oauth_`) is rejected everywhere except `/mcp` — see the
-`403 "scoped to MCP"` case in [base44-platform-api.md](base44-platform-api.md).
-
-### Deprovision
-
-```http
-DELETE {BASE44_PLATFORM_HOST}/api/service/users/{service_external_id}
-Authorization: {BASE44_PROVISION_KEY}
-```
-
-Scope: `service_users:provision`. Idempotent — a `404` is a no-op.
-
-This is the real offboarding lever: the workspace grant is re-validated on **every** request, so
-outstanding access tokens start failing on their next call rather than living out their hour.
-
-It also **deletes the principal and transfers its apps to the workspace owner**. So it's an
-offboarding action ("this person has left the company"), not a UI toggle ("unlink my account"). In
-this repo it's exported (`deprovisionPrincipal()`) but deliberately not wired to a route.
-
----
-
-## Why the two keys are worth splitting
-
-`BASE44_SVC_KEY` (mint) sits on the hot path — every re-mint, every hour, every active user. The
-provision key is used twice in an account's lifetime.
-
-A mint-only key can vend tokens for principals that already exist but cannot *create* one, so it can
-never become an impersonate-anyone primitive. And it's what makes deprovision stick: with a
-provision-capable key on the hot path, a removed user presses Connect, gets re-provisioned, and the
-offboarding quietly undoes itself.
-
-`BASE44_PROVISION_KEY` defaults to `BASE44_SVC_KEY` when unset, so a single-key deployment works.
-Split them when you go to production.
-
----
-
-## The lifecycle
-
-```
-connect      provision (idempotent) ─► mint ─► store row {status: linked, token, expiresAt}
-             ▲ order matters: mint 404s on an unknown principal and will not create one
-
-use          expiry within 5 min?  ─► re-mint, then call
-             mid-call 401?         ─► re-mint once, retry once, else 428 reauthorize_required
-
-disconnect   revoke refresh token (best effort) ─► delete the row
-             ✗ does NOT deprovision — the principal owns the user's apps
-
-offboard     deprovisionPrincipal() ─► grant dies, outstanding tokens fail on next call
-```
-
-### Refresh: re-mint, don't exchange
-
-Minted tokens do come with a refresh token, but this repo re-mints instead of calling
-`POST /oauth/token`. You already hold a mint-capable key, so asking for a new token is strictly
-simpler: no rotation to persist correctly, no way to end up holding a refresh token the server has
-already revoked. Both paths re-validate the workspace grant, so deprovisioning propagates either
-way; the tie goes to fewer moving parts.
-
-### Classify failures, or you'll force mass reconnects
-
-This is the subtlest bit of the whole flow:
-
-| Failure | Is the grant dead? | Action |
-| --- | --- | --- |
-| Network error / request never completed | No | Leave the row untouched; the next call retries |
-| `429` (shared per-workspace mint limiter) | No — that's *other* users' traffic | Leave the row untouched |
-| `408`, `5xx` | No | Leave the row untouched |
-| Other `4xx` | Yes — principal deprovisioned, role no longer vendable, key lost its scope | Downgrade to `pending`, clear tokens, show Connect |
-| Missing env var | Neither — it's a deployment fault | `501 bridge_misconfigured`; never report it as an expired connection |
-
-Downgrading on a `429` converts one busy minute into a fleet-wide forced reconnect. Reporting a
-missing env var as "your connection expired" sends users into a reconnect loop that cannot succeed.
-
-Read config **before** the try block for exactly this reason — a missing variable should propagate
-as a configuration error, not get caught and mislabelled as an upstream blip.
+| Missing env var | Deployment isn't configured | `501 bridge_misconfigured`, before any call. The body never names the variable |
+| Upstream `401` | Base44 refused the integration account's token | `501 bridge_misconfigured`, logged with the upstream detail. Same bucket, same UI state |
+| Upstream `403` | The account's role — a non-Editor cannot deploy, a workspace isn't enabled for something | Passed through with the upstream detail |
+| App-scoped call on an app the caller didn't build | Not theirs | `404 not_found`, before any upstream call |
+| Network error, `5xx` | Upstream trouble | `502`, retry |
 
 ---
 
 ## Containment rules
 
-The rules this repo holds itself to, all asserted by `npm run base44:smoke`:
+What this repo holds itself to, asserted by `npm run base44:smoke`:
 
-1. **One module touches tokens.** `src/lib/base44Link.ts`. The generic entity CRUD refuses the
-   `Base44Link` model outright, so no API can read it by accident.
-2. **No function returns a token.** `linkStatus()` returns `{linked, base44_user_email,
-   organization_id}` — booleans and display fields. A token leaves the module only as the
-   `Authorization` header of a server-side fetch.
-3. **Everything is keyed by the session email**, taken from the session and never from the request
-   body. A user cannot connect, inspect or disconnect anyone else's link.
-4. **The principal id sent upstream is opaque and never an email.**
-5. **The provisioned address is asserted** to be in the reserved `.invalid` domain before any token
-   is minted for it.
+1. **The token is read in one place** (`accessToken()` in `src/lib/base44Config.ts`) and used in one
+   place (the proxy's `send()`). No response body ever contains it, and no error body names the
+   variable.
+2. **Every app-scoped action checks ownership before upstream.** For every action in `APP_SCOPED`,
+   and for every id `fileAppsInFolder` is given.
+3. **`listApps` answers with the caller's apps only.**
+4. **`AppOwnership` cannot be created or updated through the entity API.** Only the proxy writes it.
+5. **A foreign app is a 404 even on an unconfigured deployment** — the ownership gate runs before
+   config is read, so the two kinds of failure never blur.
 
 ## Notes for your own port
 
-- The user-visible connect step takes 5–15s (two upstream calls). Don't retry it blindly; it's
-  idempotent, but the latency is real — show a spinner, disable the button.
-- Store the workspace id from your own config, not by decoding the token. The mint endpoint pins the
-  token to that workspace anyway, and the token is opaque by contract.
-- A stored row with no principal id should still recompute one (it's derived, not stored). If no
-  principal was ever created, the mint 404s — which is the intended outcome: one reconnect, which
-  provisions.
+- The isolation lives entirely in your database. Whatever you call your ownership table, make it
+  the *only* thing your proxy consults, check it before every upstream call, and never let a client
+  write it.
+- Keep `listApps` cheap: it is the folder intersected with the caller's rows, so a user with many
+  peers in the folder may need a higher upstream `limit` than the page shows.
+- Offboarding a user does not touch Base44. Their apps remain in the account; what they lose is the
+  rows that let them reach those apps through you.
+- If you ever need per-user Base44 identities again — real accounts, with Base44 enforcing the
+  split — that is a different model with a different set of endpoints, not a flag on this one.

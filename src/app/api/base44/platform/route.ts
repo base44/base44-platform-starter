@@ -2,36 +2,44 @@
  * POST /api/base44/platform — the server-side proxy for Base44's *platform* REST
  * API: the endpoints that create and build OTHER apps.
  *
- * Authentication is **per shell user** — each user links once via
- * `/api/base44/link` and gets their own minted token, so the apps they create are
- * owned by their own Base44 identity. A single shared API key would instead make
- * every app ever built belong to whoever's key it was.
+ * Authentication is **one account for the whole integration**: every call carries
+ * that account's personal access token, so upstream every app this shell builds
+ * has the same owner. Base44 has no idea which shell user built what, and says so
+ * — keeping builders apart is the integration's job. This route does it in two
+ * places:
  *
- * Governance stays intact: the token is pinned to the shared enterprise workspace
- * via `X-Active-Workspace-Id` (and `createApp`'s `organization_id`), and apps are
+ *   * `createApp` records an `AppOwnership` row for the caller, server-side, in
+ *     the same request that creates the app;
+ *   * every action that names an app (`APP_SCOPED`, and `fileAppsInFolder`'s ids)
+ *     is refused with a 404 unless the caller has that row. `listApps` returns
+ *     only the folder entries the caller owns.
+ *
+ * Governance stays intact: the token is pinned to the enterprise workspace via
+ * `X-Active-Workspace-Id` (and `createApp`'s `organization_id`), and apps are
  * filed into the `sunny_widgets` folder.
  *
  * `OPS` below is an **allow-list, and it is the only limit** on what a compromised
- * frontend could reach: Base44 enforces OAuth scopes in its MCP tool layer, not on
- * this REST surface, so `apps:read apps:write` does not constrain these calls.
- * Keep it tight — never add a passthrough action, and never let the caller supply
- * a path, host or workspace id, nor a credential *value* (see `APP_SECRETS`).
+ * frontend could reach: the access token can do anything the account can, and
+ * Base44 enforces no scopes on this REST surface. Keep it tight — never add a
+ * passthrough action, and never let the caller supply a path, host or workspace
+ * id, nor a credential *value* (see `APP_SECRETS`).
  */
 
 import { NextResponse, type NextRequest } from "next/server";
 
 import { requireSessionUser } from "@/lib/auth";
 import { errorResponse, jsonError } from "@/lib/apiResponse";
+import { ownedAppIds, ownsApp, recordOwnership } from "@/lib/appOwnership";
 import {
   APP_SECRETS,
   MissingConfigError,
-  REFRESH_SKEW_MS,
+  accessToken,
   appsFolderId,
   orgId,
   platformHost,
   resolveAppSecrets,
 } from "@/lib/base44Config";
-import { type Base44Link, getLink, remint } from "@/lib/base44Link";
+import type { RlsActor } from "@/lib/rls";
 
 type Params = Record<string, unknown>;
 
@@ -185,8 +193,10 @@ const OPS: Record<string, Op> = {
 };
 
 /**
- * Actions addressing a specific app must be given a clean id — anything with a
- * slash or query character could escape the allow-listed path shape.
+ * Actions addressing a specific app. Two checks hang off this list: the id must
+ * be clean — anything with a slash or query character could escape the
+ * allow-listed path shape — and the caller must own the app, because upstream
+ * the token owns them all.
  */
 const APP_SCOPED = [
   "getApp",
@@ -201,13 +211,13 @@ const APP_SCOPED = [
 const CLEAN_ID = /^[A-Za-z0-9_-]+$/;
 
 /**
- * The Bearer token says *who*; `X-Active-Workspace-Id` says *where* — pinning it
- * keeps a multi-workspace token's reads and writes in the governed workspace.
+ * The Bearer token says *who* — always the integration account; the workspace
+ * header says *where*, and Base44 checks permissions against it, not the body.
  */
-function send(path: string, op: Op, body: string | undefined, accessToken: string, params: Params) {
+function send(path: string, op: Op, body: string | undefined, params: Params) {
   const url = `${platformHost()}${path}`;
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${accessToken}`,
+    Authorization: `Bearer ${accessToken()}`,
     "Content-Type": "application/json",
     "X-Active-Workspace-Id": orgId(),
     ...(op.headers?.(params) ?? {}),
@@ -220,12 +230,6 @@ function send(path: string, op: Op, body: string | undefined, accessToken: strin
     signal: AbortSignal.timeout(op.timeoutMs ?? DEFAULT_TIMEOUT_MS),
   });
 }
-
-const reauthorize = () =>
-  NextResponse.json(
-    { error: "Your Base44 connection expired. Connect again.", code: "reauthorize_required" },
-    { status: 428 },
-  );
 
 function validate(action: string, params: Params): string | null {
   if (APP_SCOPED.includes(action) && !CLEAN_ID.test(str(params.appId))) {
@@ -266,6 +270,41 @@ function validate(action: string, params: Params): string | null {
   return null;
 }
 
+/**
+ * Whether the caller built every app this call names. Runs after validation and
+ * before anything reaches upstream, so a foreign id never costs a platform call.
+ * Vacuously true for actions that name no app.
+ */
+async function ownsEveryApp(actor: RlsActor, action: string, params: Params): Promise<boolean> {
+  const ids = APP_SCOPED.includes(action)
+    ? [str(params.appId)]
+    : action === "fileAppsInFolder"
+      ? (params.appIds as unknown[]).map(str)
+      : [];
+  for (const id of ids) {
+    if (!(await ownsApp(actor, id))) return false;
+  }
+  return true;
+}
+
+/**
+ * 404, not 403: the folder is shared by every builder, and "that app exists but
+ * is not yours" tells a caller more than "no such app". It is also the answer
+ * they would get for an id that was never created, which keeps the two cases
+ * indistinguishable.
+ */
+const notFound = (action: string) =>
+  NextResponse.json(
+    { error: `No such app for ${action}.`, code: "not_found" },
+    { status: 404 },
+  );
+
+const misconfigured = () =>
+  NextResponse.json(
+    { error: "The Base44 bridge is not configured on this deployment.", code: "bridge_misconfigured" },
+    { status: 501 },
+  );
+
 export async function POST(req: NextRequest) {
   const t0 = Date.now();
   try {
@@ -282,34 +321,32 @@ export async function POST(req: NextRequest) {
     const action = str(rawAction);
     console.log(`[base44/platform] START action=${action} appId=${str(params.appId) || "-"}`);
 
+    // Is the builder available here at all? Config presence only — no upstream
+    // call — so the UI can decide what to render without spending a platform
+    // request. A missing variable throws, and the outer handler answers 501.
+    if (action === "status") {
+      accessToken();
+      orgId();
+      platformHost();
+      appsFolderId();
+      return NextResponse.json({ configured: true });
+    }
+
     const op = OPS[action];
     if (!op) {
       return jsonError(
         400,
         "invalid_request",
-        `Unknown action "${action}". Allowed: ${Object.keys(OPS).join(", ")}`,
+        `Unknown action "${action}". Allowed: status, ${Object.keys(OPS).join(", ")}`,
       );
     }
 
     const invalid = validate(action, params);
     if (invalid) return jsonError(400, "invalid_request", invalid);
 
-    let link: Base44Link | null = await getLink(actor.email);
-    if (link?.status !== "linked" || !link.accessToken) {
-      console.warn(
-        `[base44/platform] END action=${action} status=428 not_linked user=${actor.email}`,
-      );
-      return NextResponse.json(
-        { error: "Connect your Base44 account first.", code: "not_linked" },
-        { status: 428 },
-      );
-    }
-
-    // Proactive re-mint. A mid-call 401 is still handled below; this just avoids
-    // the common case of a token that expired while nobody was looking.
-    if (link.expiresAt && link.expiresAt.getTime() - Date.now() < REFRESH_SKEW_MS) {
-      link = await remint(link);
-      if (!link?.accessToken) return reauthorize();
+    if (!(await ownsEveryApp(actor, action, params))) {
+      console.warn(`[base44/platform] END action=${action} status=404 not the owner`);
+      return notFound(action);
     }
 
     let path: string;
@@ -330,21 +367,11 @@ export async function POST(req: NextRequest) {
 
     let upstream: Response;
     try {
-      upstream = await send(path, op, body, link.accessToken, params);
-
-      // A 401 means the token died early — most often because the user's
-      // workspace membership changed, which Base44 re-validates per request.
-      // One re-mint, one retry, then ask for consent again.
-      if (upstream.status === 401) {
-        console.warn(`[base44/platform] ${action} got 401; re-minting once`);
-        link = await remint(link);
-        if (!link?.accessToken) return reauthorize();
-        upstream = await send(path, op, body, link.accessToken, params);
-      }
+      upstream = await send(path, op, body, params);
     } catch (err) {
-      // `remint()` reads config, so a missing key surfaces here too. Let it reach
-      // the outer handler for a 501: reporting it as a 502 would both misdiagnose
-      // it and echo the env var names into the response body.
+      // `send()` reads config, so a missing token surfaces here. Let it reach the
+      // outer handler for a 501: reporting it as a 502 would both misdiagnose it
+      // and echo the env var names into the response body.
       if (err instanceof MissingConfigError) throw err;
       console.error(`[base44/platform] ${action} ${op.method} ${path} never completed`, err);
       return NextResponse.json(
@@ -356,20 +383,17 @@ export async function POST(req: NextRequest) {
     const text = await upstream.text();
     console.log(`[base44/platform] UPSTREAM ${action} → ${upstream.status} (${Date.now() - t0}ms)`);
 
-    if (upstream.status === 403 && text.includes("scoped to MCP")) {
-      // The minted token's client_id must not start with an MCP prefix
-      // (chatgpt_/claude_/cursor_/oauth_), or it is rejected everywhere except
-      // /mcp. The mint endpoint stamps a non-MCP first-party id precisely to stay
-      // REST-capable — a 403 here means that wiring regressed upstream.
-      console.error("[base44/platform] token is MCP-scoped — mint stamped an MCP client_id");
-      return NextResponse.json(
-        {
-          error: "This Base44 token is only valid for MCP, not the REST API.",
-          detail:
-            "The minted token's client_id must be a non-MCP first-party prefix (svc_delegate).",
-        },
-        { status: 500 },
+    if (upstream.status === 401) {
+      // There is no per-user grant to re-mint: the one credential is the
+      // integration account's token, so a 401 means it was revoked or expired.
+      // That is a deployment problem — the same bucket as a missing variable —
+      // and nothing the user can fix by retrying, so the UI shows its
+      // unavailable state. (A 403 passes through below: it is the account's
+      // *role* — a non-Editor cannot deploy — and the detail says so.)
+      console.error(
+        `[base44/platform] Base44 refused the integration account's token: ${text.slice(0, 300)}`,
       );
+      return misconfigured();
     }
 
     if (!upstream.ok) {
@@ -382,8 +406,9 @@ export async function POST(req: NextRequest) {
 
     if (!text) return NextResponse.json({ ok: true });
 
+    let data: unknown;
     try {
-      return NextResponse.json(JSON.parse(text));
+      data = JSON.parse(text);
     } catch {
       console.error(`[base44/platform] END action=${action} non-JSON response`);
       return NextResponse.json(
@@ -391,13 +416,39 @@ export async function POST(req: NextRequest) {
         { status: 502 },
       );
     }
+
+    // The folder is shared by every builder; the caller sees their own apps only.
+    // An app with no AppOwnership row — built before ownership was tracked, or by
+    // another tool against the same folder — is visible to nobody here.
+    if (action === "listApps" && Array.isArray(data)) {
+      const owned = await ownedAppIds(actor);
+      data = data.filter((app) => owned.has(str((app as { id?: unknown })?.id)));
+    }
+
+    // Ownership is recorded in the same request that creates the app, and never
+    // from the browser: a client-written row would let anyone claim any app.
+    // Failing here still returns the app — it exists upstream — but loudly, since
+    // without the row nobody will ever see it.
+    if (action === "createApp") {
+      const app = data as { id?: unknown; name?: unknown } | null;
+      if (typeof app?.id === "string") {
+        try {
+          await recordOwnership(actor, app.id, str(app.name) || str(params.name) || "Untitled");
+        } catch (err) {
+          console.error(
+            `[base44/platform] app ${app.id} was created but ownership was not recorded — ` +
+              `nobody will see it in My Tools`,
+            err,
+          );
+        }
+      }
+    }
+
+    return NextResponse.json(data);
   } catch (err) {
     if (err instanceof MissingConfigError) {
       console.error("[base44/platform]", err.message);
-      return NextResponse.json(
-        { error: "The Base44 bridge is not configured on this deployment.", code: err.code },
-        { status: 501 },
-      );
+      return misconfigured();
     }
     return errorResponse(err);
   }
