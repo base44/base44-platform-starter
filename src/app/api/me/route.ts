@@ -4,7 +4,7 @@
  *
  * Session-scoped, never service-role: 401 when unauthenticated, exactly as the
  * Base44 SDK behaved, so the client can fall back to sign-in. Returns only the
- * fields the UI needs — no tokens, and nothing from Base44Link.
+ * fields the UI needs — no tokens.
  */
 
 import { NextResponse } from "next/server";

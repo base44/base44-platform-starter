@@ -7,7 +7,7 @@ import { AuthProvider } from "@/lib/AuthContext";
 
 /**
  * The client providers the UI needs: `SessionProvider` makes `useSession()` work
- * in client components, `AuthProvider` carries the Base44 link status (see
+ * in client components, `AuthProvider` carries whether the app builder is available (see
  * src/lib/AuthContext.tsx), and `ToastProvider` owns the one place confirmations
  * and their Undo actions render.
  */

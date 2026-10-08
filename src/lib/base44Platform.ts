@@ -1,16 +1,16 @@
 /**
  * Browser client for the Base44 app-factory bridge.
  *
- * A thin layer over the two server routes: `/api/base44/link` (provision + mint)
- * and `/api/base44/platform` (the allow-listed REST proxy). No credential is ever
- * present here — the workspace key and the per-user token live server-side only
- * (see `src/lib/base44Link.ts`), which is the whole point of routing through the
- * server rather than calling Base44 from the browser.
+ * A thin layer over one server route, `/api/base44/platform` — the allow-listed
+ * REST proxy. No credential is ever present here: the integration account's
+ * access token lives server-side only (see `src/lib/base44Config.ts`), which is
+ * the whole point of routing through the server rather than calling Base44 from
+ * the browser.
  *
- * Errors carry `code` so the UI can branch: `not_linked` and
- * `reauthorize_required` mean "show the Connect button", and
- * `bridge_misconfigured` (a deployment with no `BASE44_SVC_KEY`) is folded into
- * the same bucket by `isNotLinkedError()`.
+ * Errors carry `code` so the UI can branch: `bridge_misconfigured` (a deployment
+ * with no `BASE44_ACCESS_TOKEN`, or one Base44 has stopped accepting) means "the
+ * builder is unavailable here", and `not_found` means the caller does not own the
+ * app they named.
  */
 
 /** The workspace folder every app this builder creates lives in. Display text only. */
@@ -52,35 +52,23 @@ async function post(path: string, action: string, params: Json = {}): Promise<un
 }
 
 const call = (action: string, params?: Json) => post("/api/base44/platform", action, params);
-const link = (action: string, params?: Json) => post("/api/base44/link", action, params);
 
 /**
- * True when an error means "no live Base44 link" — never connected, grant
- * expired, or the deployment has no workspace key. The UI turns all three into a
- * Connect button.
+ * True when an error means "no builder on this deployment": the bridge is not
+ * configured, or Base44 refused the integration account's token. The UI shows its
+ * unavailable state for either.
  */
-export function isNotLinkedError(err: unknown): boolean {
-  const code = (err as { code?: string } | null)?.code;
-  return (
-    code === "not_linked" || code === "reauthorize_required" || code === "bridge_misconfigured"
-  );
+export function isBuilderUnavailable(err: unknown): boolean {
+  return (err as { code?: string } | null)?.code === "bridge_misconfigured";
 }
 
-// --- linking ---------------------------------------------------------------
+// --- availability ----------------------------------------------------------
 
-export type LinkStatus = {
-  linked: boolean;
-  base44_user_email: string | null;
-  organization_id: string | null;
-};
-
-/** Whether this Sunny user has a live Base44 link. */
-export const base44LinkStatus = () => link("status") as Promise<LinkStatus>;
-
-/** Provision the service principal + mint. Takes 5–15s; do not retry blindly. */
-export const connectBase44 = () => link("connect") as Promise<LinkStatus>;
-
-export const disconnectBase44 = () => link("disconnect") as Promise<LinkStatus>;
+/**
+ * Resolves when the bridge is configured; rejects with `bridge_misconfigured`
+ * when it is not. Config presence only — it costs no platform call.
+ */
+export const builderStatus = () => call("status") as Promise<{ configured: true }>;
 
 // --- apps ------------------------------------------------------------------
 
@@ -89,38 +77,16 @@ type App = { id: string; name?: string; slug?: string } & Json;
 export const fileAppsInFolder = (appIds: string[]) => call("fileAppsInFolder", { appIds });
 
 /**
- * Apps in the `sunny_widgets` folder, newest first. Bare array upstream — no
- * total count. **Workspace-global**: every app in the folder regardless of who
- * built it, so UI surfaces should prefer `listAppsForUser`.
+ * The apps this user built, newest first. Bare array — no total count.
+ *
+ * The folder upstream is workspace-global and every app in it belongs to the one
+ * integration account, so the server intersects it with the caller's
+ * `AppOwnership` rows before answering. No role sees another user's apps, and an
+ * app with no row — built before ownership was tracked — is visible to nobody.
+ * Recover one by inserting its row.
  */
 export const listApps = ({ limit = 20, skip = 0 } = {}) =>
   call("listApps", { limit, skip }) as Promise<App[]>;
-
-/**
- * The apps the current user may see, newest first.
- *
- * Platform apps carry no per-Sunny-user owner — they live under one workspace —
- * so ownership lives in the local `AppOwnership` entity, whose RLS scopes a list
- * to rows the caller created. Read the folder from the platform, keep the ids the
- * user owns.
- *
- * The filter has no exemption: no role sees another user's apps, and an app with
- * no `AppOwnership` row — a legacy app built before ownership was tracked — is
- * visible to nobody here. Recover one by inserting its row.
- */
-export async function listAppsForUser({ limit = 20, skip = 0 } = {}): Promise<App[]> {
-  const apps = await listApps({ limit, skip });
-
-  // Imported lazily so this module stays usable from server code that has no
-  // business importing the browser entity client.
-  const [{ AppOwnership }] = await Promise.all([import("@/lib/entityClient")]);
-
-  // Unauthenticated callers get nothing: the list below throws or comes back
-  // empty rather than leaking the folder.
-  const owned = await AppOwnership.list();
-  const ownedIds = new Set(owned.map((o) => o.app_id as string));
-  return apps.filter((a) => ownedIds.has(a.id));
-}
 
 /**
  * Installed on every app built here; the value is resolved server-side. Empty since
@@ -129,17 +95,17 @@ export async function listAppsForUser({ limit = 20, skip = 0 } = {}): Promise<Ap
 export const DEFAULT_APP_SECRETS: readonly string[] = Object.freeze([]);
 
 /**
- * Creates an app and queues its first builder message, then files it and records
- * ownership.
+ * Creates an app and queues its first builder message, then files it.
  *
- * Three calls, not one, and the order matters:
+ * Two calls, not one, and the order matters:
  *   1. `createApp` — everything that must exist before the first build turn goes
  *      in this one request: `initial_message` starts that turn, while
  *      `customInstructions` and `secrets` must already be on the app when it runs.
+ *      The server records this user's `AppOwnership` in the same request — never
+ *      from here, since a client-written row could claim any app.
  *   2. `fileAppsInFolder` — `/api/apps` has no folder field on create, so a fresh
  *      app is briefly unfiled, and `listApps` reads out of the folder. An unfiled
  *      app is invisible in My Tools, so this failing is loud.
- *   3. `AppOwnership` — without it the app is invisible in My Tools, to everyone.
  */
 export async function createApp({
   prompt,
@@ -168,17 +134,6 @@ export async function createApp({
   // failing is invisible — the build just ignores the instructions.
   if (customInstructions && !app?.custom_instructions) {
     console.error("[base44Platform] custom_instructions did not stick on the created app", app.id);
-  }
-
-  try {
-    const { AppOwnership } = await import("@/lib/entityClient");
-    await AppOwnership.create({ app_id: app.id, app_name: app.name || name || "Untitled" });
-  } catch (err) {
-    console.error(
-      `[base44Platform] app ${app.id} was built but ownership was not recorded — ` +
-        `nobody will see it in My Tools`,
-      err,
-    );
   }
 
   return app;

@@ -110,7 +110,7 @@ Scope matters as much as value. Netlify lets each variable carry a different val
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | as today | same client |
 | `DATABASE_URL`, `DIRECT_URL` | production Neon | the **preview Neon branch** |
 | `NEXT_PUBLIC_BASE44_APP_HOST` | as today | same value |
-| `BASE44_SVC_KEY`, `BASE44_ORG_ID`, `BASE44_PLATFORM_HOST`, `BASE44_APPS_FOLDER_ID` | as today | optional — see §7 |
+| `BASE44_ACCESS_TOKEN`, `BASE44_SVC_KEY`, `BASE44_ORG_ID`, `BASE44_PLATFORM_HOST`, `BASE44_APPS_FOLDER_ID` | as today | optional — see §7 |
 
 Then confirm **Build & deploy → Deploy Previews** is enabled for pull requests — it is what
 produces the `deploy-preview-N` URLs the proxy forwards to.
@@ -168,11 +168,11 @@ curl -s -D- -o /dev/null -b /tmp/j -X POST --data "csrfToken=$T" "$P/api/auth/si
   `<SUNNY_HOST>`), so an app in a preview reads and writes **production** rows — scoped to
   its viewer, but production data all the same. Making it follow the deployment means a
   per-environment skill, or teaching the builder instructions to inject the shell's own origin.
-- **Base44 keys on previews or not.** Without them a preview shows the builder's "Connect" state and
-  everything else works. With them, previews share the production workspace and apps folder, so apps
-  built in a preview land in production's folder. Per-user service principals are safe either way:
-  provisioning is idempotent on the email-derived `service_external_id`
-  (`src/lib/base44Link.ts`), so a preview reuses the principal that user already has.
+- **Base44 credentials on previews or not.** Without them a preview says the builder is not
+  configured and everything else works. With them, previews share the production account, workspace
+  and apps folder, so apps built in a preview land in production's folder — and their `AppOwnership`
+  rows land in the preview's database branch, so production will not list them. Nothing per-user
+  exists upstream to get out of step.
 - **`next-auth` v5 is still beta** (`5.0.0-beta.32`). It is what ships the redirect proxy; v4 has no
   equivalent, since its OAuth `state` is an opaque random value with nowhere to carry an origin.
 

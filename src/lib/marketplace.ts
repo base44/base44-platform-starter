@@ -5,13 +5,15 @@
  * published listing is public by intent. Every write stays owner-only. Do not copy
  * the exception without the same justification.
  *
- * The `app*` fields are snapshotted at publish time because an installer's Base44
- * principal cannot see another user's app, so nothing can resolve the URL later. The
- * cost is staleness until the author re-publishes.
+ * The `app*` fields are snapshotted at publish time because the platform proxy
+ * answers only for apps the caller built — an installer cannot ask it where someone
+ * else's app lives, so nothing can resolve the URL later. The cost is staleness until
+ * the author re-publishes.
  */
 
 import type { MarketplaceListing } from "@prisma/client";
 
+import { ownsApp } from "@/lib/appOwnership";
 import { prisma } from "@/lib/prisma";
 import { ownerFields, type RlsActor } from "@/lib/rls";
 
@@ -145,14 +147,6 @@ export async function listInstalled(actor: RlsActor): Promise<ListingCard[]> {
 export async function isPublished(appId: string): Promise<boolean> {
   const row = await prisma.marketplaceListing.findFirst({
     where: { appId, status: "published" },
-    select: { id: true },
-  });
-  return Boolean(row);
-}
-
-async function ownsApp(actor: RlsActor, appId: string): Promise<boolean> {
-  const row = await prisma.appOwnership.findFirst({
-    where: { appId, ...ownerFields(actor) },
     select: { id: true },
   });
   return Boolean(row);

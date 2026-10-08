@@ -45,8 +45,8 @@ Two directions, and only one of them holds:
 
 * apps you **built** — the Base44 folder, live, which is the truth for a slug, a
   screenshot and whether the app is deployed;
-* apps you **installed** — the listing snapshot, because an installer's principal
-  cannot see another user's app in the workspace at all.
+* apps you **installed** — the listing snapshot, because the platform proxy answers
+  only for apps you built, so an installer cannot ask it about someone else's.
 
 Neither failing takes the other down: a Base44 outage should not hide your market apps.
 
@@ -61,9 +61,9 @@ hide for.
 ## Publishing snapshots the app
 
 `app_slug` / `app_url` / `screenshot_url` are captured at publish time, not resolved
-when someone views the listing. Forced by the P5 gap: an installer's Base44 service
-principal cannot see another user's app in the shared workspace, so at install and
-render time nothing can ask the platform where the app lives.
+when someone views the listing. Forced by the ownership gate: the platform proxy
+answers only to an app's author, so at install and render time nothing can ask the
+platform where someone else's app lives.
 
 Two consequences:
 

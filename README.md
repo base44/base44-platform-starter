@@ -11,7 +11,7 @@ work-management app you'll see in the code, is just the example product being ex
 This repository contains two references:
 
 - [`examples/white-label-minimal/`](examples/white-label-minimal/): the focused, local shared-account guide companion. Start here to learn the build loop without Sunny's database or sign-in.
-- [`src/`](src/): the full Sunny product and production-oriented service-user integration described below.
+- [`src/`](src/): the full Sunny product and the production-oriented integration described below — one Base44 account, with the shell keeping its builders apart.
 
 Live example: <https://sunny44.com>
 
@@ -24,17 +24,15 @@ Live example: <https://sunny44.com>
    ─────────────────────────                     ──────
    your users, your DB, your login
             │
-            │  1. user clicks "Connect"
-            ├──────────────────────────────────► provision a service principal
-            │                                    (a robot identity, one per user)
-            │                                    mint a ~1h access token for it
-            │  ◄──────────────────────────────
-            │  token stored server-side only
+            │  1. one integration account, its access
+            │     token in env, server-side only
+            │     (no Base44 identity per user at all)
             │
             │  2. user describes an app
             ├──────────────────────────────────► createApp → build → deploy
-            │     (server-side allow-list)        the app is owned by *that user's*
-            │                                     principal, inside your workspace
+            │     (server-side allow-list +        the app is owned by *the account*,
+            │      "is this app yours?" check)     inside your workspace; *your* DB
+            │                                      records which user built it
             │
             │  3. the built app runs
             │  ◄────────────────────────────────  it calls back into your data API
@@ -46,7 +44,7 @@ Five boundaries, five steps — four calling out to Base44, one where it calls b
 | Step | Boundary | Code |
 | --- | --- | --- |
 | [1](#step-1--your-product-owns-its-users-and-data) | Your own auth and database. Your shell is **not** a Base44 app. | `src/lib/auth.ts`, `prisma/schema.prisma`, `src/lib/rls.ts` |
-| [2](#step-2--give-each-user-their-own-base44-identity) | One Base44 identity per user, so their apps are theirs. | `src/lib/base44Link.ts`, `src/app/api/base44/link/route.ts` |
+| [2](#step-2--one-base44-account-and-you-keep-your-users-apart) | One Base44 account for the whole platform — and you keep your users apart. | `src/lib/base44Config.ts`, `src/lib/appOwnership.ts` |
 | [3](#step-3--call-base44-from-your-server-behind-an-allow-list) | A server-side proxy in front of Base44's REST API. | `src/app/api/base44/platform/route.ts` |
 | [4](#step-4--let-the-built-apps-talk-to-your-data) | A public API the built apps call, plus instructions teaching them how. | `src/app/api/sunny/route.ts`, `src/lib/builderInstructions.ts` |
 | [5](#step-5--let-base44-tell-you-what-happened) | Signed inbound webhooks, so you learn about deletions at all — and act on them. | `src/app/api/base44/webhooks/route.ts`, `src/lib/base44WebhookSignature.ts` |
@@ -59,16 +57,16 @@ You need, from Base44:
 
 | What | Why |
 | --- | --- |
-| An **enterprise workspace** with the platform capability enabled | All your users' apps live in it, so you have one place to govern and offboard |
+| An **enterprise workspace** | All your users' apps live in it, so you have one place to govern |
 | Its **workspace id** | Sent as `X-Active-Workspace-Id` on every platform call |
-| A **workspace API key** (`b44k_…`) with the `user_tokens:mint` scope | Vends per-user access tokens |
-| Optionally a **second key** with `service_users:provision` | Creates the per-user identities. Splitting the two is the safer setup — see [step 2](#step-2--give-each-user-their-own-base44-identity) |
+| An **integration account** with Editor or higher in that workspace, and its **personal access token** created *in* that workspace | The one identity that builds everything — see [step 2](#step-2--one-base44-account-and-you-keep-your-users-apart) |
+| Optionally a **workspace API key** (`b44k_…`) | Signs viewers into embedded apps and registers webhooks. Not needed to build |
 | The **platform host** your workspace is served from | Base of every REST call |
 | An **app folder id** | The one folder your platform files its apps into, so listing apps means listing that folder |
 
-Those land in env as `BASE44_ORG_ID`, `BASE44_SVC_KEY`, `BASE44_PROVISION_KEY`,
-`BASE44_PLATFORM_HOST`, `BASE44_APPS_FOLDER_ID` (see `.env.example`). All server-only — none of
-them may ever reach the browser.
+Those land in env as `BASE44_ACCESS_TOKEN`, `BASE44_ORG_ID`, `BASE44_PLATFORM_HOST`,
+`BASE44_APPS_FOLDER_ID` and optionally `BASE44_SVC_KEY` (see `.env.example`). All server-only —
+none of them may ever reach the browser.
 
 ---
 
@@ -117,74 +115,57 @@ missing predicate is a data leak. This repo pins it down with an ESLint rule tha
 
 ---
 
-## Step 2 — Give each user their own Base44 identity
+## Step 2 — One Base44 account, and you keep your users apart
 
 Now the interesting part. When your user builds an app, **who owns it?**
 
-The lazy answer is "one API key for the whole deployment" — every app your platform ever builds
-belongs to one account. You can't show a user only their apps, can't offboard anyone, and one leaked
-key is everything.
-
-The right answer is one Base44 identity per user. Base44 gives you a **service principal**: a
-workspace-owned robot account that can never log in. No password, no SSO identity, and a synthetic
-non-routable address (`…@{workspace}.svc.base44.invalid`). You address it by an **opaque id you
-choose**, and Base44 derives everything else from that.
-
-### 2a. Provision the principal
+On Base44's side the answer is simple, and it is the model Base44 documents for white-label
+integrations: **one Base44 account sits behind your whole integration.** It owns every app your
+users build, and its personal access token authenticates every call you make. Your users have no
+Base44 identity at all — Base44 sees one builder.
 
 ```ts
-// POST {host}/api/service/users     Authorization: <b44k_ key>   ← bare, no "Bearer"
-{
-  "service_external_id": "sunny-9f2c…",   // your opaque handle for this user
-  "display_name": "Sunny user 9f2c…"
-}
-// → { service_external_id, user_id, email: "…@….svc.base44.invalid", role: "editor", created }
+// src/lib/base44Config.ts — the whole credential story
+export const accessToken = () => required("BASE44_ACCESS_TOKEN");   // the account's PAT
+export const orgId       = () => required("BASE44_ORG_ID");         // the workspace it builds in
 ```
 
-Idempotent: calling it for an existing principal returns `created: false`, so "Connect" is safe to
-press twice.
+Two things about that token: create it **in your enterprise workspace**, not the account's
+personal one (or builds miss the design system, skills and plan you set up there), and give the
+account **Editor or higher** — viewers and guests can't create apps, and deploy succeeds only for an
+Editor.
 
-Two rules worth copying:
-
-- **Derive the id, don't store it.** `src/lib/base44Link.ts` computes it as
-  `sha256(workspaceId + ":" + userEmail)`. If it were random and stored only on a link row, then
-  disconnect → reconnect would create a *second* principal and strand the first one's apps.
-- **Never use the user's real email as the id.** Base44 builds the principal's address from it, and
-  the whole safety property is that this identity can't be logged into or mailed. Verify the address
-  you get back is in the reserved `.invalid` domain before you mint against it.
-
-### 2b. Mint a token that acts as it
+What that model hands *you* is the part people underestimate. Base44 puts it plainly: **keeping your
+builders apart is yours to enforce.** Scoping each builder to their own apps, and hiding other
+builders' apps, is entirely up to you. So the real work of step 2 is in your database:
 
 ```ts
-// POST {host}/api/service/user-tokens     Authorization: <b44k_ key>
-{ "service_external_id": "sunny-9f2c…" }
-// → { access_token, refresh_token, expires_in }   ~1 hour
+// src/lib/appOwnership.ts — the only record of who built what
+export async function ownsApp(actor, appId)        // the proxy's gate for every app-scoped action
+export async function ownedAppIds(actor)           // listApps = the folder ∩ this
+export async function recordOwnership(actor, appId) // written by the proxy, inside createApp
 ```
 
-No OAuth redirect, no consent screen, no PKCE — you already own both sides. The workspace comes
-from the *key*, never from the request; that's your cross-tenant guarantee.
+Three rules worth copying:
 
-**Mint never auto-provisions.** An unknown principal is a 404, and that's the feature: it's what
-makes removing someone actually stick. Which is also why the two scopes are worth splitting —
-if the hot-path key can provision, a removed user just presses "Connect" and walks back in.
+- **Check before every upstream call.** The proxy in step 3 refuses any action that names an app
+  the caller didn't build — a 404, before Base44 is ever asked. Upstream the token owns every app,
+  so nothing there will stop a user driving someone else's.
+- **Write ownership server-side, in the request that creates the app.** Never from the browser. A
+  client that could insert the row could claim any app in the folder, so the generic entity API
+  refuses to create or update one.
+- **No admin bypass.** Ownership matches on the caller's own email, like installs do. Reading another
+  user's rows through an admin session is one thing; handing them the controls of another user's
+  app is another.
 
-### 2c. Store it, refresh it, and never return it
+There's no "Connect" step, no per-user token to refresh, and offboarding a user is deleting their
+rows: their apps stay in the account, and what they lose is the rows that let them reach those apps
+through you. The workspace API key (`BASE44_SVC_KEY`) is still around, but only for what a workspace
+key alone can do — signing a viewer into an embedded app, and registering webhooks.
 
-```ts
-// src/lib/base44Link.ts is the ONLY module that reads or writes tokens,
-// and no function in it returns one to a caller:
-export function linkStatus(link) {
-  return { linked: …, base44_user_email: …, organization_id: … };  // booleans and display fields
-}
-```
-
-Tokens live ~1h, so re-minting is routine. This repo re-mints proactively 5 minutes before expiry
-and once more on a mid-call 401, then gives up and asks the user to reconnect. Note the distinction
-that matters: a **429 or 5xx is a blip** (leave the row alone and retry), a **4xx is a dead grant**
-(downgrade to `pending` and show the Connect button). Conflating them turns a busy minute into a
-fleet-wide forced reconnect.
-
-→ Full detail, lifecycle and every error code: **[docs/base44-identity.md](docs/base44-identity.md)**
+→ The model in full, the failure classes, and the containment rules:
+**[docs/base44-identity.md](docs/base44-identity.md)** · Base44's own description:
+[Tenancy and credentials](https://docs.base44.com/developers/white-label/tenancy-and-credentials)
 
 ---
 
@@ -208,22 +189,28 @@ const OPS = {
 };
 ```
 
-Nine actions, and that's the whole surface. Why an allow-list and not a passthrough: Base44 enforces
-OAuth scopes in its MCP tool layer, *not* on this REST surface, so `apps:read apps:write` does not
-constrain what a token can do here. **Your allow-list is the actual limit.** Never let a caller
-supply a path, a host, or a workspace id.
+Nine actions, and that's the whole surface. Why an allow-list and not a passthrough: the access
+token can do anything the integration account can, to every app it owns, and Base44 enforces no
+scopes on this REST surface. **Your allow-list is the actual limit.** Never let a caller supply a
+path, a host, or a workspace id.
 
 Three things every request carries:
 
 ```ts
 headers: {
-  Authorization: `Bearer ${accessToken}`,      // who: this user's principal
+  Authorization: `Bearer ${accessToken()}`,    // who: the integration account, always
   "X-Active-Workspace-Id": orgId(),            // where: your governed workspace
   "Content-Type": "application/json",
 }
 ```
 
-And two things people get bitten by:
+And because *who* is the same for every user, the proxy decides *whose* before it sends anything:
+
+```ts
+if (!(await ownsEveryApp(actor, action, params))) return notFound(action);  // 404, pre-upstream
+```
+
+Two more things people get bitten by:
 
 - **Timeouts.** `createApp`, `sendMessage` and `deployApp` block on an LLM build turn — ~30s is
   normal. A 30s default timeout aborts working builds and blames the upstream. This repo uses 120s
@@ -239,22 +226,23 @@ And two things people get bitten by:
 
 ### 4a. Building
 
-Creating an app is three calls in a fixed order (`src/lib/base44Platform.ts`):
+Creating an app is two calls from the browser, in a fixed order (`src/lib/base44Platform.ts`),
+and one write the server makes on its own:
 
 ```ts
 const app = await createApp({ prompt, name, customInstructions });  // 1. create + first build turn
+                                                                     //    (server records ownership here)
 await fileAppsInFolder([app.id]);                                    // 2. into your folder
-await AppOwnership.create({ app_id: app.id, app_name: app.name });   // 3. record who owns it
 ```
 
-Why in that order:
+Why that shape:
 
 1. `custom_instructions` and `initial_message` both go in the **create** body. `initial_message`
    starts the first build inside that same call, so patching instructions afterwards is too late.
+   And the server writes the `AppOwnership` row in that same request — never the browser, which
+   could otherwise claim any app.
 2. `/api/apps` has no folder field on create, so a fresh app is briefly unfiled — and your app list
    reads *from the folder*. An unfiled app is invisible.
-3. Platform apps have no per-your-user owner (they're all in one workspace), so "which apps are
-   mine?" is a join you keep locally.
 
 Then `getPreviewUrl` for an iframe preview (the preview token has a 300s TTL — never cache it) and
 `deployApp` to publish.
@@ -303,9 +291,9 @@ reason it has to exist is deletion: `listApps` cannot report one — a trashed a
 appearing. That fixes the apps list on its own, but a pinned widget renders from its own stored URL
 and is in no list, so without the event it frames a missing app indefinitely.
 
-The receiver handles one event, `app.deleted.v1`: it verifies the signature, maps
-`owner_service_external_id` back to your user (the value you stored on `Base44Link` in step 2), and
-deletes that user's pins for the app. Deleting is idempotent and a restore never brings pins back,
+The receiver handles one event, `app.deleted.v1`: it verifies the signature, looks up who built
+`app_id` in your ownership table from step 2 — nothing in the payload names your user, since
+upstream every app belongs to the one account — and deletes those users' pins for the app. Deleting is idempotent and a restore never brings pins back,
 so duplicates and out-of-order deliveries need no extra state.
 
 **The signature is the whole security boundary.** The URL is public, so nothing in a request is
@@ -344,8 +332,8 @@ npm run dev
 ```
 
 Without the `BASE44_*` variables everything works except the builder: the bridge answers
-`501 bridge_misconfigured` and the UI shows its "Connect" state. That's on purpose — you can explore
-the product before you have a workspace.
+`501 bridge_misconfigured` and the UI says the builder is not configured. That's on purpose — you
+can explore the product before you have a workspace.
 
 Checks, each one asserting a boundary above:
 
@@ -355,7 +343,7 @@ npm run lint
 npm run rls:smoke        # step 1: the owner predicate, including the traps
 npm run auth:smoke       # step 1: session → actor
 npm run entities:smoke   # step 1: whitelisting, scoping, wire shape
-npm run base44:smoke     # steps 2–3: token containment, allow-list, session keying
+npm run base44:smoke     # steps 2–3: token containment, allow-list, the ownership gate
 npm run sunny:smoke     # step 4: the public contract, action by action
 npm run webhook:smoke    # step 5: the inbound signature, negative controls
 ```
@@ -364,19 +352,17 @@ npm run webhook:smoke    # step 5: the inbound signature, negative controls
 
 | Symptom | Likely cause |
 | --- | --- |
-| `501 bridge_misconfigured` | A `BASE44_*` env var is missing. It's a deployment problem, not a user one — show the Connect gate, don't send them into a reconnect loop |
-| `403` on provision | The workspace isn't enabled for platform app-building yet |
-| `409` on provision | Something already sits at the synthetic address. Refuse — don't attach to it |
-| `404` on mint | The principal doesn't exist. Provision first; mint never creates one |
-| `428 reauthorize_required` | The grant is gone (removed from the workspace, role changed, key lost its scope) |
-| `403 "scoped to MCP"` | The minted token's `client_id` has an MCP prefix; it's then valid only at `/mcp`, not REST |
+| `501 bridge_misconfigured` | A `BASE44_*` env var is missing, or Base44 answered `401` to the integration account's token (revoked, expired). A deployment problem, not a user one — the UI says the builder is unavailable |
+| `404 not_found` on an app-scoped action | The caller has no `AppOwnership` row for that app. Built before ownership was tracked? Insert the row |
+| `403` on deploy | The integration account isn't an Editor in the workspace |
+| Builds ignore your design system or skills | The token was created in the account's personal workspace. Create it in the enterprise workspace |
 | `sendMessage` times out at ~30s | Your own timeout, not Base44's. Build turns need ~120s |
 | A new app doesn't appear in the list | It was created but never filed into the folder |
 
 ## Where to read next
 
-- **[docs/base44-identity.md](docs/base44-identity.md)** — service principals, minting, refresh,
-  revocation, offboarding
+- **[docs/base44-identity.md](docs/base44-identity.md)** — the one-account model, the access token,
+  and keeping your builders apart
 - **[docs/base44-platform-api.md](docs/base44-platform-api.md)** — the REST endpoints, verbatim
 - **[docs/base44-built-apps.md](docs/base44-built-apps.md)** — instructions, skills, and the
   callback API

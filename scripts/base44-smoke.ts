@@ -1,35 +1,33 @@
 /**
- * Smoke test for the Base44 bridge (`/api/base44/link` and
- * `/api/base44/platform`).
+ * Smoke test for the Base44 bridge (`/api/base44/platform`).
  *
- * These two routes are the only code holding credentials: the `b44k_` workspace
- * key, which can act as any member of the workspace, and each user's minted
- * platform token. So this asserts the boundary rather than the happy path — the
- * happy path needs a real key and provisions real users in a real Base44
- * workspace, which is a manual step (see scripts/base44-live-check.ts).
+ * This route is the only code holding the integration account's access token —
+ * one credential that owns every app the shell has ever built. So this asserts
+ * the boundary rather than the happy path, which needs a real token and builds
+ * real apps in a real workspace (see scripts/base44-live-check.ts).
  *
  * What it pins down:
- *   1. neither route is reachable without a session
- *   2. `Base44Link` is still unreachable through the generic entity API, and no
- *      response from either route ever contains a token
- *   3. the link is keyed by the *session* email — the body cannot name another user
- *   4. the platform route is a strict allow-list: unknown actions, dirty app ids
+ *   1. the route is not reachable without a session
+ *   2. the platform route is a strict allow-list: unknown actions, dirty app ids
  *      and missing required params are all 400, before any upstream call
- *   5. an unlinked user gets 428 `not_linked`, never a crash or a leaked config
- *   6. with no `BASE44_SVC_KEY`, both routes answer 501 `bridge_misconfigured`
- *      rather than 500 — and still say nothing about the environment
- *   7. the `service_external_id` the bridge sends to Base44 is opaque and stable
- *      and is never the user's email — Base44 derives the principal's address
- *      from it, so an email here would recreate the impersonable identity that
- *      service principals exist to avoid
- *   8. a submit's request id is stable per tool call, so a retried POST dedupes
+ *   3. **keeping builders apart is the shell's job**, and it does it: an app-scoped
+ *      action on an app the caller did not build is 404 before anything reaches
+ *      upstream, for every such action, and for every id `fileAppsInFolder` names
+ *   4. `AppOwnership` — the only record of who built what — cannot be created or
+ *      edited through the generic entity API, so nobody can claim an app by
+ *      inserting a row. Reading and deleting your own rows still works.
+ *   5. with no `BASE44_ACCESS_TOKEN`, the route answers 501 `bridge_misconfigured`
+ *      rather than 500 — and says nothing about the environment
+ *   6. a submit's request id is stable per tool call, so a retried POST dedupes
  *      instead of resuming and charging the turn twice
+ *   7. `listApps` finds a user's apps however deep in the shared folder they sit,
+ *      instead of filtering one upstream page and hiding older apps
  *
  * Needs `npm run dev`. Writes throwaway rows to DATABASE_URL and cleans up:
  *   npm run base44:smoke
  */
 
-import { principalId } from "../src/lib/base44Link";
+import { FOLDER_PAGE_SIZE, MAX_FOLDER_PAGES, pageOwnedApps } from "../src/lib/appOwnership";
 import { submitRequestId } from "../src/lib/base44Platform";
 import { prisma } from "../src/lib/prisma";
 import { SESSION_COOKIE_NAME, sessionCookie } from "./session-cookie";
@@ -37,9 +35,13 @@ import { SESSION_COOKIE_NAME, sessionCookie } from "./session-cookie";
 const TAG = "b44-smoke";
 const USER = `${TAG}-user@example.com`;
 const OTHER = `${TAG}-other@example.com`;
+/** Built by USER. Clean-shaped, so the only thing standing between OTHER and it is ownership. */
+const APP = `${TAG}-app-1`;
+/** Never built by anyone. */
+const NOBODYS_APP = `${TAG}-app-nobody`;
 
 const BASE_URL = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
-const CONFIGURED = Boolean(process.env.BASE44_SVC_KEY);
+const CONFIGURED = Boolean(process.env.BASE44_ACCESS_TOKEN);
 
 let failures = 0;
 
@@ -60,14 +62,14 @@ async function mintCookie(email: string) {
   cookies[email] = await sessionCookie({ email, role: "user", roleCheckedAt: Date.now() });
 }
 
-async function api(path: string, body: unknown, as?: string): Promise<Res> {
+async function api(method: string, path: string, body: unknown, as?: string): Promise<Res> {
   const res = await fetch(`${BASE_URL}${path}`, {
-    method: "POST",
+    method,
     headers: {
       "content-type": "application/json",
       ...(as ? { cookie: cookies[as] } : {}),
     },
-    body: JSON.stringify(body),
+    body: body === undefined ? undefined : JSON.stringify(body),
   });
   return {
     status: res.status,
@@ -75,11 +77,10 @@ async function api(path: string, body: unknown, as?: string): Promise<Res> {
   };
 }
 
-const link = (body: unknown, as?: string) => api("/api/base44/link", body, as);
-const platform = (body: unknown, as?: string) => api("/api/base44/platform", body, as);
+const platform = (body: unknown, as?: string) => api("POST", "/api/base44/platform", body, as);
 
 async function cleanup() {
-  await prisma.base44Link.deleteMany({ where: { appUserEmail: { startsWith: TAG } } });
+  await prisma.appOwnership.deleteMany({ where: { appId: { startsWith: TAG } } });
   await prisma.user.deleteMany({ where: { email: { startsWith: TAG } } });
 }
 
@@ -97,13 +98,13 @@ async function main() {
 
   await cleanup();
   await prisma.user.createMany({ data: [{ email: USER }, { email: OTHER }] });
+  await prisma.appOwnership.create({ data: { appId: APP, appName: "USER's app", createdBy: USER } });
   await Promise.all([mintCookie(USER), mintCookie(OTHER)]);
 
   console.log("\n1. the boundary: a session is required");
 
-  check("anonymous link status is 401", (await link({ action: "status" })).status === 401);
-  check("anonymous link connect is 401", (await link({ action: "connect" })).status === 401);
   check("anonymous platform call is 401", (await platform({ action: "listApps" })).status === 401);
+  check("anonymous status is 401", (await platform({ action: "status" })).status === 401);
   check(
     "an unsignable cookie is 401",
     (
@@ -115,74 +116,7 @@ async function main() {
     ).status === 401,
   );
 
-  console.log("\n2. tokens never leave the server");
-
-  check(
-    "Base44Link is still unreachable through /api/entities",
-    (await fetch(`${BASE_URL}/api/entities/Base44Link`, { headers: { cookie: cookies[USER] } }))
-      .status === 404,
-  );
-
-  // A linked row with a recognisable secret, to prove no route echoes it back.
-  const SECRET = `${TAG}-SECRET-TOKEN-VALUE`;
-  await prisma.base44Link.create({
-    data: {
-      appUserEmail: USER,
-      status: "linked",
-      accessToken: SECRET,
-      refreshToken: `${SECRET}-refresh`,
-      organizationId: "org-under-test",
-      // The Base44 identity is the *principal's* synthetic address, never the
-      // user's real one — the whole point of a service principal.
-      base44UserEmail: `sunny-abc@org-under-test.svc.base44.invalid`,
-      serviceExternalId: `${TAG}-principal`,
-      principalProvisioned: true,
-      createdBy: USER,
-      expiresAt: new Date(Date.now() + 3_600_000),
-    },
-  });
-
-  const status = await link({ action: "status" }, USER);
-  check("status reports linked", status.status === 200 && status.body.linked === true);
-  check(
-    "...and exposes the display fields",
-    String(status.body.base44_user_email ?? "").endsWith(".svc.base44.invalid"),
-    String(status.body.base44_user_email),
-  );
-  check(
-    "...which is the synthetic principal, not the user's real address",
-    !JSON.stringify(status.body).includes(USER),
-    JSON.stringify(status.body).slice(0, 140),
-  );
-  check(
-    "...and NO token appears in the response",
-    !JSON.stringify(status.body).includes(SECRET),
-    JSON.stringify(status.body).slice(0, 120),
-  );
-  check(
-    "...nor any token-shaped key",
-    !("access_token" in status.body) && !("accessToken" in status.body),
-  );
-
-  console.log("\n3. the link is keyed by the session, not the body");
-
-  const spoof = await link({ action: "status", email: USER, app_user_email: USER }, OTHER);
-  check(
-    "another user cannot read this link by naming it",
-    spoof.body.linked === false,
-    JSON.stringify(spoof.body),
-  );
-  const spoofDisconnect = await link({ action: "disconnect", email: USER }, OTHER);
-  check(
-    "...nor disconnect it",
-    spoofDisconnect.status === 200 && spoofDisconnect.body.linked === false,
-  );
-  check(
-    "...and the victim's link survives",
-    (await prisma.base44Link.findUnique({ where: { appUserEmail: USER } }))?.accessToken === SECRET,
-  );
-
-  console.log("\n4. the platform route is a strict allow-list");
+  console.log("\n2. the platform route is a strict allow-list");
 
   const bad = async (body: unknown) => (await platform(body, USER)).status;
   check("an unknown action is 400", (await bad({ action: "deleteEverything" })) === 400);
@@ -191,17 +125,14 @@ async function main() {
   // renameApp is the one action that writes to an app record, so its input is
   // checked before anything reaches upstream — these run without a live platform.
   check("renameApp needs an appId", (await bad({ action: "renameApp", name: "x" })) === 400);
-  check(
-    "renameApp needs a name",
-    (await bad({ action: "renameApp", appId: "abc123" })) === 400,
-  );
+  check("renameApp needs a name", (await bad({ action: "renameApp", appId: APP })) === 400);
   check(
     "...a blank one does not count",
-    (await bad({ action: "renameApp", appId: "abc123", name: "   " })) === 400,
+    (await bad({ action: "renameApp", appId: APP, name: "   " })) === 400,
   );
   check(
     "...and it is length-capped",
-    (await bad({ action: "renameApp", appId: "abc123", name: "x".repeat(61) })) === 400,
+    (await bad({ action: "renameApp", appId: APP, name: "x".repeat(61) })) === 400,
   );
   check(
     "renameApp rejects a path-shaped appId",
@@ -220,11 +151,11 @@ async function main() {
   check("createApp without a prompt is 400", (await bad({ action: "createApp" })) === 400);
   check(
     "sendMessage without content is 400",
-    (await bad({ action: "sendMessage", appId: "abc" })) === 400,
+    (await bad({ action: "sendMessage", appId: APP })) === 400,
   );
   check(
     "submitToolCallInput with a dirty toolCallId is 400",
-    (await bad({ action: "submitToolCallInput", appId: "abc", toolCallId: "x/y" })) === 400,
+    (await bad({ action: "submitToolCallInput", appId: APP, toolCallId: "x/y" })) === 400,
   );
   check(
     "fileAppsInFolder with an empty list is 400",
@@ -232,7 +163,7 @@ async function main() {
   );
   check(
     "fileAppsInFolder with a dirty id is 400",
-    (await bad({ action: "fileAppsInFolder", appIds: ["ok", "../nope"] })) === 400,
+    (await bad({ action: "fileAppsInFolder", appIds: [APP, "../nope"] })) === 400,
   );
 
   // The only limit on which credential `createApp` can install is APP_SECRETS.
@@ -242,7 +173,11 @@ async function main() {
     (await bad(withSecrets(["OPENAI_API_KEY"]))) === 400,
   );
   check(
-    "...including the workspace key, which must never reach an app",
+    "...including the access token, which must never reach an app",
+    (await bad(withSecrets(["BASE44_ACCESS_TOKEN"]))) === 400,
+  );
+  check(
+    "...and the workspace key",
     (await bad(withSecrets(["BASE44_SVC_KEY"]))) === 400,
   );
   check(
@@ -254,10 +189,10 @@ async function main() {
     (await bad(withSecrets([{ SUNNY_API_TOKEN: "attacker-controlled" }]))) === 400,
   );
   check("...nor a bare object of them", (await bad(withSecrets({ X: "y" }))) === 400);
-  const rejectedSecret = await platform(withSecrets(["BASE44_SVC_KEY"]), USER);
+  const rejectedSecret = await platform(withSecrets(["BASE44_ACCESS_TOKEN"]), USER);
   check(
     "...and the rejection names no value, only names",
-    !JSON.stringify(rejectedSecret.body).includes(process.env.SUNNY_API_TOKEN ?? "\0") &&
+    !JSON.stringify(rejectedSecret.body).includes(process.env.BASE44_ACCESS_TOKEN ?? "\0") &&
       !JSON.stringify(rejectedSecret.body).includes("b44k_"),
     JSON.stringify(rejectedSecret.body).slice(0, 140),
   );
@@ -273,92 +208,134 @@ async function main() {
     JSON.stringify(listed.body).slice(0, 140),
   );
 
-  console.log("\n5. an unlinked user is a clean 428");
+  console.log("\n3. keeping builders apart is the shell's job — and it does it");
 
-  const unlinked = await platform({ action: "listApps" }, OTHER);
-  check("unlinked platform call is 428", unlinked.status === 428, `got ${unlinked.status}`);
-  check("...with code not_linked", unlinked.body.code === "not_linked");
-  check("...and no config in the body", !JSON.stringify(unlinked.body).includes("b44k_"));
-
-  const unlinkedStatus = await link({ action: "status" }, OTHER);
+  // Every app upstream belongs to the one integration account, so if the shell
+  // did not check, OTHER could drive USER's app with a clean-shaped id. These are
+  // all 404 *before* upstream: they pass whether or not a token is configured,
+  // and a configured deployment spends no platform call on them.
+  const foreign: Record<string, unknown>[] = [
+    { action: "getApp", appId: APP },
+    { action: "renameApp", appId: APP, name: "mine now" },
+    { action: "getConversation", appId: APP },
+    { action: "sendMessage", appId: APP, content: "add a delete-all button" },
+    { action: "getPreviewUrl", appId: APP },
+    { action: "deployApp", appId: APP },
+    { action: "submitToolCallInput", appId: APP, toolCallId: "toolu_x", approve: true },
+  ];
+  for (const body of foreign) {
+    const res = await platform(body, OTHER);
+    check(
+      `${body.action} on another builder's app is 404`,
+      res.status === 404 && res.body.code === "not_found",
+      `got ${res.status} ${JSON.stringify(res.body).slice(0, 100)}`,
+    );
+  }
+  const nobodys = await platform({ action: "getApp", appId: NOBODYS_APP }, USER);
   check(
-    "status for an unlinked user is 200 linked:false",
-    unlinkedStatus.status === 200 && unlinkedStatus.body.linked === false,
+    "...and an app nobody built is the same 404, so existence is not revealed",
+    nobodys.status === 404 && nobodys.body.code === "not_found",
+    `got ${nobodys.status}`,
+  );
+  const filing = await platform({ action: "fileAppsInFolder", appIds: [APP] }, OTHER);
+  check("fileAppsInFolder checks every id it is given", filing.status === 404, `got ${filing.status}`);
+  const mixed = await platform({ action: "fileAppsInFolder", appIds: [APP, NOBODYS_APP] }, USER);
+  check("...one foreign id among owned ones still fails", mixed.status === 404, `got ${mixed.status}`);
+  check(
+    "the refusal names no other user",
+    !JSON.stringify(filing.body).includes(USER),
+    JSON.stringify(filing.body).slice(0, 140),
   );
 
-  console.log("\n6. an unconfigured deployment degrades, it does not crash");
+  console.log("\n4. ownership cannot be claimed through the entity API");
+
+  const claim = await api(
+    "POST",
+    "/api/entities/AppOwnership",
+    { app_id: APP, app_name: "mine now" },
+    OTHER,
+  );
+  check("creating an AppOwnership row is 400", claim.status === 400, `got ${claim.status}`);
+  check(
+    "...and no row appeared",
+    (await prisma.appOwnership.count({ where: { appId: APP, createdBy: OTHER } })) === 0,
+  );
+  const ownRows = await api("GET", `/api/entities/AppOwnership`, undefined, USER);
+  const ownIds = (Array.isArray(ownRows.body) ? ownRows.body : []) as { id?: string; app_id?: string }[];
+  const mine = ownIds.find((r) => r.app_id === APP);
+  check("the owner can still read their own rows", ownRows.status === 200 && Boolean(mine));
+  check(
+    "...but not edit one",
+    mine ? (await api("PUT", `/api/entities/AppOwnership/${mine.id}`, { app_name: "x" }, USER)).status === 400 : false,
+  );
+  check(
+    "...and after a delete, the proxy no longer answers for the app",
+    mine
+      ? (await api("DELETE", `/api/entities/AppOwnership/${mine.id}`, undefined, USER)).status === 200 &&
+          (await platform({ action: "getApp", appId: APP }, USER)).status === 404
+      : false,
+  );
+  // Put it back for the sections below.
+  await prisma.appOwnership.create({ data: { appId: APP, appName: "USER's app", createdBy: USER } });
+
+  console.log("\n5. an unconfigured deployment degrades, it does not crash");
 
   if (CONFIGURED) {
-    // A real key is present, so `connect` would create a live service principal
-    // in the real workspace. Not something a smoke test should do — and unlike
-    // the old SCIM path, cleaning up after it means a deprovision, which
-    // transfers any apps the principal owned to the workspace owner.
-    console.log("  ⊘ BASE44_SVC_KEY is set — skipping the misconfiguration checks");
-    console.log("  ⊘ (and skipping `connect`, which would provision a real principal)");
+    // A real token is present: `status` must say so, and the misconfiguration
+    // branch cannot be exercised without unsetting it. Nothing here builds an
+    // app — that costs real money in a real workspace.
+    const status = await platform({ action: "status" }, USER);
+    check("status is 200 configured:true", status.status === 200 && status.body.configured === true);
+    check(
+      "...and says nothing about the environment",
+      !JSON.stringify(status.body).includes("BASE44_") && !JSON.stringify(status.body).includes("http"),
+    );
+    console.log("  ⊘ BASE44_ACCESS_TOKEN is set — skipping the misconfiguration checks");
   } else {
-    // Two ways a missing key surfaces on the platform route, both of which used
-    // to be reported as something else entirely:
-    //   * inside a path builder (listApps reads BASE44_APPS_FOLDER_ID) — was a
-    //     400 "invalid parameters", blaming the caller;
-    //   * inside remint(), after upstream rejects the stored token — was a 428
-    //     "your connection expired, connect again", which is a lie and a loop.
-    // Whichever fires first for this env, the answer must be 501.
+    // Two ways a missing variable surfaces, both of which used to be reported as
+    // something else: inside a path builder (listApps reads
+    // BASE44_APPS_FOLDER_ID) — was a 400 "invalid parameters", blaming the
+    // caller; or inside send(), reading the token. Whichever fires first for this
+    // env, the answer must be 501.
     const noConfig = await platform({ action: "listApps" }, USER);
     check(
-      "a missing key on a platform call is 501, not 400 or 428",
+      "a missing token on a platform call is 501, not 400 or 500",
       noConfig.status === 501,
       `got ${noConfig.status}: ${JSON.stringify(noConfig.body).slice(0, 140)}`,
     );
     check("...with code bridge_misconfigured", noConfig.body.code === "bridge_misconfigured");
     check(
       "...and the body never names an env var",
-      !JSON.stringify(noConfig.body).includes("BASE44_SVC_KEY") &&
-        !JSON.stringify(noConfig.body).includes("BASE44_"),
+      !JSON.stringify(noConfig.body).includes("BASE44_"),
       JSON.stringify(noConfig.body).slice(0, 140),
     );
-
-    const noKey = await link({ action: "connect" }, OTHER);
-    check("connect without a key is 501", noKey.status === 501, `got ${noKey.status}`);
-    check("...with code bridge_misconfigured", noKey.body.code === "bridge_misconfigured");
+    const status = await platform({ action: "status" }, USER);
+    check("status is 501 too", status.status === 501, `got ${status.status}`);
+    check("...with code bridge_misconfigured", status.body.code === "bridge_misconfigured");
     check(
       "...and says nothing about which var is missing",
-      !JSON.stringify(noKey.body).includes("BASE44_SVC_KEY"),
-      JSON.stringify(noKey.body).slice(0, 140),
+      !JSON.stringify(status.body).includes("BASE44_"),
+      JSON.stringify(status.body).slice(0, 140),
+    );
+    // The ownership gate runs before config is read: a foreign app is a 404 even
+    // on a deployment with no token, so the two kinds of failure never blur.
+    check(
+      "a foreign app is still 404, not 501",
+      (await platform({ action: "getApp", appId: APP }, OTHER)).status === 404,
     );
   }
 
-  console.log("\n7. malformed input");
+  console.log("\n6. malformed input");
 
-  const notJson = await fetch(`${BASE_URL}/api/base44/link`, {
+  const notJson = await fetch(`${BASE_URL}/api/base44/platform`, {
     method: "POST",
     headers: { "content-type": "application/json", cookie: cookies[USER] },
     body: "not json",
   });
   check("a non-JSON body is 400", notJson.status === 400, `got ${notJson.status}`);
-  check("an unknown link action is 400", (await link({ action: "nope" }, USER)).status === 400);
-
-  console.log("\n8. the service-principal id is opaque, stable, and not an email");
-
-  if (!process.env.BASE44_ORG_ID) {
-    console.log("  ⊘ BASE44_ORG_ID is unset — skipping the principal-id checks");
-  } else {
-    // Base44 builds the principal's address out of this value, so anything
-    // email-shaped here would put a real, impersonable address in the workspace.
-    const id = principalId(USER);
-    check("it is stable across calls", id === principalId(USER));
-    check("...and case-insensitive on the email", id === principalId(USER.toUpperCase()));
-    check("...distinct users get distinct ids", id !== principalId(OTHER));
-    check("...shaped sunny-<32 hex>", /^sunny-[0-9a-f]{32}$/.test(id), id);
-    check("...contains no @", !id.includes("@"), id);
-    check(
-      "...and does not embed the email or its local part",
-      !id.includes(USER) && !id.includes(USER.split("@")[0]),
-      id,
-    );
-  }
 
   {
-    console.log("\n9. the submit request id");
+    console.log("\n7. the submit request id");
     const a = submitRequestId("toolu_abc");
     check("it is stable for a tool call", a === submitRequestId("toolu_abc"), a);
     check("...distinct tool calls get distinct ids", a !== submitRequestId("toolu_xyz"));
@@ -367,6 +344,62 @@ async function main() {
       "...and does not change on a resubmit, so a retry dedupes",
       a === submitRequestId("toolu_abc"),
     );
+  }
+
+  {
+    console.log("\n8. listApps pages through the shared folder");
+    // A fake folder, newest first: 300 apps by other builders, with this user's
+    // three spread through it — one on the first page, two far below it.
+    const folder = Array.from({ length: 300 }, (_, i) => ({ id: `app-${i}` }));
+    const owned = new Set(["app-3", "app-180", "app-290"]);
+    let calls = 0;
+    const fetchPage = async (skip: number, size: number) => {
+      calls++;
+      return folder.slice(skip, skip + size);
+    };
+    const ids = (rows: unknown[]) => rows.map((r) => (r as { id: string }).id);
+
+    const all = await pageOwnedApps(owned, fetchPage, { limit: 50, skip: 0 });
+    check(
+      "apps beyond the first upstream page are found",
+      JSON.stringify(ids(all)) === JSON.stringify(["app-3", "app-180", "app-290"]),
+      JSON.stringify(ids(all)),
+    );
+    check("...in folder order", ids(all)[0] === "app-3");
+
+    calls = 0;
+    const first = await pageOwnedApps(owned, fetchPage, { limit: 1, skip: 0 });
+    check("a full page stops the walk early", ids(first).join() === "app-3" && calls === 1, `${calls} calls`);
+
+    calls = 0;
+    const second = await pageOwnedApps(owned, fetchPage, { limit: 1, skip: 1 });
+    check("skip counts the user's apps, not the folder's", ids(second).join() === "app-180", ids(second).join());
+
+    calls = 0;
+    await pageOwnedApps(new Set(["app-10", "app-20"]), fetchPage, { limit: 50, skip: 0 });
+    check("finding every owned app stops the walk", calls === 1, `${calls} calls`);
+
+    calls = 0;
+    const trashed = await pageOwnedApps(new Set(["app-3", "gone"]), fetchPage, { limit: 50, skip: 0 });
+    check(
+      "an owned app missing from the folder is left out, and the walk ends with the folder",
+      ids(trashed).join() === "app-3" && calls === Math.ceil(folder.length / FOLDER_PAGE_SIZE) + (folder.length % FOLDER_PAGE_SIZE === 0 ? 1 : 0),
+      `${calls} calls, ${ids(trashed).join()}`,
+    );
+
+    // An app that moves up between two requests shows up on two pages.
+    const shifting = async (skip: number, size: number) =>
+      skip === 0 ? [{ id: "app-1" }, ...folder.slice(1, size)] : [{ id: "app-1" }];
+    const deduped = await pageOwnedApps(new Set(["app-1", "never"]), shifting, { limit: 50, skip: 0 });
+    check("an app seen twice is listed once", ids(deduped).join() === "app-1", ids(deduped).join());
+
+    calls = 0;
+    const endless = async () => {
+      calls++;
+      return folder.slice(0, FOLDER_PAGE_SIZE);
+    };
+    await pageOwnedApps(new Set(["never"]), endless, { limit: 50, skip: 0 });
+    check("the walk is capped", calls === MAX_FOLDER_PAGES, `${calls} calls`);
   }
 
   await cleanup();

@@ -7,8 +7,9 @@
  *
  * The flow:
  *
- *   1. `useAuth().b44Linked` gates the UI. Not linked → a Connect button, which
- *      provisions this user's Base44 service principal and mints their token.
+ *   1. `useAuth().builderAvailable` gates the UI: is the Base44 bridge configured
+ *      on this deployment? One integration account builds every app, server-side,
+ *      so there is nothing per-user to connect — unavailable means "not here".
  *   2. First submit → `platform.createApp()` with the prompt, a locally-derived
  *      name, and `buildCustomInstructions()` — the text Base44's builder applies on
  *      every turn. Later submits → `platform.sendMessage()` on the same app.
@@ -203,10 +204,10 @@ export default function AppBuilderSidebar({
   const [isSending, setIsSending] = useState(false);
   const [buildView, setBuildView] = useState("list"); // "list" | "chat"
 
-  const { b44Linked, connect } = useAuth();
-  const [connecting, setConnecting] = useState(false);
-  // Mirror context value so local app-list loading still works after link
-  const [linked, setLinked] = useState(null);
+  const { builderAvailable, recheck } = useAuth();
+  const [rechecking, setRechecking] = useState(false);
+  // Mirror the context value: a 501 mid-session flips it off locally too.
+  const [builderReady, setBuilderReady] = useState(null);
 
   const [error, setError] = useState(null);
   // A send in flight. The composer holds the text until the conversation carries
@@ -305,14 +306,14 @@ export default function AppBuilderSidebar({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [buildMessages, pendingSend]);
   useEffect(() => {
-    if (embedded && open && requestId > 0 && initialAppId == null && buildView === "chat" && linked === true) {
+    if (embedded && open && requestId > 0 && initialAppId == null && buildView === "chat" && builderReady === true) {
       composerInputRef.current?.focus();
     }
-  }, [embedded, open, requestId, initialAppId, buildView, linked]);
+  }, [embedded, open, requestId, initialAppId, buildView, builderReady]);
 
   // Open a specific app in the build chat when initialAppId is provided
   useEffect(() => {
-    if (open && initialAppId && linked === true) {
+    if (open && initialAppId && builderReady === true) {
       shownAppIdRef.current = initialAppId;
       setBuildView("chat");
       setActiveApp(null);
@@ -336,7 +337,7 @@ export default function AppBuilderSidebar({
         .catch((err) => setError(err.message));
     }
     // Keyed on the request, so re-opening the same app reloads it.
-  }, [open, requestId, initialAppId, linked, resetComposer]);
+  }, [open, requestId, initialAppId, builderReady, resetComposer]);
 
   // Load boards to generate contextual suggestions
   useEffect(() => {
@@ -370,22 +371,22 @@ export default function AppBuilderSidebar({
       });
   }, []);
 
-  // Sync linked state from context
+  // Sync availability from context
   useEffect(() => {
-    if (b44Linked === null) return;
-    setLinked(b44Linked);
-  }, [b44Linked]);
+    if (builderAvailable === null) return;
+    setBuilderReady(builderAvailable);
+  }, [builderAvailable]);
 
-  // Load apps whenever we enter build mode and are linked
+  // Load apps whenever we enter build mode and the builder is available
   useEffect(() => {
-    if (linked !== true) return;
+    if (builderReady !== true) return;
     setIsLoadingApps(true);
     platform
-      .listAppsForUser({ limit: 25 })
+      .listApps({ limit: 25 })
       .then((list) => setApps(list))
       .catch(() => {})
       .finally(() => setIsLoadingApps(false));
-  }, [linked]);
+  }, [builderReady]);
 
   // Poll for build updates
   const refresh = useCallback(async (appId) => {
@@ -466,7 +467,7 @@ export default function AppBuilderSidebar({
       setEditedAppId((prev) => (prev === activeAppId ? null : prev));
       announceAppRebuilt(activeAppId);
     } catch (err) {
-      if (platform.isNotLinkedError(err)) setLinked(false);
+      if (platform.isBuilderUnavailable(err)) setBuilderReady(false);
       setError(err.message);
     } finally {
       setPendingSave(null);
@@ -485,7 +486,7 @@ export default function AppBuilderSidebar({
       setEditedAppId((prev) => (prev === activeAppId ? null : prev));
       announceAppRebuilt(activeAppId);
     } catch (err) {
-      if (platform.isNotLinkedError(err)) setLinked(false);
+      if (platform.isBuilderUnavailable(err)) setBuilderReady(false);
       setError(err.message);
     } finally {
       setPendingSave(null);
@@ -538,7 +539,7 @@ export default function AppBuilderSidebar({
       }
     } catch (err) {
       if (composerReqRef.current !== req) return;
-      if (platform.isNotLinkedError(err)) setLinked(false);
+      if (platform.isBuilderUnavailable(err)) setBuilderReady(false);
       setError(err.message);
       setPendingSend(null);
     } finally {
@@ -804,35 +805,35 @@ export default function AppBuilderSidebar({
               </div>
             )}
 
-            {/* BUILD MODE — checking / connecting auth */}
-            {linked === null && (
+            {/* BUILD MODE — checking whether the builder is available here */}
+            {builderReady === null && (
               <div className="flex-1 flex items-center justify-center">
                 <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
               </div>
             )}
-            {linked === false && embedded && (
+            {builderReady === false && embedded && (
               <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
-                <p className="text-sm text-muted-foreground">Connect your workspace to build an app.</p>
+                <p className="text-sm text-muted-foreground">The app builder is not configured on this deployment.</p>
                 <button
-                  disabled={connecting}
+                  disabled={rechecking}
                   onClick={async () => {
-                    setConnecting(true);
-                    try { await connect(); } finally { setConnecting(false); }
+                    setRechecking(true);
+                    try { await recheck(); } finally { setRechecking(false); }
                   }}
                   className="rounded bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-50"
                 >
-                  {connecting ? "Connecting…" : "Connect workspace"}
+                  {rechecking ? "Checking…" : "Check again"}
                 </button>
               </div>
             )}
-            {linked === false && !embedded && (
+            {builderReady === false && !embedded && (
               <div className="flex-1 flex items-center justify-center">
                 <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
               </div>
             )}
 
             {/* BUILD MODE — app list */}
-            {linked === true && buildView === "list" && (
+            {builderReady === true && buildView === "list" && (
               <div className="sunny-builder-picker flex-1 flex flex-col overflow-hidden">
                 <div className="sunny-builder-picker-intro">
                   <strong>Continue with an app</strong>
@@ -893,7 +894,7 @@ export default function AppBuilderSidebar({
             )}
 
             {/* BUILD MODE — chat */}
-            {linked === true && buildView === "chat" && (
+            {builderReady === true && buildView === "chat" && (
               <>
                 <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4" role="region" aria-label="Conversation">
                   {!activeApp && buildMessages.length === 0 && (

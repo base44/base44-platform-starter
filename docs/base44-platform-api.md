@@ -14,8 +14,7 @@ Reference implementation: `src/app/api/base44/platform/route.ts` (server) and
 browser                     your server                        Base44
   │  POST /api/base44/platform     │                              │
   │  {action:"createApp", prompt}  │                              │
-  ├───────────────────────────────►│ look up this user's token    │
-  │                                │ re-mint if near expiry       │
+  ├───────────────────────────────►│ does this user own the app?  │
   │                                │ map action → method + path   │
   │                                ├─────────────────────────────►│
   │                                │ Authorization: Bearer …      │
@@ -26,21 +25,22 @@ browser                     your server                        Base44
 The browser names an **action**, never a URL. Two headers do all the authorization work:
 
 ```ts
-Authorization: `Bearer ${accessToken}`   // WHO — this user's service principal
-"X-Active-Workspace-Id": workspaceId     // WHERE — your governed workspace
+Authorization: `Bearer ${accessToken()}`  // WHO — the one integration account, always
+"X-Active-Workspace-Id": workspaceId      // WHERE — your governed workspace
 ```
 
-The Bearer token says who you are; the workspace header pins a multi-workspace token's reads and
-writes to the workspace you govern. Send both on every call.
+The Bearer token is the integration account's personal access token — the same one for every user
+of your platform; the workspace header is what Base44 checks permissions against, so send both on
+every call. Because the token is the same for everyone, *who may touch which app* is a question
+your proxy answers before it calls upstream — see [base44-identity.md](base44-identity.md).
 
 ## Why an allow-list, not a passthrough
 
-Base44 enforces OAuth scopes in its **MCP tool layer, not on this REST surface**. A token minted
-with `apps:read apps:write` is not actually constrained by those strings when it talks to
-`/api/apps/*`.
+The access token can do anything the integration account can, to every app it owns, and Base44
+enforces no scopes on this REST surface.
 
-So the allow-list in your proxy is the *only* limit on what a compromised frontend can reach. Keep
-it tight:
+So the allow-list in your proxy — together with the ownership check in front of every app-scoped
+action — is the *only* limit on what a compromised frontend can reach. Keep it tight:
 
 - never add a generic passthrough action;
 - never let the caller supply a path, a host, or a workspace id (a request-controlled host on code
@@ -80,8 +80,10 @@ Returns a **bare array**, no total count. `folder_id` is what scopes the list to
 built — the workspace holds others. The folder *is* the boundary, so it comes from your config, not
 from the caller.
 
-Platform apps carry no per-your-user owner (they're all in one workspace), so filtering to "this
-user's apps" is a local join. This repo keeps an `AppOwnership` row per created app and intersects.
+Platform apps carry no per-your-user owner (they all belong to the integration account), so
+filtering to "this user's apps" is a local join. This repo keeps an `AppOwnership` row per created
+app and intersects server-side, reading the folder page by page until the caller's page is full —
+filtering a single page would hide a user's older apps behind other users' newer ones.
 
 ### `POST /api/apps` — create
 
@@ -186,8 +188,8 @@ still fails rather than holding the function open.
 
 | Upstream | Meaning | Response to your client |
 | --- | --- | --- |
-| `401` | Token died early — usually the workspace grant changed, which Base44 re-validates per request | Re-mint **once**, retry **once**, then `428 reauthorize_required` |
-| `403` containing `scoped to MCP` | The minted token's `client_id` has an MCP prefix (`chatgpt_`, `claude_`, `cursor_`, `oauth_`), making it valid only at `/mcp` | `500` — this is a wiring regression, not a user problem |
+| `401` | Base44 refused the integration account's token — revoked or expired | `501 bridge_misconfigured`, logged loudly. A deployment problem, the same UI state as a missing variable |
+| `403` | The account's role: a non-Editor cannot deploy, or the workspace isn't enabled for something | Pass the status through with the detail |
 | other `4xx`/`5xx` | Upstream refusal | Pass the status through with a truncated detail |
 
 ## Renaming an app
@@ -198,9 +200,9 @@ either side of the call. Re-check that if anything ever sends more than `name`.
 
 | Missing env var (thrown before any call) | Deployment isn't configured | `501 bridge_misconfigured` — **not** 400 and **not** 502. Echoing env var names into a response body is also worth avoiding |
 
-Client-side, three codes should collapse into one UI state ("show the Connect button"):
-`not_linked`, `reauthorize_required`, `bridge_misconfigured`. See `isNotLinkedError()` in
-`src/lib/base44Platform.ts`.
+Client-side, `bridge_misconfigured` is one UI state ("the builder is not available here") — see
+`isBuilderUnavailable()` in `src/lib/base44Platform.ts` — and `not_found` on an app-scoped action
+means the caller does not own the app they named.
 
 Path builders read config (folder id, workspace id), so a missing variable surfaces *inside* the
 request-building step. Re-throw it rather than letting it masquerade as a 400 — otherwise you'll
@@ -209,8 +211,8 @@ hunt a caller bug that doesn't exist.
 ## The browser client
 
 `src/lib/base44Platform.ts` is a thin wrapper; no credential is ever present in it. Worth copying:
-it composes multi-call operations (create → file → record ownership) in one place so callers can't
-get the order wrong, and it turns upstream error bodies into a typed error carrying `code` and
+it composes multi-call operations (create → file) in one place so callers can't get the order
+wrong — ownership is recorded by the server inside the create, never from the browser — and it turns upstream error bodies into a typed error carrying `code` and
 `status` so the UI can branch.
 
 ```ts

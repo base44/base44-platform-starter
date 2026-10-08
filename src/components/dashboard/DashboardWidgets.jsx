@@ -367,16 +367,16 @@ export default function DashboardWidgets({
 }) {
   // One modal for the list rather than one per card: only ever one is open.
   const [expanded, setExpanded] = useState(null);
-  // Authorship check: `listAppsForUser` returns the apps this user
-  // built (all of the folder, for an admin), so a key here means the pencil is
-  // theirs to offer. An installed app is pinned by its installer and never appears.
+  // Authorship check: `listApps` returns only the apps this user built, so a key
+  // here means the pencil is theirs to offer. An installed app is pinned by its
+  // installer and never appears.
   const [appMeta, setAppMeta] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
     const load = () =>
       platform
-        .listAppsForUser({ limit: 50 })
+        .listApps({ limit: 50 })
         .then((apps) => {
           if (cancelled) return;
           const map = {};

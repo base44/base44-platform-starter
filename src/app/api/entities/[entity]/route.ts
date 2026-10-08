@@ -3,8 +3,8 @@
  * (`GET|POST /entities/E`).
  *
  * `entity` is resolved through the allowlist in src/lib/entities.ts, which is
- * exactly `USER_OWNED_MODELS`: `Base44Link` is not reachable here (gotcha 3) and
- * `User` lives at /api/me.
+ * exactly `USER_OWNED_MODELS`: `AppInstall` and `MarketplaceListing` are not
+ * reachable here (gotcha 3) and `User` lives at /api/me.
  *
  * Not implemented, because nothing calls them: `DELETE /entities/E` (Base44 deletes ALL
  * rows on an empty body — a footgun with no call site) and `PATCH /update-many`.

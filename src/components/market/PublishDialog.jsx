@@ -7,9 +7,9 @@ import { announceAppRebuilt } from "@/lib/appRefresh";
 import { announceMarketChanged } from "@/lib/marketEvents";
 
 /**
- * Offer an app to everyone else. The embed URL is snapshotted here because an
- * installer's Base44 principal cannot resolve it later — which is also why the app has
- * to be deployed, not just previewed. Each market publish deploys the current
+ * Offer an app to everyone else. The embed URL is snapshotted here because the
+ * platform proxy answers only to the app's author, so an installer cannot resolve it
+ * later — which is also why the app has to be deployed, not just previewed. Each market publish deploys the current
  * build before updating the listing snapshot.
  */
 export default function PublishDialog({ app, onClose, onDone }) {

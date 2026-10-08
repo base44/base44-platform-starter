@@ -9,7 +9,7 @@
 
 import { NextResponse } from "next/server";
 
-import { emailForServiceExternalId } from "@/lib/base44Link";
+import { ownersOf } from "@/lib/appOwnership";
 import { verifyWebhook } from "@/lib/base44WebhookSignature";
 import { deleteEntity, listEntities } from "@/lib/entityCrud";
 
@@ -19,20 +19,24 @@ export const runtime = "nodejs";
 type CloudEvent = { type: string; data: Record<string, unknown> };
 
 /**
+ * The event names the app; `AppOwnership` says whose it is. Upstream every app has
+ * the same owner — the integration account — so nothing in the payload could name
+ * a shell user, and none of it is needed to.
+ *
  * Idempotent and order-safe without a ledger: deleting pins that are already
  * gone is a no-op, and a late delete after a restore leaves the same state as
  * an on-time one, since a restore never puts pins back. `AppOwnership` stays —
  * a trashed app already drops out of `listApps`, and a restored one comes back.
  */
-async function removePins(principal: unknown, appId: unknown) {
-  if (typeof principal !== "string" || typeof appId !== "string") return;
-  // Null for an app built by another tool in the same workspace: nothing of ours to remove.
-  const email = await emailForServiceExternalId(principal);
-  if (!email) return;
-  // Scoped through the RLS predicate to the one owner the verified event names.
-  const actor = { email, role: "user" } as const;
-  for (const row of await listEntities("Widget", actor, { where: { appId } })) {
-    if (typeof row.id === "string") await deleteEntity("Widget", actor, row.id);
+async function removePins(appId: unknown) {
+  if (typeof appId !== "string") return;
+  // Empty for an app built by another tool in the same workspace: nothing of ours to remove.
+  for (const email of await ownersOf(appId)) {
+    // Scoped through the RLS predicate to one owner at a time.
+    const actor = { email, role: "user" } as const;
+    for (const row of await listEntities("Widget", actor, { where: { appId } })) {
+      if (typeof row.id === "string") await deleteEntity("Widget", actor, row.id);
+    }
   }
 }
 
@@ -56,7 +60,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ challenge: event.data.challenge });
   }
   if (event.type === "app.deleted.v1") {
-    await removePins(event.data.owner_service_external_id, event.data.app_id);
+    await removePins(event.data.app_id);
   }
   return NextResponse.json({ ok: true });
 }

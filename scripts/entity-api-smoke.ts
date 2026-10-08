@@ -6,9 +6,11 @@
  * route handlers, the real session decode and the real Prisma queries. What it is
  * actually protecting:
  *
- *   1. no route reachable without a session; Base44Link/User not reachable at all
+ *   1. no route reachable without a session; AppInstall/User not reachable at all
  *   2. reads are scoped — including on AppOwnership, the one genuinely multi-owner
- *      table, and including the cross-owner item of gotcha 2
+ *      table, and including the cross-owner item of gotcha 2 — and AppOwnership
+ *      cannot be created here (the platform proxy writes it; a client that could
+ *      would claim another builder's app)
  *   3. **writes cannot touch another user's row** — the gotcha 1 trap, over HTTP
  *   4. `created_by` comes from the session and nowhere else (gotcha 6)
  *   5. the q/sort/body whitelists reject anything undeclared, so nothing reaches a
@@ -161,10 +163,10 @@ async function main() {
   );
 
   check(
-    "Base44Link is not reachable",
-    (await api("GET", "/Base44Link", { as: ADMIN })).status === 404,
+    "AppInstall is not reachable (that is src/lib/appInstall.ts)",
+    (await api("GET", "/AppInstall", { as: ADMIN })).status === 404,
   );
-  check("...not even lowercased", (await api("GET", "/base44link", { as: ADMIN })).status === 404);
+  check("...not even lowercased", (await api("GET", "/appinstall", { as: ADMIN })).status === 404);
   check(
     "User is not reachable (that is /api/me)",
     (await api("GET", "/User", { as: ADMIN })).status === 404,
@@ -220,6 +222,17 @@ async function main() {
   check(
     "...and none of them belong to other",
     smokeApps.every((r) => r.created_by === OWNER),
+  );
+  check(
+    "AppOwnership cannot be created from a client",
+    (await api("POST", "/AppOwnership", { as: OTHER, body: { app_id: `${TAG}-app-1` } })).status ===
+      400,
+  );
+  check(
+    "...nor updated",
+    (
+      await api("PUT", `/AppOwnership/${smokeApps[0]?.id}`, { as: OWNER, body: { app_name: "x" } })
+    ).status === 400,
   );
 
   const ownerItems = rows(await api("GET", "/Item", { as: OWNER })).filter((r) =>

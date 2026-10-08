@@ -27,7 +27,7 @@ Next.js App Router · TypeScript · Tailwind 4 · Postgres + Prisma · NextAuth 
 | Boundary | Code |
 | --- | --- |
 | 1. Your own auth and database | `src/lib/auth.ts`, `src/lib/rls.ts`, `prisma/schema.prisma`, `src/lib/entities.ts`, `src/lib/entityCrud.ts` |
-| 2. One Base44 identity per user | `src/lib/base44Link.ts`, `src/app/api/base44/link/route.ts` |
+| 2. One Base44 account, and the shell keeps its builders apart | `src/lib/base44Config.ts`, `src/lib/appOwnership.ts` |
 | 3. A server-side allow-list in front of Base44's REST API | `src/app/api/base44/platform/route.ts` |
 | 4. A public data API the built apps call | `src/app/api/sunny/route.ts`, `src/lib/builderInstructions.ts` |
 | 5. Signed inbound webhooks from Base44 | `src/app/api/base44/webhooks/route.ts`, `src/lib/base44WebhookSignature.ts` |
@@ -42,18 +42,24 @@ Next.js App Router · TypeScript · Tailwind 4 · Postgres + Prisma · NextAuth 
   *only* module that queries owner-scoped models — never query them raw. This is the single biggest
   correctness risk in the codebase, and ESLint bans by-id `update`/`delete` on those models to keep
   it that way.
-- **`src/lib/base44Link.ts` is the only module that touches `Base44Link`**, and it never returns a
-  token to a caller. Vended tokens stay server-side. The webhook receiver joins an event to a user
-  through `emailForServiceExternalId()` there, which returns an email and nothing else.
+- **One Base44 account builds everything; isolation is the shell's job.** The integration account's
+  personal access token (`BASE44_ACCESS_TOKEN`) authenticates every platform call, so upstream every
+  app has the same owner and Base44 cannot tell builders apart. `AppOwnership` is the only record of
+  who built what, `src/lib/appOwnership.ts` is the module that reads it for authorization, and the
+  platform proxy checks it before every app-scoped action (404 otherwise, before any upstream call),
+  filters `listApps` by it, and writes it server-side in the same request that creates an app. A
+  client can read and delete its own rows but never create one — a client-written row would claim
+  another builder's app. The webhook receiver joins an event to users through `ownersOf(appId)`
+  there, which returns emails and nothing else.
 - **An inbound webhook is untrusted until its signature verifies.** `src/lib/base44WebhookSignature.ts`
-  is the boundary: the URL is public, so `owner_service_external_id` — which decides whose pins get
-  removed — is attacker-controlled until it returns ok. Verify the **raw** body text. Keys come from
+  is the boundary: the URL is public, so `app_id` — which decides whose pins get removed — is
+  attacker-controlled until it returns ok. Verify the **raw** body text. Keys come from
   `BASE44_WEBHOOK_PUBLIC_KEYS` only (public keys, not secrets); pin both through a rotation.
 - **The receiver keeps no state.** It acts on `app.deleted.v1` only, by deleting the owner's
   `Widget` rows through `entityCrud.ts`; that is idempotent and order-safe, so there is no event
   ledger. `app.deleted.v1` is trash, restorable for 30 days: never touch `AppOwnership` on it — a
   trashed app already drops out of `listApps`, and a restored one comes back on its own.
-- **Server-only secrets** (`BASE44_SVC_KEY`, workspace id, platform host) live in env and are never
+- **Server-only secrets** (`BASE44_ACCESS_TOKEN`, `BASE44_SVC_KEY`, workspace id, platform host) live in env and are never
   shipped to the client, and never caller-supplied — a request-controlled host would be an SSRF and
   a request-controlled workspace id would defeat the tenancy boundary.
 - **`/api/sunny` serves externally-hosted Base44 apps**: CORS `*`, no user session, so it cannot
@@ -78,7 +84,7 @@ npm run lint
 npm run rls:smoke        # boundary 1: the owner predicate, including the traps
 npm run auth:smoke       # boundary 1: session → actor
 npm run entities:smoke   # boundary 1: whitelisting, scoping, wire shape
-npm run base44:smoke     # boundaries 2–3: token containment, allow-list, session keying
+npm run base44:smoke     # boundaries 2–3: token containment, allow-list, the ownership gate
 npm run embed:smoke      # the embed gate: authored-or-installed, and a refusal is an answer
 npm run sunny:smoke     # boundary 4: the public contract, action by action
 npm run webhook:register # boundary 5: register the endpoint, print the key to pin (deploy-time)
@@ -91,7 +97,7 @@ needs neither — it mints its own keypair.
 
 ## Docs
 
-- `docs/base44-identity.md` — service principals, minting, refresh, revocation, offboarding
+- `docs/base44-identity.md` — the one-account model, the access token, and keeping builders apart
 - `docs/base44-platform-api.md` — the platform REST endpoints
 - `docs/base44-built-apps.md` — builder instructions, skills, and the callback API
 - `docs/sunny-platform-skill.md` — the skill text a built app reads, as a worked example

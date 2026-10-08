@@ -2,12 +2,23 @@
  * Server-only config for the Base44 app-factory bridge.
  *
  * Every value here is read *only* on the server, and none is ever caller-supplied:
- * a request-controlled base URL on code holding user credentials is an SSRF, and a
+ * a request-controlled base URL on code holding credentials is an SSRF, and a
  * request-controlled workspace or folder id would defeat the tenancy boundary.
+ *
+ * ## The identity model — one account
+ *
+ * One Base44 account sits behind the whole integration. It owns every app the
+ * shell's users build, and its personal access token authenticates every platform
+ * call. No shell user has a Base44 identity of their own: Base44 sees one builder,
+ * and keeping *our* builders apart — which apps each one may list, edit, deploy —
+ * is entirely this shell's job. `AppOwnership` is that record, and the platform
+ * proxy refuses an app-scoped call without a row for the caller.
+ *
+ * https://docs.base44.com/developers/white-label/tenancy-and-credentials
  */
 
 function required(name: string): string {
-  const value = process.env[name];
+  const value = process.env[name]?.trim();
   if (!value) {
     throw new MissingConfigError(name);
   }
@@ -18,7 +29,7 @@ export class MissingConfigError extends Error {
   code = "bridge_misconfigured";
   constructor(public readonly variable: string) {
     super(
-      `Missing env var ${variable}. The Base44 bridge needs BASE44_SVC_KEY, ` +
+      `Missing env var ${variable}. The Base44 bridge needs BASE44_ACCESS_TOKEN, ` +
         `BASE44_ORG_ID, BASE44_PLATFORM_HOST and BASE44_APPS_FOLDER_ID — see .env.example.`,
     );
     this.name = "MissingConfigError";
@@ -26,44 +37,38 @@ export class MissingConfigError extends Error {
 }
 
 /**
- * The `b44k_` workspace key used on the **hot path**: minting. Needs
- * `user_tokens:mint`. Sent in `Authorization` **bare** — no `Bearer` — which is
- * the format Base44's workspace-key auth accepts.
+ * The integration account's **personal access token**. Sent as
+ * `Authorization: Bearer …` on every Apps API call, so it is the credential
+ * behind everything the builder does.
  *
- * Minting and provisioning are separate Base44 scopes (`user_tokens:mint` vs
- * `service_users:provision`), and that split is the point: a mint-only key can
- * vend tokens for principals that already exist but cannot *create* one, so it
- * can never be turned into an impersonate-anyone primitive.
+ * Create it in the enterprise workspace, not the account's personal one, or
+ * builds miss the design system, skills and plan set up there. The account needs
+ * the Editor role or higher in that workspace: viewers and guests cannot create
+ * apps, and deploy succeeds only for an Editor.
+ */
+export const accessToken = () => required("BASE44_ACCESS_TOKEN");
+
+/**
+ * The `b44k_` **workspace API key**. Not for building — that is the access token
+ * above — but for the two things only a workspace key can do: sign a viewer into
+ * an embedded app (provision an app user, mint an embed sign-in token; see
+ * src/lib/embedSession.ts) and register the outbound webhook endpoint. Sent as
+ * `api_key`, never `Bearer`.
+ *
+ * Optional: without it the builder still works, and embedded apps load signed out.
  */
 export const svcKey = () => required("BASE44_SVC_KEY");
 
 /**
- * The key used for the two rare, privileged calls: provision and deprovision
- * (`service_users:provision`).
- *
- * Defaults to `BASE44_SVC_KEY` so a single-key deployment still works. Setting
- * `BASE44_PROVISION_KEY` separately — and giving `BASE44_SVC_KEY` only
- * `user_tokens:mint` — is the stronger posture, because it is what makes
- * Base44's deprovision lever real: with a provision-capable key on the hot path,
- * a deprovisioned user can simply press Connect and be re-provisioned, which
- * quietly undoes the offboarding.
- */
-export const provisionKey = () => process.env.BASE44_PROVISION_KEY?.trim() || svcKey();
-
-/**
- * The Base44 enterprise workspace every Sunny user is provisioned into. One
- * workspace, central membership, one place to deprovision. Used as `X-Active-Workspace-Id`
- * on every platform call, as `createApp`'s `organization_id`, and as a salt in
- * the principal id so the same person in a different workspace is a different
- * principal. The provision and mint endpoints derive the org from the *key*, so
- * it is deliberately not sent to either — that is the cross-tenant guarantee.
+ * The Base44 enterprise workspace every app is built in. Sent as
+ * `X-Active-Workspace-Id` on every platform call — Base44 checks permissions
+ * against the active workspace, not the body — and as `createApp`'s
+ * `organization_id`. One workspace, one place to govern.
  */
 export const orgId = () => required("BASE44_ORG_ID");
 
 /**
- * Host for both the platform REST API and the provision/mint endpoints. One value
- * here, but architecturally two: in production these are the data host and the
- * token issuer, so keep them separable.
+ * Host for the platform REST API.
  *
  * NB the value in `.env` today is a Base44 PR-preview host, and **it rotates**.
  */
@@ -102,45 +107,14 @@ export const webhookPublicKeys = (): string[] => {
  *
  * Used by `npm run webhook:register` and by nothing on a request path —
  * registration is a deploy-time action, not something a user triggers. Falls
- * back to `BASE44_SVC_KEY` so a single-key deployment works, the same shape
- * `provisionKey` uses.
+ * back to `BASE44_SVC_KEY` so a single-key deployment works.
  */
 export const webhookKey = () => process.env.BASE44_WEBHOOK_KEY?.trim() || svcKey();
 
 /**
- * The reserved, non-routable domain Base44 mints synthetic principal addresses
- * in (RFC 2606 `.invalid`, so it can never resolve). Asserted on the provision
- * response: if what comes back is *not* in this domain we did not get a robot
- * identity, and refusing is cheaper than finding out later which real account we
- * are acting as.
- *
- * NB the principal's own domain is `{organization_id}.{this}` — match as a
- * suffix, not for equality.
- */
-export const SERVICE_PRINCIPAL_EMAIL_DOMAIN = "svc.base44.invalid";
-
-/**
- * The client_id used when revoking. Deliberately a NON-MCP prefix: a token whose
- * client_id starts with one of Base44's MCP prefixes (`chatgpt_`, `claude_`,
- * `cursor_`, `oauth_`) is rejected everywhere except `/mcp`.
- */
-export const SERVICE_CLIENT_ID = "svc_delegate";
-
-/**
- * Re-mint this far before the stated expiry, so a slow call cannot land after it.
- *
- * Vended access tokens are now minted with an explicit **1h** TTL rather than the
- * ~30-day platform default, so this is ~8% of a token's life, not ~0.01%. The
- * practical consequence is that re-minting is a routine hourly event per active
- * user instead of something that fires once a month — see the note on the mint
- * rate limit in `remint()`.
- */
-export const REFRESH_SKEW_MS = 5 * 60 * 1000;
-
-/**
  * Values this deployment will install as app secrets on apps it builds. The
- * browser sends names, never values — which is what keeps `BASE44_SVC_KEY` out
- * of a built app.
+ * browser sends names, never values — which is what keeps the access token and
+ * the workspace key out of a built app.
  */
 export const APP_SECRETS: Record<string, () => string> = {
   // Empty since viewer tokens landed: a built app gets its credential from the
