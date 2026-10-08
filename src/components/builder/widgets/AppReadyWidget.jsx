@@ -110,16 +110,12 @@ export default function AppReadyWidget({
           </button>
         )}
 
-        {!offerMarket && (isAddedToMarket ? (
-          <Link href="/market" onClick={onNavigate} className={secondary}>
-            <Store className="w-3.5 h-3.5" /> Live in app market
-            <ArrowRight className="w-3.5 h-3.5 ml-auto" />
-          </Link>
-        ) : (
+        {/* Once published, the primary slot above is the one "Live in app market" row. */}
+        {!offerMarket && !isAddedToMarket && (
           <button onClick={onAddToMarket} disabled={busy} className={secondary}>
             <Store className="w-3.5 h-3.5" /> Publish to market
           </button>
-        ))}
+        )}
 
         {onAllApps && <button onClick={onAllApps} className={secondary}>
           <ArrowRight className="w-3.5 h-3.5" /> See it in all apps

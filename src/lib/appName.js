@@ -106,13 +106,15 @@ function clamp(text, max = MAX_LEN) {
 }
 
 /**
- * First clause, minus the request lead-in, title-cased.
+ * First clause, minus the request lead-in, title-cased. An opening quote ends the
+ * clause too: what is quoted is a name the prompt refers to, not the app's.
  * "build me a CRM for gyms, with a pipeline" → "CRM For Gyms".
+ * 'Build a portfolio overview from my "My Portfolio" board. Show…' → "Portfolio Overview".
  */
 export function suggestAppName(prompt) {
   const firstClause = prompt
     .trim()
-    .split(/[.,;:\n!?]/)[0]
+    .split(/[.,;:\n!?]|\s["“']/)[0]
     .replace(/\s+/g, " ")
     .trim();
   const words = firstClause.split(" ").filter(Boolean);
