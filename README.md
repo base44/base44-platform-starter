@@ -57,15 +57,14 @@ You need, from Base44:
 
 | What | Why |
 | --- | --- |
-| An **enterprise workspace** | All your users' apps live in it, so you have one place to govern |
+| An **enterprise workspace**, used by this platform alone | All your users' apps live in it, so you have one place to govern, and listing apps means listing it |
 | Its **workspace id** | Sent as `X-Active-Workspace-Id` on every platform call |
 | An **integration account** with Editor or higher in that workspace, and its **personal access token** created *in* that workspace | The one identity that builds everything — see [step 2](#step-2--one-base44-account-and-you-keep-your-users-apart) |
 | Optionally a **workspace API key** (`b44k_…`) | Signs viewers into embedded apps and registers webhooks. Not needed to build |
 | The **platform host** your workspace is served from | Base of every REST call |
-| An **app folder id** | The one folder your platform files its apps into, so listing apps means listing that folder |
 
-Those land in env as `BASE44_ACCESS_TOKEN`, `BASE44_ORG_ID`, `BASE44_PLATFORM_HOST`,
-`BASE44_APPS_FOLDER_ID` and optionally `BASE44_SVC_KEY` (see `.env.example`). All server-only —
+Those land in env as `BASE44_ACCESS_TOKEN`, `BASE44_ORG_ID`, `BASE44_PLATFORM_HOST` and
+optionally `BASE44_SVC_KEY` (see `.env.example`). All server-only —
 none of them may ever reach the browser.
 
 ---
@@ -142,7 +141,7 @@ builders' apps, is entirely up to you. So the real work of step 2 is in your dat
 ```ts
 // src/lib/appOwnership.ts — the only record of who built what
 export async function ownsApp(actor, appId)        // the proxy's gate for every app-scoped action
-export async function ownedAppIds(actor)           // listApps = the folder ∩ this
+export async function ownedAppIds(actor)           // listApps = the workspace ∩ this
 export async function recordOwnership(actor, appId) // written by the proxy, inside createApp
 ```
 
@@ -152,7 +151,7 @@ Three rules worth copying:
   the caller didn't build — a 404, before Base44 is ever asked. Upstream the token owns every app,
   so nothing there will stop a user driving someone else's.
 - **Write ownership server-side, in the request that creates the app.** Never from the browser. A
-  client that could insert the row could claim any app in the folder, so the generic entity API
+  client that could insert the row could claim any app in the workspace, so the generic entity API
   refuses to create or update one.
 - **No admin bypass.** Ownership matches on the caller's own email, like installs do. Reading another
   user's rows through an admin session is one thing; handing them the controls of another user's
@@ -182,7 +181,7 @@ actions — the caller names an action, never a URL:
 
 ```ts
 const OPS = {
-  listApps:   { method: "GET",  path: (p) => `/api/apps?…folder_id=${appsFolderId()}` },
+  listApps:   { method: "GET",  path: (p) => `/api/apps?…filter_mode=all_apps_workspace` },
   createApp:  { method: "POST", path: () => "/api/apps", body: (p) => ({ … }) },
   sendMessage:{ method: "POST", path: (p) => `/api/apps/${p.appId}/chat/message`, … },
   …
@@ -226,23 +225,18 @@ Two more things people get bitten by:
 
 ### 4a. Building
 
-Creating an app is two calls from the browser, in a fixed order (`src/lib/base44Platform.ts`),
-and one write the server makes on its own:
+Creating an app is one call from the browser (`src/lib/base44Platform.ts`), and one write the
+server makes on its own:
 
 ```ts
-const app = await createApp({ prompt, name, customInstructions });  // 1. create + first build turn
-                                                                     //    (server records ownership here)
-await fileAppsInFolder([app.id]);                                    // 2. into your folder
+const app = await createApp({ prompt, name, customInstructions });  // create + first build turn
+                                                                     // (server records ownership here)
 ```
 
-Why that shape:
-
-1. `custom_instructions` and `initial_message` both go in the **create** body. `initial_message`
-   starts the first build inside that same call, so patching instructions afterwards is too late.
-   And the server writes the `AppOwnership` row in that same request — never the browser, which
-   could otherwise claim any app.
-2. `/api/apps` has no folder field on create, so a fresh app is briefly unfiled — and your app list
-   reads *from the folder*. An unfiled app is invisible.
+`custom_instructions` and `initial_message` both go in the **create** body. `initial_message`
+starts the first build inside that same call, so patching instructions afterwards is too late. And
+the server writes the `AppOwnership` row in that same request — never the browser, which could
+otherwise claim any app.
 
 Then `getPreviewUrl` for an iframe preview (the preview token has a 300s TTL — never cache it) and
 `deployApp` to publish.
@@ -357,7 +351,7 @@ npm run webhook:smoke    # step 5: the inbound signature, negative controls
 | `403` on deploy | The integration account isn't an Editor in the workspace |
 | Builds ignore your design system or skills | The token was created in the account's personal workspace. Create it in the enterprise workspace |
 | `sendMessage` times out at ~30s | Your own timeout, not Base44's. Build turns need ~120s |
-| A new app doesn't appear in the list | It was created but never filed into the folder |
+| A new app doesn't appear in the list | Its `AppOwnership` row was not recorded — the server logs this loudly at create |
 
 ## Where to read next
 

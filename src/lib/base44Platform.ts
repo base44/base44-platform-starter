@@ -13,9 +13,6 @@
  * app they named.
  */
 
-/** The workspace folder every app this builder creates lives in. Display text only. */
-export const APPS_FOLDER_NAME = "sunny_widgets";
-
 export class Base44CallError extends Error {
   code: string | null;
   status: number | null;
@@ -74,14 +71,12 @@ export const builderStatus = () => call("status") as Promise<{ configured: true 
 
 type App = { id: string; name?: string; slug?: string } & Json;
 
-export const fileAppsInFolder = (appIds: string[]) => call("fileAppsInFolder", { appIds });
-
 /**
  * The apps this user built, newest first. Bare array — no total count.
  *
- * The folder upstream is workspace-global and every app in it belongs to the one
- * integration account, so the server intersects it with the caller's
- * `AppOwnership` rows before answering. No role sees another user's apps, and an
+ * Upstream every app in the workspace belongs to the one integration account, so
+ * the server intersects the workspace's apps with the caller's `AppOwnership`
+ * rows before answering. No role sees another user's apps, and an
  * app with no row — built before ownership was tracked — is visible to nobody.
  * Recover one by inserting its row.
  */
@@ -95,17 +90,13 @@ export const listApps = ({ limit = 20, skip = 0 } = {}) =>
 export const DEFAULT_APP_SECRETS: readonly string[] = Object.freeze([]);
 
 /**
- * Creates an app and queues its first builder message, then files it.
+ * Creates an app and queues its first builder message, in one request.
  *
- * Two calls, not one, and the order matters:
- *   1. `createApp` — everything that must exist before the first build turn goes
- *      in this one request: `initial_message` starts that turn, while
- *      `customInstructions` and `secrets` must already be on the app when it runs.
- *      The server records this user's `AppOwnership` in the same request — never
- *      from here, since a client-written row could claim any app.
- *   2. `fileAppsInFolder` — `/api/apps` has no folder field on create, so a fresh
- *      app is briefly unfiled, and `listApps` reads out of the folder. An unfiled
- *      app is invisible in My Tools, so this failing is loud.
+ * Everything that must exist before the first build turn goes in it:
+ * `initial_message` starts that turn, while `customInstructions` and `secrets`
+ * must already be on the app when it runs. The server records this user's
+ * `AppOwnership` in the same request — never from here, since a client-written
+ * row could claim any app.
  */
 export async function createApp({
   prompt,
@@ -120,15 +111,6 @@ export async function createApp({
   secrets?: readonly string[];
 }): Promise<App> {
   const app = (await call("createApp", { prompt, name, customInstructions, secrets })) as App;
-
-  try {
-    await fileAppsInFolder([app.id]);
-  } catch (err) {
-    throw new Error(
-      `App ${app.id} was created but could not be filed into ${APPS_FOLDER_NAME}: ` +
-        `${(err as Error).message}`,
-    );
-  }
 
   // The platform silently drops fields it does not accept on create, and this one
   // failing is invisible — the build just ignores the instructions.

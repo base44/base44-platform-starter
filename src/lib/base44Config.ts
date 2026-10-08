@@ -3,7 +3,7 @@
  *
  * Every value here is read *only* on the server, and none is ever caller-supplied:
  * a request-controlled base URL on code holding credentials is an SSRF, and a
- * request-controlled workspace or folder id would defeat the tenancy boundary.
+ * request-controlled workspace id would defeat the tenancy boundary.
  *
  * ## The identity model — one account
  *
@@ -30,7 +30,7 @@ export class MissingConfigError extends Error {
   constructor(public readonly variable: string) {
     super(
       `Missing env var ${variable}. The Base44 bridge needs BASE44_ACCESS_TOKEN, ` +
-        `BASE44_ORG_ID, BASE44_PLATFORM_HOST and BASE44_APPS_FOLDER_ID — see .env.example.`,
+        `BASE44_ORG_ID and BASE44_PLATFORM_HOST — see .env.example.`,
     );
     this.name = "MissingConfigError";
   }
@@ -73,13 +73,6 @@ export const orgId = () => required("BASE44_ORG_ID");
  * NB the value in `.env` today is a Base44 PR-preview host, and **it rotates**.
  */
 export const platformHost = () => required("BASE44_PLATFORM_HOST").replace(/\/+$/, "");
-
-/**
- * The `sunny_widgets` folder every built app is filed into. `listApps` reads out
- * of it, so an unfiled app is invisible in My Tools. Not caller-supplied: the
- * folder *is* the boundary, so letting the browser name it defeats the point.
- */
-export const appsFolderId = () => required("BASE44_APPS_FOLDER_ID");
 
 /**
  * The workspace's Ed25519 public keys, which verify inbound webhooks.

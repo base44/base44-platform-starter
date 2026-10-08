@@ -80,7 +80,7 @@ one is.
 | `AUTH_REDIRECT_PROXY_URL` | `https://<your-host>/api/auth` — only needed if you turn previews on; set it on production *and* the preview contexts |
 | `BASE44_ACCESS_TOKEN` | the integration account's personal access token, created in the enterprise workspace — without it the builder says it is not configured |
 | `BASE44_SVC_KEY` | the `b44k_` workspace key, for signing viewers into embedded apps and registering webhooks; optional |
-| `BASE44_ORG_ID`, `BASE44_PLATFORM_HOST`, `BASE44_APPS_FOLDER_ID` | from your workspace |
+| `BASE44_ORG_ID`, `BASE44_PLATFORM_HOST` | from your workspace |
 | `NEXT_PUBLIC_BASE44_APP_HOST` | the host Base44 serves built apps from. The one public var — these URLs are built in the browser to be iframed. Unset, the UI shows no app previews |
 
 ## 5. Verify

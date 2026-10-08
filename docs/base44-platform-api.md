@@ -71,19 +71,20 @@ Base URL is your platform host. Every call carries the two headers above.
 
 ```
 /api/apps?q={"app_type":{"$nin":["user_agent"]}}
-         &sort=-updated_date&limit=20&skip=0
+         &sort=-updated_date&limit=500&skip=0
          &filter_mode=all_apps_workspace
-         &folder_id={your folder id}
 ```
 
-Returns a **bare array**, no total count. `folder_id` is what scopes the list to apps your platform
-built — the workspace holds others. The folder *is* the boundary, so it comes from your config, not
-from the caller.
+Returns a **bare array**, no total count. `filter_mode=all_apps_workspace` lists every app in the
+workspace, not only the token's own — apps built under earlier identities still belong to your
+users. The workspace is the boundary, so give your platform one of its own.
 
 Platform apps carry no per-your-user owner (they all belong to the integration account), so
 filtering to "this user's apps" is a local join. This repo keeps an `AppOwnership` row per created
-app and intersects server-side, reading the folder page by page until the caller's page is full —
-filtering a single page would hide a user's older apps behind other users' newer ones.
+app and intersects server-side. It asks for a large page, so at its scale the whole workspace is one
+snapshot, and keeps reading pages while they come back full — filtering a single page would hide a
+user's older apps behind other users' newer ones. Base44 documents no maximum `limit`, so a page it
+refuses as a bad request is retried once at 50, the size known to work.
 
 ### `POST /api/apps` — create
 
@@ -115,16 +116,6 @@ Three fields do different jobs and all must be set **here**:
 The platform silently drops fields it doesn't accept, and a dropped `custom_instructions` is
 invisible — the build just ignores it. Read it back off the response and log loudly if it didn't
 stick.
-
-### `POST /api/app-folders/{folderId}/items` — file
-
-```json
-{ "app_ids": ["…"] }
-```
-
-Empty body on success. `/api/apps` has no folder field on create, so a fresh app is briefly unfiled
-— and listing reads *from* the folder. File immediately, and treat a failure as loud: an unfiled app
-is invisible to its own creator.
 
 ### `GET /api/apps/{appId}` — read one
 
@@ -204,7 +195,7 @@ Client-side, `bridge_misconfigured` is one UI state ("the builder is not availab
 `isBuilderUnavailable()` in `src/lib/base44Platform.ts` — and `not_found` on an app-scoped action
 means the caller does not own the app they named.
 
-Path builders read config (folder id, workspace id), so a missing variable surfaces *inside* the
+Path builders read config (the workspace id), so a missing variable surfaces *inside* the
 request-building step. Re-throw it rather than letting it masquerade as a 400 — otherwise you'll
 hunt a caller bug that doesn't exist.
 

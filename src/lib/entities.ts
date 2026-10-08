@@ -128,7 +128,7 @@ export const ENTITY_FIELDS: Record<UserOwnedModel, Fields> = {
    * Readable and deletable by its owner, never created or updated from a client.
    * Every app upstream belongs to the one integration account, so this row is the
    * only thing that says which shell user may drive an app — a client that could
-   * write it could claim any app in the folder. The platform proxy writes it
+   * write it could claim any app in the workspace. The platform proxy writes it
    * (src/lib/appOwnership.ts) in the same request that creates the app.
    */
   AppOwnership: {

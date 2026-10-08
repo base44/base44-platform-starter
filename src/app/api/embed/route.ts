@@ -3,7 +3,7 @@
  *
  * Gated on authored-or-installed, like `/api/sunny/token`: the credential behind
  * this route is workspace-scoped and could otherwise mint a session into any app
- * in the folder. Returns a URL, never the token. `embed_url: null` is a normal
+ * in the workspace. Returns a URL, never the token. `embed_url: null` is a normal
  * answer — load the app signed out.
  */
 

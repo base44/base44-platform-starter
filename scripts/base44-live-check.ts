@@ -11,7 +11,7 @@
  * `<email>` is the shell user to act as; a cookie is forged for them the same way
  * the smoke suite does. `listApps` answers with the apps *that user* built, so a
  * throwaway address sees an empty list and that is a pass. To exercise an
- * app-scoped call, name an app in the folder with `--app`: the script records a
+ * app-scoped call, name an app in the workspace with `--app`: the script records a
  * temporary `AppOwnership` row for the email, reads the app, and removes the row
  * again. Nothing here creates, changes or deploys an app.
  *

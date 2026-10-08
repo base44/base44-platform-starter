@@ -2,7 +2,7 @@
  * Every app this user can open: built and installed.
  *
  * Two sources that cannot be merged upstream — built apps come live from the Base44
- * folder, installed ones from the listing snapshot, because the platform proxy
+ * workspace, installed ones from the listing snapshot, because the platform proxy
  * answers only for apps the caller built, so an installer cannot ask it about
  * someone else's. Hence `slug`: it means "addressable by convention", which an
  * installed app is not, and `DashboardWidgets` reads its absence as "use the URL you
