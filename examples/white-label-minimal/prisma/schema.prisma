@@ -1,0 +1,24 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../generated/prisma"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model AppOwnership {
+  id      String  @id @default(cuid())
+  appId   String  @map("app_id")
+  appName String? @map("app_name")
+
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([appId, createdBy])
+  @@index([createdBy])
+  @@map("app_ownerships")
+}

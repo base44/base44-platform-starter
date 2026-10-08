@@ -7,3 +7,7 @@
 
 [build.environment]
   NODE_VERSION = "24"
+
+# Deploy previews show the lean rewrite (lean/); production keeps the classic app.
+[context.deploy-preview.environment]
+  TINY_SUNNY_LEAN = "true"

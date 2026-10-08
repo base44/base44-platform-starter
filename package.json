@@ -25,7 +25,8 @@
     "postinstall": "prisma generate",
     "minimal:dev": "npm run dev --workspace @base44/white-label-minimal",
     "minimal:build": "npm run build --workspace @base44/white-label-minimal",
-    "minimal:typecheck": "npm run typecheck --workspace @base44/white-label-minimal"
+    "minimal:typecheck": "npm run typecheck --workspace @base44/white-label-minimal",
+    "minimal:test": "npm run test --workspace @base44/white-label-minimal"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^18.0.1",
