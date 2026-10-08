@@ -1,9 +1,12 @@
-import { getSessionUser } from "../server/auth";
-import GoogleSignInButton from "../client/components/GoogleSignInButton";
-import TinySunnyLogo from "../client/components/TinySunnyLogo";
-import Workspace from "../client/components/Workspace";
+import { redirect } from "next/navigation";
+import { getSessionUser } from "../../server/auth";
+import GoogleSignInButton from "../../client/components/GoogleSignInButton";
+import TinySunnyLogo from "../../client/components/TinySunnyLogo";
+import Workspace from "../../client/components/Workspace";
 
 export default async function Page() {
+  // TINY_SUNNY_LEAN=true shows the lean rewrite instead (app/(lean)/lean, code in lean/).
+  if (process.env.TINY_SUNNY_LEAN === "true") redirect("/lean");
   const user = await getSessionUser();
   if (!user)
     return (

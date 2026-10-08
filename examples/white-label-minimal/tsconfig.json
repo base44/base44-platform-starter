@@ -21,7 +21,12 @@
         "name": "next"
       }
     ],
-    "allowJs": true
+    "allowJs": true,
+    "paths": {
+      "@/*": [
+        "./lean/*"
+      ]
+    }
   },
   "include": [
     "next-env.d.ts",
