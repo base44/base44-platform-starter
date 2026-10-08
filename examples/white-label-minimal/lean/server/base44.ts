@@ -28,13 +28,15 @@ export async function createApp(prompt: string): Promise<Base44App> {
   return { id: app.id, name: app.name };
 }
 
-// List apps, newest first: only the ones the integration account created. The workspace
-// can hold apps by other accounts, whose previews this token cannot open.
+// List apps, newest first. With BASE44_ACCOUNT_EMAIL set, only the ones the integration
+// account created: the workspace can hold apps by other accounts, whose previews this
+// token cannot open.
 export async function listApps(): Promise<Base44App[]> {
   const response = await fetch(`${host}/api/apps?sort=-created_date`, { headers: headers(false) });
   if (!response.ok) throw new Error(`List apps failed: ${response.status}`);
   const apps: { id: string; name: string; created_by: string }[] = await response.json();
-  return apps.filter((app) => app.created_by === process.env.BASE44_ACCOUNT_EMAIL).map((app) => ({ id: app.id, name: app.name }));
+  const account = process.env.BASE44_ACCOUNT_EMAIL;
+  return apps.filter((app) => !account || app.created_by === account).map((app) => ({ id: app.id, name: app.name }));
 }
 
 // Create socket session: a read-only live-updates session for one app. It takes the
