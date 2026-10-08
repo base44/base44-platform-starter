@@ -56,7 +56,7 @@ Three rules for the token:
   (`APP_SECRETS` is the allow-list for that, and it does not contain it).
 
 It lands in env as `BASE44_ACCESS_TOKEN`, next to `BASE44_ORG_ID` (the workspace id),
-`BASE44_PLATFORM_HOST` and `BASE44_APPS_FOLDER_ID`. See `.env.example`.
+and `BASE44_PLATFORM_HOST`. See `.env.example`.
 
 There is no per-user token to mint, store, refresh or revoke, and no "Connect" step in the UI. The
 builder is either configured on a deployment or it is not; `POST /api/base44/platform
@@ -81,18 +81,18 @@ The platform proxy enforces it in three places:
 
 ```
 createApp          → create upstream, then recordOwnership(actor, app.id) — same request
-listApps           → page through the folder upstream, keep only ids the caller owns
+listApps           → list the workspace upstream, keep only ids the caller owns
 every other action → ownsApp(actor, appId) first; 404 otherwise, before any upstream call
 ```
 
-The 404 is deliberate: the folder is shared by every builder, and "that exists but isn't yours"
+The 404 is deliberate: the workspace is shared by every builder, and "that exists but isn't yours"
 tells a caller more than "no such app". It is also the answer they would get for an id that was
 never created, so the two cases stay indistinguishable.
 
 Two rules make this hold:
 
 **Ownership is written server-side, in the request that creates the app.** Never from the browser.
-A client that could insert an `AppOwnership` row could claim any app in the folder, so the generic
+A client that could insert an `AppOwnership` row could claim any app in the workspace, so the generic
 entity API lets a user read and delete their own rows ("forget this app") and refuses to create or
 update one — `src/lib/entities.ts` marks every field read-only.
 
@@ -105,8 +105,8 @@ is reachable by its author *or* by someone who installed it, and nobody else.
 
 ### Apps with no row
 
-An app in the folder with no `AppOwnership` row — built before ownership was tracked, or by another
-tool against the same folder — is visible to nobody here, and no action reaches it. Recover one by
+An app in the workspace with no `AppOwnership` row — built before ownership was tracked, or in
+Base44's own UI — is visible to nobody here, and no action reaches it. Recover one by
 inserting its row for the right user.
 
 ---
@@ -118,7 +118,7 @@ set up      create the token in the enterprise workspace (Editor+) → env → d
             `status` answers 200 configured; the builder UI appears
 
 build       browser → /api/base44/platform {action} → ownership check → Bearer <token> → Base44
-            every app lands in the one account, filed into your folder
+            every app lands in the one account, in your workspace
 
 offboard    delete the user's AppOwnership (and AppInstall, Widget) rows
             their apps stay in the account — reassign by inserting rows for someone else, or
@@ -150,9 +150,8 @@ What this repo holds itself to, asserted by `npm run base44:smoke`:
 1. **The token is read in one place** (`accessToken()` in `src/lib/base44Config.ts`) and used in one
    place (the proxy's `send()`). No response body ever contains it, and no error body names the
    variable.
-2. **Every app-scoped action checks ownership before upstream.** For every action in `APP_SCOPED`,
-   and for every id `fileAppsInFolder` is given.
-3. **`listApps` answers with the caller's apps only, wherever they sit in the folder.**
+2. **Every app-scoped action checks ownership before upstream.** For every action in `APP_SCOPED`.
+3. **`listApps` answers with the caller's apps only, wherever they sit in the workspace.**
 4. **`AppOwnership` cannot be created or updated through the entity API.** Only the proxy writes it.
 5. **A foreign app is a 404 even on an unconfigured deployment** — the ownership gate runs before
    config is read, so the two kinds of failure never blur.
@@ -162,10 +161,12 @@ What this repo holds itself to, asserted by `npm run base44:smoke`:
 - The isolation lives entirely in your database. Whatever you call your ownership table, make it
   the *only* thing your proxy consults, check it before every upstream call, and never let a client
   write it.
-- Don't filter a single upstream page. The folder is shared, so one page of it can hold none of a
-  user's apps while their older ones sit further down. This repo reads the folder page by page until
-  the caller's page is full (`pageOwnedApps()`), and keeps the folder as the source rather than
-  fetching each owned id, because the folder is what drops a trashed app.
+- Give the platform a workspace of its own. Listing reads every app in it, so a workspace shared
+  with other tools makes every listing larger, though ownership still hides their apps.
+- Don't filter a single upstream page. The workspace is shared by your users, so one page of it can
+  hold none of a user's apps while their older ones sit further down. This repo asks for one large
+  page and keeps reading while pages come back full (`pageOwnedApps()`), and keeps the listing as
+  the source rather than fetching each owned id, because the listing is what drops a trashed app.
 - Offboarding a user does not touch Base44. Their apps remain in the account; what they lose is the
   rows that let them reach those apps through you.
 - If you ever need per-user Base44 identities again — real accounts, with Base44 enforcing the

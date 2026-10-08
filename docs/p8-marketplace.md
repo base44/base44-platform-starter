@@ -43,7 +43,7 @@ Two directions, and only one of them holds:
 
 `src/lib/usableApps.ts` merges the two sources:
 
-* apps you **built** — the Base44 folder, live, which is the truth for a slug, a
+* apps you **built** — the Base44 workspace, live, which is the truth for a slug, a
   screenshot and whether the app is deployed;
 * apps you **installed** — the listing snapshot, because the platform proxy answers
   only for apps you built, so an installer cannot ask it about someone else's.

@@ -12,7 +12,7 @@
  *      and missing required params are all 400, before any upstream call
  *   3. **keeping builders apart is the shell's job**, and it does it: an app-scoped
  *      action on an app the caller did not build is 404 before anything reaches
- *      upstream, for every such action, and for every id `fileAppsInFolder` names
+ *      upstream, for every such action
  *   4. `AppOwnership` — the only record of who built what — cannot be created or
  *      edited through the generic entity API, so nobody can claim an app by
  *      inserting a row. Reading and deleting your own rows still works.
@@ -20,14 +20,19 @@
  *      rather than 500 — and says nothing about the environment
  *   6. a submit's request id is stable per tool call, so a retried POST dedupes
  *      instead of resuming and charging the turn twice
- *   7. `listApps` finds a user's apps however deep in the shared folder they sit,
- *      instead of filtering one upstream page and hiding older apps
+ *   7. `listApps` finds a user's apps however deep in the shared workspace they
+ *      sit, and is not fooled by an upstream that caps or refuses a large page
  *
  * Needs `npm run dev`. Writes throwaway rows to DATABASE_URL and cleans up:
  *   npm run base44:smoke
  */
 
-import { FOLDER_PAGE_SIZE, MAX_FOLDER_PAGES, pageOwnedApps } from "../src/lib/appOwnership";
+import {
+  LIST_PAGE_SIZE,
+  MAX_LIST_PAGES,
+  SAFE_LIST_PAGE_SIZE,
+  pageOwnedApps,
+} from "../src/lib/appOwnership";
 import { submitRequestId } from "../src/lib/base44Platform";
 import { prisma } from "../src/lib/prisma";
 import { SESSION_COOKIE_NAME, sessionCookie } from "./session-cookie";
@@ -158,12 +163,8 @@ async function main() {
     (await bad({ action: "submitToolCallInput", appId: APP, toolCallId: "x/y" })) === 400,
   );
   check(
-    "fileAppsInFolder with an empty list is 400",
-    (await bad({ action: "fileAppsInFolder", appIds: [] })) === 400,
-  );
-  check(
-    "fileAppsInFolder with a dirty id is 400",
-    (await bad({ action: "fileAppsInFolder", appIds: [APP, "../nope"] })) === 400,
+    "there is no action that files apps into a folder",
+    (await bad({ action: "fileAppsInFolder", appIds: [APP] })) === 400,
   );
 
   // The only limit on which credential `createApp` can install is APP_SECRETS.
@@ -237,14 +238,11 @@ async function main() {
     nobodys.status === 404 && nobodys.body.code === "not_found",
     `got ${nobodys.status}`,
   );
-  const filing = await platform({ action: "fileAppsInFolder", appIds: [APP] }, OTHER);
-  check("fileAppsInFolder checks every id it is given", filing.status === 404, `got ${filing.status}`);
-  const mixed = await platform({ action: "fileAppsInFolder", appIds: [APP, NOBODYS_APP] }, USER);
-  check("...one foreign id among owned ones still fails", mixed.status === 404, `got ${mixed.status}`);
+  const refused = await platform({ action: "getApp", appId: APP }, OTHER);
   check(
     "the refusal names no other user",
-    !JSON.stringify(filing.body).includes(USER),
-    JSON.stringify(filing.body).slice(0, 140),
+    !JSON.stringify(refused.body).includes(USER),
+    JSON.stringify(refused.body).slice(0, 140),
   );
 
   console.log("\n4. ownership cannot be claimed through the entity API");
@@ -292,11 +290,9 @@ async function main() {
     );
     console.log("  ⊘ BASE44_ACCESS_TOKEN is set — skipping the misconfiguration checks");
   } else {
-    // Two ways a missing variable surfaces, both of which used to be reported as
-    // something else: inside a path builder (listApps reads
-    // BASE44_APPS_FOLDER_ID) — was a 400 "invalid parameters", blaming the
-    // caller; or inside send(), reading the token. Whichever fires first for this
-    // env, the answer must be 501.
+    // A missing variable can surface inside a path builder (createApp reads
+    // BASE44_ORG_ID) or inside send(), reading the token. Wherever it fires, the
+    // answer must be 501 — not a 400 that blames the caller.
     const noConfig = await platform({ action: "listApps" }, USER);
     check(
       "a missing token on a platform call is 501, not 400 or 500",
@@ -347,61 +343,87 @@ async function main() {
   }
 
   {
-    console.log("\n8. listApps pages through the shared folder");
-    // A fake folder, newest first: 300 apps by other builders, with this user's
-    // three spread through it — one on the first page, two far below it.
-    const folder = Array.from({ length: 300 }, (_, i) => ({ id: `app-${i}` }));
-    const owned = new Set(["app-3", "app-180", "app-290"]);
+    console.log("\n8. listApps finds a user's apps in the shared workspace");
+    // A fake workspace, newest first: 1,200 apps by other builders, with this
+    // user's three spread through it — one near the top, two far below.
+    const workspace = Array.from({ length: 1200 }, (_, i) => ({ id: `app-${i}` }));
+    const owned = new Set(["app-3", "app-700", "app-1150"]);
     let calls = 0;
-    const fetchPage = async (skip: number, size: number) => {
+    const listing = (cap = Infinity) => async (skip: number, size: number) => {
       calls++;
-      return folder.slice(skip, skip + size);
+      return workspace.slice(skip, skip + Math.min(size, cap));
     };
     const ids = (rows: unknown[]) => rows.map((r) => (r as { id: string }).id);
 
-    const all = await pageOwnedApps(owned, fetchPage, { limit: 50, skip: 0 });
+    calls = 0;
+    const all = await pageOwnedApps(owned, listing(), { limit: 50, skip: 0 });
     check(
-      "apps beyond the first upstream page are found",
-      JSON.stringify(ids(all)) === JSON.stringify(["app-3", "app-180", "app-290"]),
-      JSON.stringify(ids(all)),
+      "apps far down the listing are found",
+      ids(all).join() === "app-3,app-700,app-1150",
+      ids(all).join(),
     );
-    check("...in folder order", ids(all)[0] === "app-3");
+    check(
+      "...in pages of the large size",
+      calls === Math.ceil(1150 / LIST_PAGE_SIZE),
+      `${calls} calls`,
+    );
 
     calls = 0;
-    const first = await pageOwnedApps(owned, fetchPage, { limit: 1, skip: 0 });
+    const small = await pageOwnedApps(new Set(["app-3", "app-90"]), async (skip, size) => {
+      calls++;
+      return workspace.slice(0, 300).slice(skip, skip + size);
+    }, { limit: 50, skip: 0 });
+    check(
+      "a workspace that fits one page costs one request",
+      ids(small).join() === "app-3,app-90" && calls === 1,
+      `${calls} calls`,
+    );
+
+    calls = 0;
+    const capped = await pageOwnedApps(owned, listing(100), { limit: 50, skip: 0 });
+    check(
+      "an upstream that silently caps the page size still yields every app",
+      ids(capped).join() === "app-3,app-700,app-1150",
+      `${calls} calls, ${ids(capped).join()}`,
+    );
+
+    calls = 0;
+    const first = await pageOwnedApps(owned, listing(), { limit: 1, skip: 0 });
     check("a full page stops the walk early", ids(first).join() === "app-3" && calls === 1, `${calls} calls`);
 
-    calls = 0;
-    const second = await pageOwnedApps(owned, fetchPage, { limit: 1, skip: 1 });
-    check("skip counts the user's apps, not the folder's", ids(second).join() === "app-180", ids(second).join());
+    const second = await pageOwnedApps(owned, listing(), { limit: 1, skip: 1 });
+    check("skip counts the user's apps, not the workspace's", ids(second).join() === "app-700", ids(second).join());
 
     calls = 0;
-    await pageOwnedApps(new Set(["app-10", "app-20"]), fetchPage, { limit: 50, skip: 0 });
-    check("finding every owned app stops the walk", calls === 1, `${calls} calls`);
-
-    calls = 0;
-    const trashed = await pageOwnedApps(new Set(["app-3", "gone"]), fetchPage, { limit: 50, skip: 0 });
+    const trashed = await pageOwnedApps(new Set(["app-3", "gone"]), listing(), { limit: 50, skip: 0 });
     check(
-      "an owned app missing from the folder is left out, and the walk ends with the folder",
-      ids(trashed).join() === "app-3" && calls === Math.ceil(folder.length / FOLDER_PAGE_SIZE) + (folder.length % FOLDER_PAGE_SIZE === 0 ? 1 : 0),
+      "an owned app missing from the listing is left out, and the walk ends with it",
+      // Every page, plus the one empty request that proves the end.
+      ids(trashed).join() === "app-3" && calls === Math.ceil(workspace.length / LIST_PAGE_SIZE) + 1,
       `${calls} calls, ${ids(trashed).join()}`,
+    );
+
+    const safe = await pageOwnedApps(owned, listing(), { limit: 50, skip: 0, pageSize: SAFE_LIST_PAGE_SIZE });
+    check(
+      "the known-good page size finds the same apps",
+      ids(safe).join() === "app-3,app-700,app-1150",
+      ids(safe).join(),
     );
 
     // An app that moves up between two requests shows up on two pages.
     const shifting = async (skip: number, size: number) =>
-      skip === 0 ? [{ id: "app-1" }, ...folder.slice(1, size)] : [{ id: "app-1" }];
+      skip === 0 ? [{ id: "app-1" }, ...workspace.slice(1, size)] : skip < 1000 ? [{ id: "app-1" }] : [];
     const deduped = await pageOwnedApps(new Set(["app-1", "never"]), shifting, { limit: 50, skip: 0 });
     check("an app seen twice is listed once", ids(deduped).join() === "app-1", ids(deduped).join());
 
     calls = 0;
     const endless = async () => {
       calls++;
-      return folder.slice(0, FOLDER_PAGE_SIZE);
+      return workspace.slice(0, SAFE_LIST_PAGE_SIZE);
     };
     await pageOwnedApps(new Set(["never"]), endless, { limit: 50, skip: 0 });
-    check("the walk is capped", calls === MAX_FOLDER_PAGES, `${calls} calls`);
+    check("the walk is capped", calls === MAX_LIST_PAGES, `${calls} calls`);
   }
-
   await cleanup();
 
   console.log(

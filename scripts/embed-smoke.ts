@@ -3,7 +3,7 @@
  *
  * The route hands out a URL that signs its holder into an app, so the gate is the
  * whole subject: the credential behind it is workspace-scoped, and without the
- * authored-or-installed check it would mint into any app in the folder. Sections
+ * authored-or-installed check it would mint into any app in the workspace. Sections
  * 1–2 fence that. Section 3 covers the shape the frame depends on — a refusal is
  * a 200 with `embed_url: null`, never an error, because a frame that cannot be
  * signed in still has to render.

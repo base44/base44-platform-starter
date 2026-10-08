@@ -110,7 +110,7 @@ Scope matters as much as value. Netlify lets each variable carry a different val
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | as today | same client |
 | `DATABASE_URL`, `DIRECT_URL` | production Neon | the **preview Neon branch** |
 | `NEXT_PUBLIC_BASE44_APP_HOST` | as today | same value |
-| `BASE44_ACCESS_TOKEN`, `BASE44_SVC_KEY`, `BASE44_ORG_ID`, `BASE44_PLATFORM_HOST`, `BASE44_APPS_FOLDER_ID` | as today | optional — see §7 |
+| `BASE44_ACCESS_TOKEN`, `BASE44_SVC_KEY`, `BASE44_ORG_ID`, `BASE44_PLATFORM_HOST` | as today | optional — see §7 |
 
 Then confirm **Build & deploy → Deploy Previews** is enabled for pull requests — it is what
 produces the `deploy-preview-N` URLs the proxy forwards to.
@@ -169,8 +169,8 @@ curl -s -D- -o /dev/null -b /tmp/j -X POST --data "csrfToken=$T" "$P/api/auth/si
   its viewer, but production data all the same. Making it follow the deployment means a
   per-environment skill, or teaching the builder instructions to inject the shell's own origin.
 - **Base44 credentials on previews or not.** Without them a preview says the builder is not
-  configured and everything else works. With them, previews share the production account, workspace
-  and apps folder, so apps built in a preview land in production's folder — and their `AppOwnership`
+  configured and everything else works. With them, previews share the production account and
+  workspace, so apps built in a preview land in production's workspace — and their `AppOwnership`
   rows land in the preview's database branch, so production will not list them. Nothing per-user
   exists upstream to get out of step.
 - **`next-auth` v5 is still beta** (`5.0.0-beta.32`). It is what ships the redirect proxy; v4 has no

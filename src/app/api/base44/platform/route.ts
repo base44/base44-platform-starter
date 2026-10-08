@@ -10,14 +10,13 @@
  *
  *   * `createApp` records an `AppOwnership` row for the caller, server-side, in
  *     the same request that creates the app;
- *   * every action that names an app (`APP_SCOPED`, and `fileAppsInFolder`'s ids)
- *     is refused with a 404 unless the caller has that row. `listApps` pages
- *     through the folder until it has the caller's own apps, so a user's older
- *     apps are not hidden behind everyone else's newer ones.
+ *   * every action that names an app (`APP_SCOPED`) is refused with a 404 unless
+ *     the caller has that row. `listApps` reads the workspace's apps and keeps
+ *     the caller's own — see `listOwnedApps`.
  *
  * Governance stays intact: the token is pinned to the enterprise workspace via
- * `X-Active-Workspace-Id` (and `createApp`'s `organization_id`), and apps are
- * filed into the `sunny_widgets` folder.
+ * `X-Active-Workspace-Id` (and `createApp`'s `organization_id`). That workspace is
+ * Sunny's alone, so it is the whole boundary upstream.
  *
  * `OPS` below is an **allow-list, and it is the only limit** on what a compromised
  * frontend could reach: the access token can do anything the account can, and
@@ -30,12 +29,17 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { requireSessionUser } from "@/lib/auth";
 import { errorResponse, jsonError } from "@/lib/apiResponse";
-import { ownedAppIds, ownsApp, pageOwnedApps, recordOwnership } from "@/lib/appOwnership";
+import {
+  SAFE_LIST_PAGE_SIZE,
+  ownedAppIds,
+  ownsApp,
+  pageOwnedApps,
+  recordOwnership,
+} from "@/lib/appOwnership";
 import {
   APP_SECRETS,
   MissingConfigError,
   accessToken,
-  appsFolderId,
   orgId,
   platformHost,
   resolveAppSecrets,
@@ -98,9 +102,9 @@ const OPS: Record<string, Op> = {
         sort: "-updated_date",
         limit: num(p.limit, 20),
         skip: String(Number(p.skip) || 0),
+        // Every app in the workspace, not only the account's own: apps built before
+        // the one-account model belong to other identities and still need listing.
         filter_mode: "all_apps_workspace",
-        // Only apps this builder filed in — the workspace holds others.
-        folder_id: appsFolderId(),
       })}`,
   },
   createApp: {
@@ -134,12 +138,6 @@ const OPS: Record<string, Op> = {
     method: "PUT",
     path: (p) => `/api/apps/${str(p.appId)}`,
     body: (p) => ({ name: str(p.name).trim() }),
-  },
-  /** Moves apps into the folder. Returns an empty body on success. */
-  fileAppsInFolder: {
-    method: "POST",
-    path: () => `/api/app-folders/${appsFolderId()}/items`,
-    body: (p) => ({ app_ids: p.appIds }),
   },
   getConversation: {
     method: "GET",
@@ -236,12 +234,6 @@ function validate(action: string, params: Params): string | null {
   if (APP_SCOPED.includes(action) && !CLEAN_ID.test(str(params.appId))) {
     return `Action "${action}" needs a valid appId.`;
   }
-  if (action === "fileAppsInFolder") {
-    const ids = params.appIds;
-    if (!Array.isArray(ids) || !ids.length || !ids.every((id) => CLEAN_ID.test(str(id)))) {
-      return 'Action "fileAppsInFolder" needs a non-empty "appIds" array of app ids.';
-    }
-  }
   if (action === "createApp" && !params.prompt)
     return 'Action "createApp" needs a "prompt" string.';
   if (action === "renameApp") {
@@ -272,24 +264,16 @@ function validate(action: string, params: Params): string | null {
 }
 
 /**
- * Whether the caller built every app this call names. Runs after validation and
+ * Whether the caller built the app this call names. Runs after validation and
  * before anything reaches upstream, so a foreign id never costs a platform call.
  * Vacuously true for actions that name no app.
  */
-async function ownsEveryApp(actor: RlsActor, action: string, params: Params): Promise<boolean> {
-  const ids = APP_SCOPED.includes(action)
-    ? [str(params.appId)]
-    : action === "fileAppsInFolder"
-      ? (params.appIds as unknown[]).map(str)
-      : [];
-  for (const id of ids) {
-    if (!(await ownsApp(actor, id))) return false;
-  }
-  return true;
+async function ownsNamedApp(actor: RlsActor, action: string, params: Params): Promise<boolean> {
+  return APP_SCOPED.includes(action) ? ownsApp(actor, str(params.appId)) : true;
 }
 
 /**
- * 404, not 403: the folder is shared by every builder, and "that app exists but
+ * 404, not 403: the workspace is shared by every builder, and "that app exists but
  * is not yours" tells a caller more than "no such app". It is also the answer
  * they would get for an id that was never created, which keeps the two cases
  * indistinguishable.
@@ -382,30 +366,37 @@ async function forward(
 }
 
 /**
- * The caller's apps, a page at a time. The folder is shared by every builder, so
- * it is read in folder-sized pages and filtered by `AppOwnership` until the
- * caller's page is full — see `pageOwnedApps`. An app with no row — built before
- * ownership was tracked, or by another tool against the same folder — is visible
- * to nobody here.
+ * The caller's apps, a page at a time. The workspace is shared by every builder,
+ * so its listing is read and filtered by `AppOwnership` until the caller's page is
+ * full — see `pageOwnedApps`. An app with no row — built before ownership was
+ * tracked, or in Base44's own UI — is visible to nobody here.
  */
 async function listOwnedApps(actor: RlsActor, params: Params, t0: number): Promise<unknown[]> {
   // Read config first, so an unconfigured deployment is a 501 even for a user
   // who owns nothing.
   accessToken();
-  appsFolderId();
 
   const owned = await ownedAppIds(actor);
   if (owned.size === 0) return [];
 
-  return pageOwnedApps(
-    owned,
-    async (skip, size) => {
-      const page = { limit: size, skip };
-      const data = await forward("listApps", OPS.listApps, OPS.listApps.path(page), undefined, page, t0);
-      return Array.isArray(data) ? data : [];
-    },
-    { limit: Number(num(params.limit, 20)), skip: Math.max(0, Number(params.skip) || 0) },
-  );
+  const fetchPage = async (skip: number, size: number) => {
+    const page = { limit: size, skip };
+    const data = await forward("listApps", OPS.listApps, OPS.listApps.path(page), undefined, page, t0);
+    return Array.isArray(data) ? data : [];
+  };
+  const range = { limit: Number(num(params.limit, 20)), skip: Math.max(0, Number(params.skip) || 0) };
+
+  try {
+    return await pageOwnedApps(owned, fetchPage, range);
+  } catch (err) {
+    // Base44 documents no maximum `limit`. A large page that it refuses as a bad
+    // request gets one retry at the size known to work, rather than an empty list.
+    if (!(err instanceof UpstreamFailure) || err.response.status !== 400) throw err;
+    console.warn(
+      `[base44/platform] listApps refused a large page; retrying at ${SAFE_LIST_PAGE_SIZE}`,
+    );
+    return pageOwnedApps(owned, fetchPage, { ...range, pageSize: SAFE_LIST_PAGE_SIZE });
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -431,7 +422,6 @@ export async function POST(req: NextRequest) {
       accessToken();
       orgId();
       platformHost();
-      appsFolderId();
       return NextResponse.json({ configured: true });
     }
 
@@ -447,7 +437,7 @@ export async function POST(req: NextRequest) {
     const invalid = validate(action, params);
     if (invalid) return jsonError(400, "invalid_request", invalid);
 
-    if (!(await ownsEveryApp(actor, action, params))) {
+    if (!(await ownsNamedApp(actor, action, params))) {
       console.warn(`[base44/platform] END action=${action} status=404 not the owner`);
       return notFound(action);
     }
@@ -463,7 +453,7 @@ export async function POST(req: NextRequest) {
       body = op.body ? JSON.stringify(op.body(params)) : undefined;
     } catch (err) {
       // A missing env var surfaces here, because the path builders read config
-      // (folder id, org id). That is a deployment problem, not bad input — let it
+      // (org id). That is a deployment problem, not bad input — let it
       // reach the outer handler, which answers 501 bridge_misconfigured. Without
       // this re-throw it would masquerade as a 400 and send you hunting a caller
       // bug that does not exist.
