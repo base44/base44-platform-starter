@@ -15,13 +15,13 @@ export default function AppPreview({ app }: { app: App | null }) {
 
   if (!app) {
     return (
-      <main className="flex items-center justify-center bg-muted p-6 text-sm text-muted-foreground">
+      <main className="flex h-full items-center justify-center bg-muted p-6 text-sm text-muted-foreground">
         Describe your app in the chat. It shows up here.
       </main>
     );
   }
   return (
-    <main className="relative">
+    <main className="relative h-full">
       {!loaded && (
         <p className="absolute inset-0 flex items-center justify-center bg-muted text-sm text-muted-foreground">Starting the preview…</p>
       )}

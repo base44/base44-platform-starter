@@ -24,8 +24,14 @@ export default function Workspace() {
   return (
     <div className="grid h-dvh grid-cols-[1fr_400px] grid-rows-[auto_minmax(0,1fr)]">
       <Header apps={apps} selectedAppId={selectedAppId} onSelectApp={setSelectedAppId} />
-      <AppPreview key={`preview-${selectedAppId}`} app={selectedApp} />
-      <Chat key={`chat-${selectedAppId}`} app={selectedApp} onAppCreated={onAppCreated} />
+      {/* The chat comes first in the page so its server call goes first: Next.js runs a page's
+          server calls one at a time, and the preview's can wait half a minute for the sandbox. */}
+      <div className="col-start-2 row-start-2 min-h-0">
+        <Chat key={`chat-${selectedAppId}`} app={selectedApp} onAppCreated={onAppCreated} />
+      </div>
+      <div className="col-start-1 row-start-2 min-h-0">
+        <AppPreview key={`preview-${selectedAppId}`} app={selectedApp} />
+      </div>
     </div>
   );
 }

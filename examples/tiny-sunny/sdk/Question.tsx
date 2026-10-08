@@ -1,5 +1,7 @@
 "use client";
 import { useState, type ComponentType } from "react";
+import { Button } from "./ui/button";
+import { Input as TextInput } from "./ui/input";
 import type { Base44Chat, Question as QuestionData } from "./useBase44Chat";
 
 // One component per question kind. Each gets the question and the actions that answer it.
@@ -30,10 +32,9 @@ export function Question({ question, chat, components }: { question: QuestionDat
   }
 }
 
-// The defaults: plain elements with Tailwind classes, so they fit most apps as they are.
+// The defaults are built from the library's own copies of shadcn's Button and Input (./ui),
+// so they match a shadcn app without importing anything from it.
 const card = "flex flex-col gap-3 rounded-xl border p-3 text-sm";
-const primary = "rounded-md bg-black px-3 py-1.5 text-white";
-const secondary = "rounded-md border px-3 py-1.5";
 
 function DefaultChoice({ questions, answer, decline }: ChoiceProps) {
   const [picked, setPicked] = useState<string[][]>([]);
@@ -49,16 +50,16 @@ function DefaultChoice({ questions, answer, decline }: ChoiceProps) {
           <p className="font-medium">{q.text}</p>
           <div className="flex flex-wrap gap-1">
             {q.options.map((option) => (
-              <button key={option} onClick={() => toggle(i, option, q.multi)} className={picked[i]?.includes(option) ? primary : secondary}>
+              <Button key={option} size="sm" variant={picked[i]?.includes(option) ? "default" : "outline"} onClick={() => toggle(i, option, q.multi)}>
                 {option}
-              </button>
+              </Button>
             ))}
           </div>
         </div>
       ))}
       <div className="flex gap-2">
-        <button onClick={() => answer(picked)} className={primary}>Send answer</button>
-        <button onClick={decline} className={secondary}>Decline</button>
+        <Button size="sm" onClick={() => answer(picked)}>Send answer</Button>
+        <Button size="sm" variant="ghost" onClick={decline}>Decline</Button>
       </div>
     </div>
   );
@@ -69,11 +70,11 @@ function DefaultInput({ fields, submit, decline }: InputProps) {
   return (
     <div className={card}>
       {fields.map((field) => (
-        <input key={field} type="password" placeholder={field} onChange={(e) => setValues({ ...values, [field]: e.target.value })} className="rounded-md border px-2 py-1" />
+        <TextInput key={field} type="password" placeholder={field} onChange={(e) => setValues({ ...values, [field]: e.target.value })} />
       ))}
       <div className="flex gap-2">
-        <button onClick={() => submit(values)} className={primary}>Save</button>
-        <button onClick={decline} className={secondary}>Decline</button>
+        <Button size="sm" onClick={() => submit(values)}>Save</Button>
+        <Button size="sm" variant="ghost" onClick={decline}>Decline</Button>
       </div>
     </div>
   );
@@ -83,10 +84,10 @@ function DefaultApproval({ action, reason, approve, decline }: ApprovalProps) {
   return (
     <div className={card}>
       <p className="font-medium">Allow {action}?</p>
-      {reason && <p className="text-xs opacity-70">{reason}</p>}
+      {reason && <p className="text-xs text-muted-foreground">{reason}</p>}
       <div className="flex gap-2">
-        <button onClick={approve} className={primary}>Approve</button>
-        <button onClick={decline} className={secondary}>Decline</button>
+        <Button size="sm" onClick={approve}>Approve</Button>
+        <Button size="sm" variant="ghost" onClick={decline}>Decline</Button>
       </div>
     </div>
   );
@@ -96,7 +97,7 @@ function DefaultUnknown({ action, decline }: UnknownProps) {
   return (
     <div className={`${card} flex-row items-center`}>
       <p className="flex-1">{action} is waiting for you.</p>
-      <button onClick={decline} className={secondary}>Decline</button>
+      <Button size="sm" variant="ghost" onClick={decline}>Decline</Button>
     </div>
   );
 }
