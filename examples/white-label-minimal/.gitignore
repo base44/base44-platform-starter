@@ -1,9 +1,5 @@
-node_modules/
 .next/
-.env*
-!.env.example
-*.tsbuildinfo
 next-env.d.ts
-test-results/
-playwright-report/
-generated/
+tsconfig.tsbuildinfo
+.env.local
+node_modules/

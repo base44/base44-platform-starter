@@ -1,24 +1,5 @@
-import { getSessionUser } from "../server/auth";
-import GoogleSignInButton from "../client/components/GoogleSignInButton";
-import TinySunnyLogo from "../client/components/TinySunnyLogo";
-import Workspace from "../client/components/Workspace";
+import Workspace from "../components/Workspace";
 
-export default async function Page() {
-  const user = await getSessionUser();
-  if (!user)
-    return (
-      <main className="login-page">
-        <div className="login-card">
-          <TinySunnyLogo />
-          <h1>
-            A little idea.
-            <br />
-            Your next app.
-          </h1>
-          <p>Build something useful. Make it yours.</p>
-          <GoogleSignInButton />
-        </div>
-      </main>
-    );
-  return <Workspace name={user.name || user.email} />;
+export default function Page() {
+  return <Workspace />;
 }

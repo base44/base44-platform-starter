@@ -21,7 +21,12 @@
         "name": "next"
       }
     ],
-    "allowJs": true
+    "allowJs": true,
+    "paths": {
+      "@/*": [
+        "./*"
+      ]
+    }
   },
   "include": [
     "next-env.d.ts",
@@ -31,7 +36,6 @@
     ".next/dev/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules",
-    "tests/fixture"
+    "node_modules"
   ]
 }
