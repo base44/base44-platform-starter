@@ -20,11 +20,14 @@
  *      rather than 500 — and says nothing about the environment
  *   6. a submit's request id is stable per tool call, so a retried POST dedupes
  *      instead of resuming and charging the turn twice
+ *   7. `listApps` finds a user's apps however deep in the shared folder they sit,
+ *      instead of filtering one upstream page and hiding older apps
  *
  * Needs `npm run dev`. Writes throwaway rows to DATABASE_URL and cleans up:
  *   npm run base44:smoke
  */
 
+import { FOLDER_PAGE_SIZE, MAX_FOLDER_PAGES, pageOwnedApps } from "../src/lib/appOwnership";
 import { submitRequestId } from "../src/lib/base44Platform";
 import { prisma } from "../src/lib/prisma";
 import { SESSION_COOKIE_NAME, sessionCookie } from "./session-cookie";
@@ -341,6 +344,62 @@ async function main() {
       "...and does not change on a resubmit, so a retry dedupes",
       a === submitRequestId("toolu_abc"),
     );
+  }
+
+  {
+    console.log("\n8. listApps pages through the shared folder");
+    // A fake folder, newest first: 300 apps by other builders, with this user's
+    // three spread through it — one on the first page, two far below it.
+    const folder = Array.from({ length: 300 }, (_, i) => ({ id: `app-${i}` }));
+    const owned = new Set(["app-3", "app-180", "app-290"]);
+    let calls = 0;
+    const fetchPage = async (skip: number, size: number) => {
+      calls++;
+      return folder.slice(skip, skip + size);
+    };
+    const ids = (rows: unknown[]) => rows.map((r) => (r as { id: string }).id);
+
+    const all = await pageOwnedApps(owned, fetchPage, { limit: 50, skip: 0 });
+    check(
+      "apps beyond the first upstream page are found",
+      JSON.stringify(ids(all)) === JSON.stringify(["app-3", "app-180", "app-290"]),
+      JSON.stringify(ids(all)),
+    );
+    check("...in folder order", ids(all)[0] === "app-3");
+
+    calls = 0;
+    const first = await pageOwnedApps(owned, fetchPage, { limit: 1, skip: 0 });
+    check("a full page stops the walk early", ids(first).join() === "app-3" && calls === 1, `${calls} calls`);
+
+    calls = 0;
+    const second = await pageOwnedApps(owned, fetchPage, { limit: 1, skip: 1 });
+    check("skip counts the user's apps, not the folder's", ids(second).join() === "app-180", ids(second).join());
+
+    calls = 0;
+    await pageOwnedApps(new Set(["app-10", "app-20"]), fetchPage, { limit: 50, skip: 0 });
+    check("finding every owned app stops the walk", calls === 1, `${calls} calls`);
+
+    calls = 0;
+    const trashed = await pageOwnedApps(new Set(["app-3", "gone"]), fetchPage, { limit: 50, skip: 0 });
+    check(
+      "an owned app missing from the folder is left out, and the walk ends with the folder",
+      ids(trashed).join() === "app-3" && calls === Math.ceil(folder.length / FOLDER_PAGE_SIZE) + (folder.length % FOLDER_PAGE_SIZE === 0 ? 1 : 0),
+      `${calls} calls, ${ids(trashed).join()}`,
+    );
+
+    // An app that moves up between two requests shows up on two pages.
+    const shifting = async (skip: number, size: number) =>
+      skip === 0 ? [{ id: "app-1" }, ...folder.slice(1, size)] : [{ id: "app-1" }];
+    const deduped = await pageOwnedApps(new Set(["app-1", "never"]), shifting, { limit: 50, skip: 0 });
+    check("an app seen twice is listed once", ids(deduped).join() === "app-1", ids(deduped).join());
+
+    calls = 0;
+    const endless = async () => {
+      calls++;
+      return folder.slice(0, FOLDER_PAGE_SIZE);
+    };
+    await pageOwnedApps(new Set(["never"]), endless, { limit: 50, skip: 0 });
+    check("the walk is capped", calls === MAX_FOLDER_PAGES, `${calls} calls`);
   }
 
   await cleanup();

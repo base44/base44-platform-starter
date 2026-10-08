@@ -70,3 +70,53 @@ export async function ownersOf(appId: string): Promise<string[]> {
   });
   return rows.map((r) => r.createdBy);
 }
+
+/** Apps per upstream folder request while collecting a user's apps. */
+export const FOLDER_PAGE_SIZE = 50;
+/** Upstream requests one listing may make, so a huge folder cannot hold a request open. */
+export const MAX_FOLDER_PAGES = 40;
+
+/**
+ * One page of `owned`'s apps, in folder order (newest first), out of a folder
+ * that every builder shares.
+ *
+ * Base44 cannot be asked for "this user's apps" — upstream they all belong to the
+ * one account — so the folder is read page by page and filtered here until the
+ * caller's page is full, every owned app has turned up, or the folder runs out.
+ * Filtering one upstream page instead would hide a user's older apps behind
+ * everyone else's newer ones.
+ *
+ * The folder stays the source rather than fetching each owned id: it is what
+ * drops a trashed app and brings a restored one back, which the webhook receiver
+ * relies on. Pure over `fetchPage`, so it is testable without a platform.
+ */
+export async function pageOwnedApps(
+  owned: ReadonlySet<string>,
+  fetchPage: (skip: number, size: number) => Promise<unknown[]>,
+  { limit, skip }: { limit: number; skip: number },
+): Promise<unknown[]> {
+  const want = skip + limit;
+  const found: unknown[] = [];
+  // An app can move up the folder between two requests and be seen twice.
+  const seen = new Set<string>();
+
+  for (let page = 0; page < MAX_FOLDER_PAGES; page++) {
+    const rows = await fetchPage(page * FOLDER_PAGE_SIZE, FOLDER_PAGE_SIZE);
+    for (const app of rows) {
+      const id = (app as { id?: unknown } | null)?.id;
+      if (typeof id === "string" && owned.has(id) && !seen.has(id)) {
+        seen.add(id);
+        found.push(app);
+      }
+    }
+    if (found.length >= want || seen.size >= owned.size || rows.length < FOLDER_PAGE_SIZE) {
+      return found.slice(skip, want);
+    }
+  }
+
+  console.warn(
+    `[appOwnership] stopped after ${MAX_FOLDER_PAGES} folder pages with ` +
+      `${seen.size} of ${owned.size} owned apps found`,
+  );
+  return found.slice(skip, want);
+}

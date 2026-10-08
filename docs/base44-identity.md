@@ -81,7 +81,7 @@ The platform proxy enforces it in three places:
 
 ```
 createApp          → create upstream, then recordOwnership(actor, app.id) — same request
-listApps           → list the folder upstream, keep only ids the caller owns
+listApps           → page through the folder upstream, keep only ids the caller owns
 every other action → ownsApp(actor, appId) first; 404 otherwise, before any upstream call
 ```
 
@@ -152,7 +152,7 @@ What this repo holds itself to, asserted by `npm run base44:smoke`:
    variable.
 2. **Every app-scoped action checks ownership before upstream.** For every action in `APP_SCOPED`,
    and for every id `fileAppsInFolder` is given.
-3. **`listApps` answers with the caller's apps only.**
+3. **`listApps` answers with the caller's apps only, wherever they sit in the folder.**
 4. **`AppOwnership` cannot be created or updated through the entity API.** Only the proxy writes it.
 5. **A foreign app is a 404 even on an unconfigured deployment** — the ownership gate runs before
    config is read, so the two kinds of failure never blur.
@@ -162,8 +162,10 @@ What this repo holds itself to, asserted by `npm run base44:smoke`:
 - The isolation lives entirely in your database. Whatever you call your ownership table, make it
   the *only* thing your proxy consults, check it before every upstream call, and never let a client
   write it.
-- Keep `listApps` cheap: it is the folder intersected with the caller's rows, so a user with many
-  peers in the folder may need a higher upstream `limit` than the page shows.
+- Don't filter a single upstream page. The folder is shared, so one page of it can hold none of a
+  user's apps while their older ones sit further down. This repo reads the folder page by page until
+  the caller's page is full (`pageOwnedApps()`), and keeps the folder as the source rather than
+  fetching each owned id, because the folder is what drops a trashed app.
 - Offboarding a user does not touch Base44. Their apps remain in the account; what they lose is the
   rows that let them reach those apps through you.
 - If you ever need per-user Base44 identities again — real accounts, with Base44 enforcing the

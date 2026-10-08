@@ -82,7 +82,8 @@ from the caller.
 
 Platform apps carry no per-your-user owner (they all belong to the integration account), so
 filtering to "this user's apps" is a local join. This repo keeps an `AppOwnership` row per created
-app and intersects, server-side, before answering.
+app and intersects server-side, reading the folder page by page until the caller's page is full —
+filtering a single page would hide a user's older apps behind other users' newer ones.
 
 ### `POST /api/apps` — create
 

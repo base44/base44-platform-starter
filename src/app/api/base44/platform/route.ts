@@ -11,8 +11,9 @@
  *   * `createApp` records an `AppOwnership` row for the caller, server-side, in
  *     the same request that creates the app;
  *   * every action that names an app (`APP_SCOPED`, and `fileAppsInFolder`'s ids)
- *     is refused with a 404 unless the caller has that row. `listApps` returns
- *     only the folder entries the caller owns.
+ *     is refused with a 404 unless the caller has that row. `listApps` pages
+ *     through the folder until it has the caller's own apps, so a user's older
+ *     apps are not hidden behind everyone else's newer ones.
  *
  * Governance stays intact: the token is pinned to the enterprise workspace via
  * `X-Active-Workspace-Id` (and `createApp`'s `organization_id`), and apps are
@@ -29,7 +30,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { requireSessionUser } from "@/lib/auth";
 import { errorResponse, jsonError } from "@/lib/apiResponse";
-import { ownedAppIds, ownsApp, recordOwnership } from "@/lib/appOwnership";
+import { ownedAppIds, ownsApp, pageOwnedApps, recordOwnership } from "@/lib/appOwnership";
 import {
   APP_SECRETS,
   MissingConfigError,
@@ -305,6 +306,108 @@ const misconfigured = () =>
     { status: 501 },
   );
 
+/** A request that failed upstream, already turned into the answer for the browser. */
+class UpstreamFailure extends Error {
+  constructor(readonly response: NextResponse) {
+    super("upstream failure");
+  }
+}
+
+/**
+ * One call to Base44, and its answer: the parsed body, or an `UpstreamFailure`
+ * carrying the response to give the browser instead. A missing env var is thrown
+ * as itself, so the outer handler answers 501.
+ */
+async function forward(
+  action: string,
+  op: Op,
+  path: string,
+  body: string | undefined,
+  params: Params,
+  t0: number,
+): Promise<unknown> {
+  let upstream: Response;
+  try {
+    upstream = await send(path, op, body, params);
+  } catch (err) {
+    // `send()` reads config, so a missing token surfaces here. Let it reach the
+    // outer handler for a 501: reporting it as a 502 would both misdiagnose it
+    // and echo the env var names into the response body.
+    if (err instanceof MissingConfigError) throw err;
+    console.error(`[base44/platform] ${action} ${op.method} ${path} never completed`, err);
+    throw new UpstreamFailure(
+      NextResponse.json(
+        { error: `Upstream request failed: ${(err as Error).message}` },
+        { status: 502 },
+      ),
+    );
+  }
+
+  const text = await upstream.text();
+  console.log(`[base44/platform] UPSTREAM ${action} → ${upstream.status} (${Date.now() - t0}ms)`);
+
+  if (upstream.status === 401) {
+    // There is no per-user grant to re-mint: the one credential is the
+    // integration account's token, so a 401 means it was revoked or expired.
+    // That is a deployment problem — the same bucket as a missing variable —
+    // and nothing the user can fix by retrying, so the UI shows its
+    // unavailable state. (A 403 passes through below: it is the account's
+    // *role* — a non-Editor cannot deploy — and the detail says so.)
+    console.error(
+      `[base44/platform] Base44 refused the integration account's token: ${text.slice(0, 300)}`,
+    );
+    throw new UpstreamFailure(misconfigured());
+  }
+
+  if (!upstream.ok) {
+    // Surface the upstream detail: the caller is this repo's own UI.
+    throw new UpstreamFailure(
+      NextResponse.json(
+        { error: `Upstream ${upstream.status}`, detail: text.slice(0, 500) },
+        { status: upstream.status },
+      ),
+    );
+  }
+
+  if (!text) return { ok: true };
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    console.error(`[base44/platform] END action=${action} non-JSON response`);
+    throw new UpstreamFailure(
+      NextResponse.json({ error: "Upstream returned a body that is not JSON." }, { status: 502 }),
+    );
+  }
+}
+
+/**
+ * The caller's apps, a page at a time. The folder is shared by every builder, so
+ * it is read in folder-sized pages and filtered by `AppOwnership` until the
+ * caller's page is full — see `pageOwnedApps`. An app with no row — built before
+ * ownership was tracked, or by another tool against the same folder — is visible
+ * to nobody here.
+ */
+async function listOwnedApps(actor: RlsActor, params: Params, t0: number): Promise<unknown[]> {
+  // Read config first, so an unconfigured deployment is a 501 even for a user
+  // who owns nothing.
+  accessToken();
+  appsFolderId();
+
+  const owned = await ownedAppIds(actor);
+  if (owned.size === 0) return [];
+
+  return pageOwnedApps(
+    owned,
+    async (skip, size) => {
+      const page = { limit: size, skip };
+      const data = await forward("listApps", OPS.listApps, OPS.listApps.path(page), undefined, page, t0);
+      return Array.isArray(data) ? data : [];
+    },
+    { limit: Number(num(params.limit, 20)), skip: Math.max(0, Number(params.skip) || 0) },
+  );
+}
+
 export async function POST(req: NextRequest) {
   const t0 = Date.now();
   try {
@@ -349,6 +452,10 @@ export async function POST(req: NextRequest) {
       return notFound(action);
     }
 
+    if (action === "listApps") {
+      return NextResponse.json(await listOwnedApps(actor, params, t0));
+    }
+
     let path: string;
     let body: string | undefined;
     try {
@@ -365,65 +472,7 @@ export async function POST(req: NextRequest) {
       return jsonError(400, "invalid_request", `Invalid parameters for "${action}"`);
     }
 
-    let upstream: Response;
-    try {
-      upstream = await send(path, op, body, params);
-    } catch (err) {
-      // `send()` reads config, so a missing token surfaces here. Let it reach the
-      // outer handler for a 501: reporting it as a 502 would both misdiagnose it
-      // and echo the env var names into the response body.
-      if (err instanceof MissingConfigError) throw err;
-      console.error(`[base44/platform] ${action} ${op.method} ${path} never completed`, err);
-      return NextResponse.json(
-        { error: `Upstream request failed: ${(err as Error).message}` },
-        { status: 502 },
-      );
-    }
-
-    const text = await upstream.text();
-    console.log(`[base44/platform] UPSTREAM ${action} → ${upstream.status} (${Date.now() - t0}ms)`);
-
-    if (upstream.status === 401) {
-      // There is no per-user grant to re-mint: the one credential is the
-      // integration account's token, so a 401 means it was revoked or expired.
-      // That is a deployment problem — the same bucket as a missing variable —
-      // and nothing the user can fix by retrying, so the UI shows its
-      // unavailable state. (A 403 passes through below: it is the account's
-      // *role* — a non-Editor cannot deploy — and the detail says so.)
-      console.error(
-        `[base44/platform] Base44 refused the integration account's token: ${text.slice(0, 300)}`,
-      );
-      return misconfigured();
-    }
-
-    if (!upstream.ok) {
-      // Surface the upstream detail: the caller is this repo's own UI.
-      return NextResponse.json(
-        { error: `Upstream ${upstream.status}`, detail: text.slice(0, 500) },
-        { status: upstream.status },
-      );
-    }
-
-    if (!text) return NextResponse.json({ ok: true });
-
-    let data: unknown;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      console.error(`[base44/platform] END action=${action} non-JSON response`);
-      return NextResponse.json(
-        { error: "Upstream returned a body that is not JSON." },
-        { status: 502 },
-      );
-    }
-
-    // The folder is shared by every builder; the caller sees their own apps only.
-    // An app with no AppOwnership row — built before ownership was tracked, or by
-    // another tool against the same folder — is visible to nobody here.
-    if (action === "listApps" && Array.isArray(data)) {
-      const owned = await ownedAppIds(actor);
-      data = data.filter((app) => owned.has(str((app as { id?: unknown })?.id)));
-    }
+    const data = await forward(action, op, path, body, params, t0);
 
     // Ownership is recorded in the same request that creates the app, and never
     // from the browser: a client-written row would let anyone claim any app.
@@ -446,6 +495,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(data);
   } catch (err) {
+    if (err instanceof UpstreamFailure) return err.response;
     if (err instanceof MissingConfigError) {
       console.error("[base44/platform]", err.message);
       return misconfigured();
