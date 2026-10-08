@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { getPreviewUrl } from "../server/base44";
 import type { App } from "../types";
 
-// The app's live sandbox. It updates by itself while the builder works.
+// The app's latest build. Changes from a build show when the app is opened again.
 // Workspace remounts it per app.
 export default function AppPreview({ app }: { app: App | null }) {
   const [url, setUrl] = useState<string | null>(null);
