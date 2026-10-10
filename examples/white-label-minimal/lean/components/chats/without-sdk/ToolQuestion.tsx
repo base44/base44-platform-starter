@@ -11,7 +11,7 @@ export default function ToolQuestion({ appId, messageId, tool }: { appId: string
   const [sent, setSent] = useState<"approved" | "declined" | null>(null);
   const [secrets, setSecrets] = useState<Record<string, string>>({});
 
-  function answer(approve: boolean, extraUserInput?: object) {
+  function answer(approve: boolean, extraUserInput?: Record<string, unknown>) {
     setSent(approve ? "approved" : "declined");
     submitToolCallInput(appId, { toolCallId: tool.id!, messageId, approve, extraUserInput }).catch(() => setSent(null));
   }

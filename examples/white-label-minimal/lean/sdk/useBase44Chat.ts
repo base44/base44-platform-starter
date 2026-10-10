@@ -1,192 +1,160 @@
 "use client";
-import { useEffect, useState } from "react";
-import { Base44PlatformClient, type ChatMessage, type ToolCall, type ToolQuestionArguments, type ToolSecretArguments } from "@base44/platform";
+/* eslint-disable react-hooks/refs -- The actions read `server` and `onAppCreated` through refs so their
+   identity stays stable with inline props. The refs are read only when an action runs, never during
+   render, but the rule cannot follow the bound question actions that `toItems` creates. */
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Base44PlatformClient } from "@base44/platform";
+import type { ChatMessage } from "@base44/platform";
+import { mergeMessage, sortMessages, toItems } from "./chat-items";
+import type { Base44Chat, Base44ChatOptions, ChatError, ChatPhase } from "./chat.types";
 
-// The client half of the library: one app's chat, headless. It keeps the live
-// connection, turns Base44's messages into items, and gives you the actions.
-// You render the items.
-
-export type Base44App = { id: string; name: string };
-
-// An answer to a question the builder waits on. Declining is approve: false.
-export type ToolCallAnswer = { toolCallId: string; messageId: string; approve: boolean; extraUserInput?: object };
-
-// The four calls your server provides. Each wraps one Base44 REST call with your
-// credentials, in any backend language:
-//   createApp           POST /api/apps
-//   openLiveSession     POST /api/service/socket-sessions   (returns the socket URL and session token)
-//   sendMessage         POST /api/apps/{id}/chat/message
-//   submitToolCallInput POST /api/apps/{id}/chat/submit-tool-call-input
-export type Base44ChatServer = {
-  createApp(prompt: string): Promise<Base44App>;
-  openLiveSession(appId: string): Promise<{ serverUrl: string; sessionToken: string }>;
-  sendMessage(appId: string, content: string): Promise<void>;
-  submitToolCallInput(appId: string, answer: ToolCallAnswer): Promise<void>;
-};
-
-export type ChatItem = {
-  id: string;
-  role: "user" | "assistant";
-  text: string;
-  steps: ChatStep[];
-  question?: Question; // set while the builder waits on you
-};
-
-export type ChatStep = { id: string; label: string; status: "running" | "waiting" | "done" | "error" };
-
-export type Question =
-  | { kind: "choice"; questions: { text: string; options: string[]; multi: boolean }[] }
-  | { kind: "input"; fields: string[] }
-  | { kind: "approval"; action: string; reason: string }
-  | { kind: "unknown"; action: string };
-
-export function useBase44Chat({ appId, server }: {
-  appId: string | null; // null: no app yet, so the first send creates one
-  server: Base44ChatServer;
-}) {
+/**
+ * Runs one app's builder chat, headless: it keeps the live connection through
+ * the platform client, turns Base44's messages into {@link ChatItem | items}, and binds
+ * every open question to the actions that answer it. You render the items.
+ *
+ * All Base44 calls go through the {@link Base44ChatServer | server} you pass, so no
+ * credential reaches the browser. Actions never throw: a failure lands in
+ * {@link Base44Chat.error}, and a question whose reply failed opens again.
+ *
+ * Requires a browser environment. One live session is opened per app; switching
+ * `appId` closes the old one and starts over.
+ *
+ * @param options - The app to watch, your backend's calls, and what to do with a created app.
+ * @returns The conversation, its phase and error, and the actions `send`, `create` and `clearError`.
+ *
+ * @example
+ * ```typescript
+ * // Render the items, answer a question
+ * const chat = useBase44Chat({ appId, server, onAppCreated: selectApp });
+ * return (
+ *   <>
+ *     {chat.items.map((item) => (
+ *       <div key={item.id}>
+ *         <p>{item.text}</p>
+ *         {item.steps.map((step) => <small key={step.id}>{step.label}</small>)}
+ *         {item.question?.kind === "approval" && (
+ *           <button onClick={item.question.approve}>Allow {item.question.action}</button>
+ *         )}
+ *       </div>
+ *     ))}
+ *     {chat.error && <p role="alert">{chat.error.message}</p>}
+ *     <button disabled={!chat.canSend} onClick={() => (appId ? chat.send(prompt) : chat.create(prompt))}>Send</button>
+ *   </>
+ * );
+ * ```
+ */
+export function useBase44Chat({ appId, server, onAppCreated }: Base44ChatOptions): Base44Chat {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [building, setBuilding] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(!!appId);
   const [creating, setCreating] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<ChatError | null>(null);
   const [answered, setAnswered] = useState<string[]>([]);
+
+  // Switching apps starts over: the state resets in the same render that sees the new id.
+  const [shownAppId, setShownAppId] = useState(appId);
+  if (shownAppId !== appId) {
+    setShownAppId(appId);
+    setMessages([]);
+    setBuilding(false);
+    setLoading(!!appId);
+    setError(null);
+    setAnswered([]);
+  }
+
+  // The server and the callback are read through refs, kept current after every render, so an
+  // inline `server={{…}}` or arrow never reopens the socket and never changes an action's identity.
+  const serverRef = useRef(server);
+  const onAppCreatedRef = useRef(onAppCreated);
+  useEffect(() => {
+    serverRef.current = server;
+    onAppCreatedRef.current = onAppCreated;
+  });
+
+  const fail = useCallback((e: { code?: string; message?: string }) => setError({ message: e.message || "Something went wrong", code: e.code }), []);
 
   // Live updates: a snapshot on every connect, then events.
   useEffect(() => {
-    setMessages([]);
-    setBuilding(false);
-    setError("");
-    setAnswered([]);
-    setLoading(!!appId);
     if (!appId) return;
     let stopped = false;
-    let socket: { close(): void } | undefined;
-    const fail = (e: { code?: string; message?: string }) => setError(e.code || e.message || "Live updates failed");
+    let session: { close(): void } | undefined;
+    const failLive = (e: { code?: string; message?: string }) => fail({ message: e.message || "Live updates failed", code: e.code });
 
-    server
+    serverRef.current
       .openLiveSession(appId)
       .then(({ serverUrl, sessionToken }) => {
         if (stopped) return;
-        const builder = new Base44PlatformClient({ serverUrl, getSessionToken: () => sessionToken }).builder.init({ onError: fail });
-        socket = builder;
+        const builder = new Base44PlatformClient({ serverUrl, getSessionToken: () => sessionToken }).builder.init({ onError: failLive });
+        session = builder;
         builder.subscribe(appId, {
-          onSnapshot: (snapshot) => {
+          onSnapshot: snapshot => {
             setMessages(snapshot.messages);
             setLoading(false);
             setBuilding(snapshot.status?.state === "processing");
           },
-          onEvent: (event) => {
-            if (event.type === "message.updated") {
-              const message = event.data.message;
-              // Replace the message with the same id in place, or add it at the end.
-              setMessages((all) => (all.some((m) => m.id === message.id) ? all.map((m) => (m.id === message.id ? message : m)) : [...all, message]));
-            }
+          onEvent: event => {
+            if (event.type === "message.updated") setMessages(all => mergeMessage(all, event.data.message));
+            if (event.type === "message.removed") setMessages(all => all.filter(m => m.id !== event.data.message_id));
             if (event.type === "app.status_changed") setBuilding(event.data.status?.state === "processing");
           },
-          onError: fail,
+          onError: failLive,
         });
         return builder.connect();
       })
-      .catch(fail);
+      .catch(failLive);
 
     return () => {
       stopped = true;
-      socket?.close();
+      session?.close();
     };
-  }, [appId, server]);
+  }, [appId, fail]);
 
-  // Events can arrive out of order, so order messages by when they were created.
-  const sorted = [...messages].sort((a, b) => (a.metadata?.created_date ?? "").localeCompare(b.metadata?.created_date ?? ""));
-  const isOpen = (tool: ToolCall) => tool.status === "waiting_for_user_input" && !answered.includes(tool.id!);
+  // Answers one tool call. Its id leaves `answered` again if the submit fails, so the question comes back.
+  const respond = useCallback(
+    (toolCallId: string, messageId: string, approve: boolean, extraUserInput?: Record<string, unknown>) => {
+      if (!appId) return Promise.resolve();
+      setError(null);
+      setAnswered(ids => [...ids, toolCallId]);
+      return serverRef.current.submitToolCallInput(appId, { toolCallId, messageId, approve, extraUserInput }).catch((e: Error) => {
+        setAnswered(ids => ids.filter(id => id !== toolCallId));
+        fail(e);
+      });
+    },
+    [appId, fail],
+  );
 
-  const items: ChatItem[] = sorted.map((m) => {
-    const waiting = m.tool_calls?.find(isOpen);
-    return {
-      id: m.id!,
-      role: m.role ?? "assistant",
-      text: m.content ?? "",
-      steps: (m.tool_calls ?? []).map((tool) => ({
-        id: tool.id!,
-        label: [tool.name, ...(tool.display?.file_paths ?? [])].join(" "),
-        status: stepStatus(tool),
-      })),
-      question: waiting && toQuestion(waiting),
-    };
-  });
-  const pending = sorted.flatMap((m) => (m.tool_calls ?? []).filter(isOpen).map((tool) => ({ tool, messageId: m.id! })))[0];
+  const sorted = useMemo(() => sortMessages(messages), [messages]);
+  const items = useMemo(() => toItems(sorted, answered, respond), [sorted, answered, respond]);
 
-  let status = error;
-  if (!status && creating) status = "Creating app…";
-  else if (!status && loading) status = "Loading the conversation…";
-  else if (!status && pending) status = "Waiting for your answer";
-  else if (!status && building) status = "Building…";
+  const waiting = items.some(item => item.question);
+  const phase: ChatPhase = creating ? "creating" : loading ? "loading" : waiting ? "waiting" : building ? "building" : "idle";
 
-  // The first prompt creates the app and returns it; every later one goes to it.
-  async function send(prompt: string): Promise<Base44App | undefined> {
-    if (appId) {
-      server.sendMessage(appId, prompt).catch(fail);
-      return;
-    }
-    setCreating(true);
-    try {
-      return await server.createApp(prompt);
-    } catch (e) {
-      fail(e as Error);
-    } finally {
-      setCreating(false);
-    }
-  }
+  const send = useCallback(
+    (prompt: string) => {
+      if (!appId) return Promise.resolve();
+      setError(null);
+      return serverRef.current.sendMessage(appId, prompt).catch(fail);
+    },
+    [appId, fail],
+  );
 
-  // Answers the open question. Declining is always an answer.
-  function reply(approve: boolean, extraUserInput?: object) {
-    if (!appId || !pending) return;
-    setAnswered((ids) => [...ids, pending.tool.id!]);
-    server.submitToolCallInput(appId, { toolCallId: pending.tool.id!, messageId: pending.messageId, approve, extraUserInput }).catch(fail);
-  }
+  const create = useCallback(
+    async (prompt: string) => {
+      setError(null);
+      setCreating(true);
+      try {
+        onAppCreatedRef.current?.(await serverRef.current.createApp(prompt));
+      } catch (e) {
+        fail(e as Error);
+      } finally {
+        setCreating(false);
+      }
+    },
+    [fail],
+  );
 
-  function fail(e: { message?: string }) {
-    setError(e.message || "Something went wrong");
-  }
+  const clearError = useCallback(() => setError(null), []);
 
-  return {
-    items,
-    status,
-    building,
-    canSend: !creating && !pending,
-    send,
-    answerChoices: (picked: string[][]) =>
-      reply(true, { answers: picked.map((labels, i) => ({ question_index: i, selected_labels: labels })).filter((a) => a.selected_labels.length) }),
-    submitInputs: (values: Record<string, string>) => reply(true, { secrets: values }),
-    approve: () => reply(true),
-    decline: () => reply(false),
-    messages: sorted, // Base44's raw messages, for UIs that map them themselves
-  };
-}
-
-export type Base44Chat = ReturnType<typeof useBase44Chat>;
-
-function stepStatus(tool: ToolCall): ChatStep["status"] {
-  if (tool.status === "running") return "running";
-  if (tool.status === "waiting_for_user_input") return "waiting";
-  if (tool.status === "error") return "error";
-  return "done";
-}
-
-// Base44's question formats, as one simple shape per kind.
-function toQuestion(tool: ToolCall): Question {
-  const kind = tool.waiting_on?.kind;
-  if (kind === "choice") {
-    const questions = (tool.arguments as ToolQuestionArguments)?.questions ?? [];
-    return {
-      kind,
-      questions: questions.map((q) => ({
-        text: q.question ?? "",
-        options: (q.options ?? []).map((o) => (typeof o === "string" ? o : o.label ?? "")),
-        multi: !!q.multi_select,
-      })),
-    };
-  }
-  if (kind === "input") return { kind, fields: ((tool.arguments as ToolSecretArguments)?.secrets_schema ?? []).map((f) => f.secretName ?? "") };
-  if (kind === "approval") return { kind, action: tool.name ?? "", reason: tool.approval?.reason ?? tool.approval?.details?.summary ?? "" };
-  return { kind: "unknown", action: tool.name ?? "" };
+  return { items, phase, error, canSend: !creating && !waiting, send, create, clearError, messages: sorted };
 }

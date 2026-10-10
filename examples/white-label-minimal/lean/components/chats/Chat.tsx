@@ -17,7 +17,7 @@ const versions = { chatscope: ChatscopeChat, shadcn: ShadcnChat, "assistant-ui":
 // For comparing: three chats that talk to Base44 by hand (without-sdk/), and one on the
 // headless library (sdk/). Pick one with the tabs.
 export default function Chat(props: ChatProps) {
-  const [version, setVersion] = useState<keyof typeof versions>("chatscope");
+  const [version, setVersion] = useState<keyof typeof versions>("headless");
   const Version = versions[version];
 
   return (

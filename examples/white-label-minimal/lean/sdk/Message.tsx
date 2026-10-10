@@ -1,44 +1,61 @@
 "use client";
-import type { ComponentType } from "react";
-import { Question, defaultQuestionComponents, type QuestionComponents } from "./Question";
-import type { Base44Chat, ChatItem, ChatStep } from "./useBase44Chat";
+import type { MessageProps, QuestionProps } from "./components.types";
+import { useChatComponents } from "./context";
 
-export type TextProps = { text: string; role: ChatItem["role"] };
-export type StepProps = ChatStep;
-
-// Every part of a message, in one flat set. Replace any of them; the rest stay default.
-export type MessageComponents = {
-  Text: ComponentType<TextProps>;
-  Step: ComponentType<StepProps>;
-} & QuestionComponents;
-
-// Renders one chat item: its text, its steps, and its open question.
-export function Message({ item, chat, components }: { item: ChatItem; chat: Base44Chat; components?: Partial<MessageComponents> }) {
-  const parts = { ...defaultMessageComponents, ...components };
-  const { Text, Step } = parts;
+/**
+ * Draws one chat item with the parts from the nearest {@link Base44ChatProvider}: its text,
+ * one `Step` per tool call, and its open question. It adds no element of its own, so wrap it
+ * to lay messages out. Outside a provider it uses the unstyled fallbacks.
+ *
+ * @param props - The item to draw.
+ * @returns The item's parts.
+ *
+ * @example
+ * ```tsx
+ * // Align by role in your own wrapper
+ * <div className={item.role === "user" ? "ml-auto" : ""}>
+ *   <Message item={item} />
+ * </div>
+ * ```
+ */
+export function Message({ item }: MessageProps) {
+  const { Text, Step } = useChatComponents().message;
   return (
-    <div className={item.role === "user" ? "ml-auto max-w-[80%]" : "flex flex-col gap-1"}>
+    <>
       {item.text && <Text text={item.text} role={item.role} />}
-      {item.steps.map((step) => (
+      {item.steps.map(step => (
         <Step key={step.id} {...step} />
       ))}
-      {item.question && <Question question={item.question} chat={chat} components={parts} />}
-    </div>
+      {item.question && <Question question={item.question} />}
+    </>
   );
 }
 
-function DefaultText({ text, role }: TextProps) {
-  return <p className={role === "user" ? "rounded-2xl bg-black/5 px-4 py-2 whitespace-pre-wrap" : "whitespace-pre-wrap"}>{text}</p>;
+/**
+ * Draws an open question with the part for its kind, from the nearest
+ * {@link Base44ChatProvider}. The part receives the question with its bound actions.
+ * {@link Message} already draws an item's question; use this to show it somewhere else.
+ *
+ * @param props - The question to draw.
+ * @returns The part for the question's kind.
+ *
+ * @example
+ * ```tsx
+ * // The open question pinned above the composer
+ * const open = items.find((item) => item.question)?.question;
+ * return open ? <Question question={open} /> : null;
+ * ```
+ */
+export function Question({ question }: QuestionProps) {
+  const { Choice, Input, Approval, Unknown } = useChatComponents().question;
+  switch (question.kind) {
+    case "choice":
+      return <Choice {...question} />;
+    case "input":
+      return <Input {...question} />;
+    case "approval":
+      return <Approval {...question} />;
+    default:
+      return <Unknown {...question} />;
+  }
 }
-
-const stepIcons: Record<ChatStep["status"], string> = { running: "…", waiting: "?", done: "✓", error: "✗" };
-
-function DefaultStep({ label, status }: StepProps) {
-  return (
-    <p className="text-xs opacity-60">
-      {stepIcons[status]} {label}
-    </p>
-  );
-}
-
-export const defaultMessageComponents: MessageComponents = { Text: DefaultText, Step: DefaultStep, ...defaultQuestionComponents };
