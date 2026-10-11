@@ -3,8 +3,6 @@
 // the server, with Tiny's credentials, so the browser never sees them.
 // Docs: https://docs.base44.com/developers/white-label/the-build-turn
 import type { App, ToolCallAnswer } from "../types";
-import { auth } from "./auth";
-import { prisma } from "./db";
 
 const host = process.env.BASE44_PLATFORM_HOST!;
 const workspaceId = process.env.BASE44_WORKSPACE_ID!;
@@ -18,22 +16,8 @@ function headers(json = true) {
   };
 }
 
-// Base44 sees one account behind every app, so Tiny keeps its users apart itself: it
-// records who created each app, and every call about an app checks that first.
-async function currentUser() {
-  const email = (await auth())?.user?.email?.toLowerCase();
-  if (!email) throw new Error("Sign in to continue.");
-  return email;
-}
-
-async function requireOwner(appId: string) {
-  const owned = await prisma.appOwnership.findFirst({ where: { appId, createdBy: await currentUser() } });
-  if (!owned) throw new Error("App not found.");
-}
-
 // Create app. The build starts inside this call.
 export async function createApp(prompt: string): Promise<App> {
-  const email = await currentUser();
   const response = await fetch(`${host}/api/apps`, {
     method: "POST",
     headers: headers(),
@@ -41,20 +25,23 @@ export async function createApp(prompt: string): Promise<App> {
   });
   if (!response.ok) throw new Error(`Create app failed: ${response.status}`);
   const app = await response.json();
-  await prisma.appOwnership.create({ data: { appId: app.id, appName: app.name, createdBy: email } });
   return { id: app.id, name: app.name };
 }
 
-// The user's apps, newest first, from Tiny's own records.
+// List apps, newest first. With BASE44_ACCOUNT_EMAIL set, only the ones the integration
+// account created: the workspace can hold apps by other accounts, whose previews this
+// token cannot open.
 export async function listApps(): Promise<App[]> {
-  const owned = await prisma.appOwnership.findMany({ where: { createdBy: await currentUser() }, orderBy: { createdAt: "desc" } });
-  return owned.map((row) => ({ id: row.appId, name: row.appName ?? "" }));
+  const response = await fetch(`${host}/api/apps?sort=-created_date`, { headers: headers(false) });
+  if (!response.ok) throw new Error(`List apps failed: ${response.status}`);
+  const apps: { id: string; name: string; created_by: string }[] = await response.json();
+  const account = process.env.BASE44_ACCOUNT_EMAIL;
+  return apps.filter((app) => !account || app.created_by === account).map((app) => ({ id: app.id, name: app.name }));
 }
 
 // Create socket session: a read-only live-updates session for one app. It takes the
 // workspace key; the browser gets only the session token.
 export async function openLiveSession(appId: string) {
-  await requireOwner(appId);
   const response = await fetch(`${host}/api/service/socket-sessions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${process.env.BASE44_SVC_KEY}`, "Content-Type": "application/json" },
@@ -67,7 +54,6 @@ export async function openLiveSession(appId: string) {
 
 // Send chat message: every prompt after the first.
 export async function sendMessage(appId: string, content: string) {
-  await requireOwner(appId);
   const request = fetch(`${host}/api/apps/${appId}/chat/message`, {
     method: "POST",
     headers: headers(),
@@ -79,7 +65,6 @@ export async function sendMessage(appId: string, content: string) {
 // Submit tool-call input: answer a question the builder waits on, or decline it.
 // The request id stays the same on a retry, so Base44 resumes the turn only once.
 export async function submitToolCallInput(appId: string, answer: ToolCallAnswer) {
-  await requireOwner(appId);
   const request = fetch(`${host}/api/apps/${appId}/chat/submit-tool-call-input`, {
     method: "POST",
     headers: { ...headers(), "X-Request-ID": `submit-${answer.toolCallId}` },
@@ -93,15 +78,14 @@ export async function submitToolCallInput(appId: string, answer: ToolCallAnswer)
   await acceptedOrRunning(request, "Submit answer");
 }
 
-// The preview signs in as one test user, not the Tiny user: Base44 will not sign in the
-// app's owner, editors or service accounts through an embed.
+// Until Tiny has sign-in, everyone views the preview as this one app user. Base44 will
+// not sign in the app's owner, editors or service accounts through an embed.
 const PREVIEW_VIEWER = "viewer@example.com";
 
 // Embed the app, signed in as the viewer: the latest build, or the live sandbox that
 // shows a build as it runs (boot it first). Provision the viewer, then mint a one-time
 // URL (valid 60 seconds).
 export async function getPreviewUrl(appId: string, target: "latest_preview" | "live_preview") {
-  await requireOwner(appId);
   const embedHeaders = { api_key: process.env.BASE44_SVC_KEY!, "X-Active-Workspace-Id": workspaceId, "Content-Type": "application/json" };
   await fetch(`${host}/api/apps/${appId}/users/provisions`, {
     method: "POST",
@@ -122,7 +106,6 @@ export async function getPreviewUrl(appId: string, target: "latest_preview" | "l
 // longer than a hosted server function may run. Ask it to boot, wait a few seconds, and
 // let the caller ask again until it is up.
 export async function bootLivePreview(appId: string) {
-  await requireOwner(appId);
   const request = fetch(`${host}/api/apps/${appId}/sandbox/preview-url`, { headers: headers(false) });
   request.catch(() => {});
   const response = await Promise.race([request, new Promise<null>((resolve) => setTimeout(resolve, 5000, null))]);
