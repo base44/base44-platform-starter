@@ -56,7 +56,7 @@ export function useLiveChat({ app, onAppCreated }: {
 
   // Events can arrive out of order, so order messages by when they were created.
   const sorted = [...messages].sort((a, b) => (a.metadata?.created_date ?? "").localeCompare(b.metadata?.created_date ?? ""));
-  // The docs: lock the message box while a question is open.
+  // Lock the message box while a question is open or a build runs.
   const waiting = sorted.some((m) => m.tool_calls?.some((tool) => tool.status === "waiting_for_user_input"));
 
   let status = error;
@@ -67,7 +67,14 @@ export function useLiveChat({ app, onAppCreated }: {
 
   // The first prompt creates the app; every later one goes to it.
   async function send(prompt: string) {
-    if (appId) return void sendMessage(appId, prompt).catch((e) => setError(e.message));
+    if (appId) {
+      setBuilding(true);
+      sendMessage(appId, prompt).catch((e) => {
+        setBuilding(false);
+        setError(e.message);
+      });
+      return;
+    }
     setCreating(true);
     try {
       onAppCreated(await createApp(prompt));
@@ -77,5 +84,5 @@ export function useLiveChat({ app, onAppCreated }: {
     setCreating(false);
   }
 
-  return { messages: sorted, status, building, canSend: !creating && !waiting, send };
+  return { messages: sorted, status, building, canSend: !creating && !waiting && !building, send };
 }
