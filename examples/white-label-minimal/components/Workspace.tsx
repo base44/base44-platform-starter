@@ -32,12 +32,11 @@ export default function Workspace() {
   return (
     <div className="grid h-dvh grid-cols-[1fr_400px] grid-rows-[auto_minmax(0,1fr)]">
       <Header apps={apps} selectedAppId={appId} onSelectApp={setAppId} />
-      {/* The chat comes first so its server call runs first: Next.js runs them one at a time. */}
-      <div className="col-start-2 row-start-2 min-h-0">
-        <Chat key={appId} app={app} onAppCreated={onAppCreated} onBuildingChange={onBuildingChange} />
-      </div>
-      <div className="col-start-1 row-start-2 min-h-0">
+      <div className="min-h-0">
         <AppPreview key={appId} app={app} live={liveAppId === appId} />
+      </div>
+      <div className="min-h-0">
+        <Chat key={appId} app={app} onAppCreated={onAppCreated} onBuildingChange={onBuildingChange} />
       </div>
     </div>
   );
