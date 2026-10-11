@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ToolCall } from "@base44/platform";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -16,8 +16,17 @@ export default function Chat({ app, onAppCreated, onBuildingChange }: {
 }) {
   const { messages, status, building, canSend, send } = useLiveChat({ app, onAppCreated });
   const [prompt, setPrompt] = useState("");
+  const end = useRef<HTMLDivElement>(null);
+  const last = messages.at(-1);
 
-  useEffect(() => onBuildingChange(building), [building, onBuildingChange]);
+  useEffect(() => {
+    onBuildingChange(building);
+  }, [building, onBuildingChange]);
+
+  // Keep the newest message in view as messages arrive and update.
+  useEffect(() => {
+    end.current?.scrollIntoView({ block: "end" });
+  }, [messages.length, last, status]);
 
   function submit() {
     if (!prompt.trim() || !canSend) return;
@@ -44,6 +53,7 @@ export default function Chat({ app, onAppCreated, onBuildingChange }: {
             </div>
           ))}
           {status && <p className="text-muted-foreground">{status}</p>}
+          <div ref={end} />
         </div>
       </ScrollArea>
       <div className="flex gap-2 border-t p-3">
