@@ -1,14 +1,14 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ToolCall } from "@base44/platform";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
+import { StickToBottom } from "use-stick-to-bottom";
 import type { App } from "../server/base44";
 import ToolQuestion from "./ToolQuestion";
 import { useLiveChat } from "./useLiveChat";
 
-// The builder chat, from shadcn's Button, Textarea and ScrollArea.
+// The builder chat, from shadcn's Button and Textarea. It stays at the newest message unless you scroll up.
 export default function Chat({ app, onAppCreated, onBuildingChange }: {
   app: App | null;
   onAppCreated: (app: App) => void;
@@ -16,17 +16,10 @@ export default function Chat({ app, onAppCreated, onBuildingChange }: {
 }) {
   const { messages, status, building, canSend, send } = useLiveChat({ app, onAppCreated });
   const [prompt, setPrompt] = useState("");
-  const end = useRef<HTMLDivElement>(null);
-  const last = messages.at(-1);
 
   useEffect(() => {
     onBuildingChange(building);
   }, [building, onBuildingChange]);
-
-  // Keep the newest message in view as messages arrive and update.
-  useEffect(() => {
-    end.current?.scrollIntoView({ block: "end" });
-  }, [messages.length, last, status]);
 
   function submit() {
     if (!prompt.trim() || !canSend) return;
@@ -36,8 +29,8 @@ export default function Chat({ app, onAppCreated, onBuildingChange }: {
 
   return (
     <div className="flex h-full flex-col border-l">
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="flex flex-col gap-3 p-4 text-sm">
+      <StickToBottom className="relative min-h-0 flex-1" initial="instant">
+        <StickToBottom.Content className="flex flex-col gap-3 p-4 text-sm">
           {messages.map((m) => (
             <div key={m.id} className="flex flex-col gap-1">
               {m.content && (
@@ -53,9 +46,8 @@ export default function Chat({ app, onAppCreated, onBuildingChange }: {
             </div>
           ))}
           {status && <p className="text-muted-foreground">{status}</p>}
-          <div ref={end} />
-        </div>
-      </ScrollArea>
+        </StickToBottom.Content>
+      </StickToBottom>
       <div className="flex gap-2 border-t p-3">
         <Textarea
           value={prompt}
