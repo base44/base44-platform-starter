@@ -59,6 +59,13 @@ Open [Tiny Sunny](http://127.0.0.1:3001).
 - **Publishing.** The builder is told it isn't available.
 - **Closing the live session.** It expires after an hour.
 
+## Waiting on Base44
+
+- **The live sandbox doesn't start on its own yet.** Until `embed-url` starts it for a
+  `live_preview` URL, the live preview stays on "Preview is starting up".
+- **Send and submit wait for the whole build turn.** Until they can return once the turn starts
+  (`?wait=false`), a long turn can outlast a hosted function and end in a timeout.
+
 ## Deploy to Netlify
 
 Use the repository root as the base directory and `examples/white-label-minimal` as the package
