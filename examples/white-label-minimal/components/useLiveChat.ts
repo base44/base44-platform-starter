@@ -68,12 +68,12 @@ export function useLiveChat({ app, onAppCreated }: {
   // The first prompt creates the app; every later one goes to it.
   async function send(prompt: string) {
     if (appId) {
-      // The build starts now; the socket confirms it a moment later.
       setBuilding(true);
-      return void sendMessage(appId, prompt).catch((e) => {
+      sendMessage(appId, prompt).catch((e) => {
         setBuilding(false);
         setError(e.message);
       });
+      return;
     }
     setCreating(true);
     try {
