@@ -8,7 +8,6 @@ import type { App } from "../server/base44";
 import ToolQuestion from "./ToolQuestion";
 import { useLiveChat } from "./useLiveChat";
 
-// The builder chat, from shadcn's Button and Textarea. It stays at the newest message unless you scroll up.
 export default function Chat({ app, onAppCreated, onBuildingChange }: {
   app: App | null;
   onAppCreated: (app: App) => void;
