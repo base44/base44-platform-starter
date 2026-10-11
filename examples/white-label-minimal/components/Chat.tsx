@@ -27,33 +27,37 @@ export default function Chat({ app, onAppCreated, onBuildingChange }: {
   }
 
   return (
-    <div className="flex h-full flex-col border-l">
-      <StickToBottom className="relative min-h-0 flex-1" initial="instant">
-        <StickToBottom.Content className="flex flex-col gap-3 p-4 text-sm">
+    <div className="chat">
+      <StickToBottom className="chat-scroll" initial="instant">
+        <StickToBottom.Content className="chat-messages">
           {messages.map((m) => (
-            <div key={m.id} className="flex flex-col gap-1">
+            <div key={m.id} className="chat-message">
               {m.content && (
-                <p className={m.role === "user" ? "ml-auto max-w-[85%] rounded-lg bg-secondary px-3 py-2" : "whitespace-pre-wrap"}>{m.content}</p>
+                <p className={m.role === "user" ? "chat-user-text" : "chat-assistant-text"}>{m.content}</p>
               )}
               {m.tool_calls?.map((tool) =>
                 tool.status === "waiting_for_user_input" && app ? (
                   <ToolQuestion key={tool.id} appId={app.id} messageId={m.id!} tool={tool} />
                 ) : (
-                  <p key={tool.id} className="text-xs text-muted-foreground">{toolLine(tool)}</p>
+                  <p key={tool.id} className="chat-tool-line">{toolLine(tool)}</p>
                 ),
               )}
             </div>
           ))}
-          {status && <p className="text-muted-foreground">{status}</p>}
+          {status && <p className="chat-status">{status}</p>}
         </StickToBottom.Content>
       </StickToBottom>
-      <div className="flex gap-2 border-t p-3">
+      <div className="chat-composer">
         <Textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), submit())}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter" || e.shiftKey) return;
+            e.preventDefault();
+            submit();
+          }}
           placeholder={app ? "Ask for a change…" : "Describe your app…"}
-          className="min-h-9 resize-none"
+          className="chat-input"
           rows={1}
         />
         <Button onClick={submit} disabled={!canSend}>Send</Button>

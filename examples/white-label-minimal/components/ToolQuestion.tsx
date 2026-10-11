@@ -34,12 +34,12 @@ export default function ToolQuestion({ appId, messageId, tool }: { appId: string
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded-lg border p-3">
+    <div className="question">
       {kind === "approval" && <p>Allow {tool.name}? {tool.approval?.reason ?? tool.approval?.details?.summary}</p>}
       {questions.map((q, i) => (
-        <div key={i} className="flex flex-col gap-2">
-          <p className="font-medium">{q.question}</p>
-          <div className="flex flex-wrap gap-2">
+        <div key={i} className="question-item">
+          <p className="question-title">{q.question}</p>
+          <div className="question-options">
             {(q.options ?? []).map((o) => (typeof o === "string" ? o : o.label ?? "")).map((label) => (
               <Button key={label} size="sm" variant={picked[i]?.includes(label) ? "default" : "outline"} onClick={() => pick(i, label, q.multi_select)}>
                 {label}
@@ -51,7 +51,7 @@ export default function ToolQuestion({ appId, messageId, tool }: { appId: string
       {fields.map(({ secretName = "" }) => (
         <Input key={secretName} type="password" placeholder={secretName} onChange={(e) => setSecrets({ ...secrets, [secretName]: e.target.value })} />
       ))}
-      <div className="flex gap-2">
+      <div className="question-actions">
         <Button size="sm" onClick={submit} disabled={sent}>{kind === "approval" ? "Allow" : "Submit"}</Button>
         <Button size="sm" variant="ghost" onClick={() => answer(false)} disabled={sent}>Decline</Button>
       </div>

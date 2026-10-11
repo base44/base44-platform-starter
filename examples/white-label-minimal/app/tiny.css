@@ -1,0 +1,85 @@
+/* Tiny's own classes. Unlayered, so they win over the shadcn components' defaults. */
+
+.workspace {
+  @apply grid h-dvh grid-cols-[1fr_400px] grid-rows-[auto_minmax(0,1fr)];
+}
+
+.header {
+  @apply col-span-2 flex h-14 shrink-0 items-center gap-3 border-b px-4;
+}
+.header-logo {
+  @apply h-6 w-auto;
+}
+.header-divider {
+  @apply data-[orientation=vertical]:h-5;
+}
+
+.app-selector {
+  @apply w-72;
+}
+.app-selector-menu {
+  @apply max-h-96 w-80;
+}
+.app-selector-name {
+  @apply truncate;
+}
+
+.preview {
+  @apply relative h-full min-h-0;
+}
+.preview-message {
+  @apply absolute inset-0 flex items-center justify-center bg-muted p-6 text-sm text-muted-foreground;
+}
+.preview-frame {
+  @apply absolute inset-0 size-full border-0;
+}
+.preview-frame[data-hidden="true"] {
+  @apply invisible;
+}
+
+.chat {
+  @apply flex h-full min-h-0 flex-col border-l;
+}
+.chat-scroll {
+  @apply relative min-h-0 flex-1;
+}
+.chat-messages {
+  @apply flex flex-col gap-3 p-4 text-sm;
+}
+.chat-message {
+  @apply flex flex-col gap-1;
+}
+.chat-user-text {
+  @apply ml-auto max-w-[85%] rounded-lg bg-secondary px-3 py-2;
+}
+.chat-assistant-text {
+  @apply whitespace-pre-wrap;
+}
+.chat-tool-line {
+  @apply text-xs text-muted-foreground;
+}
+.chat-status {
+  @apply text-muted-foreground;
+}
+.chat-composer {
+  @apply flex gap-2 border-t p-3;
+}
+.chat-input {
+  @apply min-h-9 resize-none;
+}
+
+.question {
+  @apply flex flex-col gap-3 rounded-lg border p-3;
+}
+.question-item {
+  @apply flex flex-col gap-2;
+}
+.question-title {
+  @apply font-medium;
+}
+.question-options {
+  @apply flex flex-wrap gap-2;
+}
+.question-actions {
+  @apply flex gap-2;
+}

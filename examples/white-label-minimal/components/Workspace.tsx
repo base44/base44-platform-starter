@@ -20,7 +20,6 @@ export default function Workspace() {
     setAppId(created.id);
   }
 
-  // A build switches the preview to the live sandbox. When it ends, the list picks up a new app's name.
   const onBuildingChange = useCallback(
     (building: boolean) => {
       if (building) setLiveAppId(appId);
@@ -30,14 +29,10 @@ export default function Workspace() {
   );
 
   return (
-    <div className="grid h-dvh grid-cols-[1fr_400px] grid-rows-[auto_minmax(0,1fr)]">
+    <div className="workspace">
       <Header apps={apps} selectedAppId={appId} onSelectApp={setAppId} />
-      <div className="min-h-0">
-        <AppPreview key={appId} app={app} live={liveAppId === appId} />
-      </div>
-      <div className="min-h-0">
-        <Chat key={appId} app={app} onAppCreated={onAppCreated} onBuildingChange={onBuildingChange} />
-      </div>
+      <AppPreview key={`preview-${appId}`} app={app} live={liveAppId === appId} />
+      <Chat key={`chat-${appId}`} app={app} onAppCreated={onAppCreated} onBuildingChange={onBuildingChange} />
     </div>
   );
 }
