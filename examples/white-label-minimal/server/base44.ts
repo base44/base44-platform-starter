@@ -24,9 +24,11 @@ export async function createApp(prompt: string): Promise<App> {
 }
 
 export async function listApps(): Promise<App[]> {
-  const apps: (App & { created_by: string })[] = await call("/api/apps?sort=-created_date");
+  const apps: (App & { app_type: string; created_by: string })[] = await call("/api/apps?sort=-created_date");
   const account = process.env.BASE44_ACCOUNT_EMAIL;
-  return apps.filter((app) => !account || app.created_by === account).map(({ id, name }) => ({ id, name }));
+  return apps
+    .filter((app) => app.app_type === "user_app" && (!account || app.created_by === account))
+    .map(({ id, name }) => ({ id, name }));
 }
 
 export async function openLiveSession(appId: string) {
