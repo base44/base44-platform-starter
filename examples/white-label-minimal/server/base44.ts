@@ -12,8 +12,7 @@ const workspaceId = "6a65dbeeb723cfb1a697f349";
 // Every call takes one workspace key. Only this verification branch reads this variable; it lives in Netlify.
 const workspaceKey = process.env.TINY_LEAN_VELINO_WORKSPACE_KEY!;
 const accessToken = { api_key: workspaceKey };
-// The preview runs as staging, so it honors flag overrides: turn on white-label sockets here.
-const serviceKey = { Authorization: `Bearer ${workspaceKey}`, "X-FF-Override": "whitelabel-websockets:true" };
+const serviceKey = { Authorization: `Bearer ${workspaceKey}` };
 const embedKey = { api_key: workspaceKey };
 
 // Base44 won't sign the app's owner into an embed, so previews sign in as this app user.
