@@ -1,6 +1,4 @@
 "use server";
-// Tiny's calls to Base44. They run on the server, so the credentials never reach the browser.
-// Docs: https://docs.base44.com/developers/white-label/the-build-turn
 
 export type App = { id: string; name: string };
 export type ToolCallAnswer = { toolCallId: string; messageId: string; approve: boolean; extraUserInput?: object };
