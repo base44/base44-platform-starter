@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { App } from "../types";
 import { listApps } from "../server/base44";
 import AppPreview from "./AppPreview";
@@ -10,6 +10,8 @@ import Header from "./Header";
 export default function Workspace() {
   const [apps, setApps] = useState<App[]>([]);
   const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
+  // The app whose preview has switched to the live sandbox, once it started building.
+  const [liveAppId, setLiveAppId] = useState<string | null>(null);
   const selectedApp = apps.find((app) => app.id === selectedAppId) ?? null;
 
   useEffect(() => {
@@ -21,16 +23,18 @@ export default function Workspace() {
     setSelectedAppId(app.id);
   }
 
+  const onBuilding = useCallback(() => setLiveAppId(selectedAppId), [selectedAppId]);
+
   return (
     <div className="grid h-dvh grid-cols-[1fr_400px] grid-rows-[auto_minmax(0,1fr)]">
       <Header apps={apps} selectedAppId={selectedAppId} onSelectApp={setSelectedAppId} />
       {/* The chat comes first in the page so its server call goes first: Next.js runs a page's
           server calls one at a time, and the preview's can wait half a minute for the sandbox. */}
       <div className="col-start-2 row-start-2 min-h-0">
-        <Chat key={`chat-${selectedAppId}`} app={selectedApp} onAppCreated={onAppCreated} />
+        <Chat key={`chat-${selectedAppId}`} app={selectedApp} onAppCreated={onAppCreated} onBuilding={onBuilding} />
       </div>
       <div className="col-start-1 row-start-2 min-h-0">
-        <AppPreview key={`preview-${selectedAppId}`} app={selectedApp} />
+        <AppPreview key={`preview-${selectedAppId}`} app={selectedApp} live={liveAppId === selectedAppId} />
       </div>
     </div>
   );

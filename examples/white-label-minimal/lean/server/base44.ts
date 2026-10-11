@@ -82,10 +82,10 @@ export async function submitToolCallInput(appId: string, answer: ToolCallAnswer)
 // not sign in the app's owner, editors or service accounts through an embed.
 const PREVIEW_VIEWER = "viewer@example.com";
 
-// Embed the app: the latest build, signed in as the viewer. It answers in about a second,
-// unlike the sandbox, which can take half a minute to start: longer than a hosted server
-// function may run. Provision the viewer, then mint a one-time URL (valid 60 seconds).
-export async function getPreviewUrl(appId: string) {
+// Embed the app, signed in as the viewer: the latest build, or the live sandbox that
+// shows a build as it runs (boot it first). Provision the viewer, then mint a one-time
+// URL (valid 60 seconds).
+export async function getPreviewUrl(appId: string, target: "latest_preview" | "live_preview") {
   const embedHeaders = { api_key: process.env.BASE44_SVC_KEY!, "X-Active-Workspace-Id": workspaceId, "Content-Type": "application/json" };
   await fetch(`${host}/api/apps/${appId}/users/provisions`, {
     method: "POST",
@@ -95,11 +95,21 @@ export async function getPreviewUrl(appId: string) {
   const response = await fetch(`${host}/api/apps/${appId}/embed-url`, {
     method: "POST",
     headers: embedHeaders,
-    body: JSON.stringify({ email: PREVIEW_VIEWER, target: "latest_preview" }),
+    body: JSON.stringify({ email: PREVIEW_VIEWER, target }),
   });
   if (!response.ok) throw new Error(`Embed URL failed: ${response.status}`);
   const data = await response.json();
   return data.embed_url as string;
+}
+
+// The live sandbox is off until something boots it, and booting can take half a minute:
+// longer than a hosted server function may run. Ask it to boot, wait a few seconds, and
+// let the caller ask again until it is up.
+export async function bootLivePreview(appId: string) {
+  const request = fetch(`${host}/api/apps/${appId}/sandbox/preview-url`, { headers: headers(false) });
+  request.catch(() => {});
+  const response = await Promise.race([request, new Promise<null>((resolve) => setTimeout(resolve, 5000, null))]);
+  return !!response?.ok;
 }
 
 // Send and Submit stay open for the whole turn, and Next.js runs a page's server

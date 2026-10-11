@@ -78,5 +78,5 @@ export function useLiveChat({ app, onAppCreated }: {
     setCreating(false);
   }
 
-  return { messages: sorted, status, canSend: !creating && !waiting, send };
+  return { messages: sorted, status, building, canSend: !creating && !waiting, send };
 }

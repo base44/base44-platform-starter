@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ToolCall } from "@base44/platform";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -9,9 +9,17 @@ import ToolQuestion from "./ToolQuestion";
 import { useLiveChat } from "./useLiveChat";
 
 // The builder chat, from shadcn's Button, Textarea and ScrollArea.
-export default function Chat({ app, onAppCreated }: { app: App | null; onAppCreated: (app: App) => void }) {
-  const { messages, status, canSend, send } = useLiveChat({ app, onAppCreated });
+export default function Chat({ app, onAppCreated, onBuilding }: {
+  app: App | null;
+  onAppCreated: (app: App) => void;
+  onBuilding: () => void;
+}) {
+  const { messages, status, building, canSend, send } = useLiveChat({ app, onAppCreated });
   const [prompt, setPrompt] = useState("");
+
+  useEffect(() => {
+    if (building) onBuilding();
+  }, [building, onBuilding]);
 
   function submit() {
     if (!prompt.trim() || !canSend) return;

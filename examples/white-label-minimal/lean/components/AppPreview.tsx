@@ -1,17 +1,31 @@
 "use client";
 import { useEffect, useState } from "react";
-import { getPreviewUrl } from "../server/base44";
+import { getPreviewUrl, bootLivePreview } from "../server/base44";
 import type { App } from "../types";
 
-// The app's latest build. Changes from a build show when the app is opened again.
-// Workspace remounts it per app.
-export default function AppPreview({ app }: { app: App | null }) {
-  const [url, setUrl] = useState<string | null>(null);
-  const [loaded, setLoaded] = useState(false);
+// The app's latest build. Once the app is building, the live sandbox boots and loads
+// behind it, then takes over and shows each change as it lands. Workspace remounts it per app.
+export default function AppPreview({ app, live }: { app: App | null; live: boolean }) {
+  const [latestUrl, setLatestUrl] = useState<string | null>(null);
+  const [liveUrl, setLiveUrl] = useState<string | null>(null);
+  const [shown, setShown] = useState<"latest" | "live" | null>(null);
 
   useEffect(() => {
-    if (app) getPreviewUrl(app.id).then(setUrl, console.error);
+    if (app) getPreviewUrl(app.id, "latest_preview").then(setLatestUrl, console.error);
   }, [app]);
+
+  useEffect(() => {
+    if (!app || !live) return;
+    let stopped = false;
+    async function load() {
+      while (!stopped && !(await bootLivePreview(app!.id))) await new Promise((resolve) => setTimeout(resolve, 3000));
+      if (!stopped) setLiveUrl(await getPreviewUrl(app!.id, "live_preview"));
+    }
+    load().catch(console.error);
+    return () => {
+      stopped = true;
+    };
+  }, [app, live]);
 
   if (!app) {
     return (
@@ -22,10 +36,15 @@ export default function AppPreview({ app }: { app: App | null }) {
   }
   return (
     <main className="relative h-full">
-      {!loaded && (
+      {!shown && (
         <p className="absolute inset-0 flex items-center justify-center bg-muted text-sm text-muted-foreground">Starting the preview…</p>
       )}
-      {url && <iframe src={url} title={app.name} onLoad={() => setLoaded(true)} className="size-full border-0" />}
+      {latestUrl && shown !== "live" && (
+        <iframe src={latestUrl} title={app.name} onLoad={() => setShown("latest")} className="absolute inset-0 size-full border-0" />
+      )}
+      {liveUrl && (
+        <iframe src={liveUrl} title={app.name} onLoad={() => setShown("live")} className={`absolute inset-0 size-full border-0 ${shown === "live" ? "" : "invisible"}`} />
+      )}
     </main>
   );
 }
