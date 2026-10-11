@@ -23,7 +23,14 @@ export default function Workspace() {
     setSelectedAppId(app.id);
   }
 
-  const onBuilding = useCallback(() => setLiveAppId(selectedAppId), [selectedAppId]);
+  const onBuildingChange = useCallback(
+    (building: boolean) => {
+      if (building) setLiveAppId(selectedAppId);
+      // A build ended: fetch the list again for the name Base44 gave a new app.
+      else if (liveAppId === selectedAppId) listApps().then(setApps, console.error);
+    },
+    [selectedAppId, liveAppId],
+  );
 
   return (
     <div className="grid h-dvh grid-cols-[1fr_400px] grid-rows-[auto_minmax(0,1fr)]">
@@ -31,7 +38,7 @@ export default function Workspace() {
       {/* The chat comes first in the page so its server call goes first: Next.js runs a page's
           server calls one at a time, and the preview's can wait half a minute for the sandbox. */}
       <div className="col-start-2 row-start-2 min-h-0">
-        <Chat key={`chat-${selectedAppId}`} app={selectedApp} onAppCreated={onAppCreated} onBuilding={onBuilding} />
+        <Chat key={`chat-${selectedAppId}`} app={selectedApp} onAppCreated={onAppCreated} onBuildingChange={onBuildingChange} />
       </div>
       <div className="col-start-1 row-start-2 min-h-0">
         <AppPreview key={`preview-${selectedAppId}`} app={selectedApp} live={liveAppId === selectedAppId} />

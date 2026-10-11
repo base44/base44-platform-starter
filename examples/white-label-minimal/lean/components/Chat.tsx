@@ -9,17 +9,15 @@ import ToolQuestion from "./ToolQuestion";
 import { useLiveChat } from "./useLiveChat";
 
 // The builder chat, from shadcn's Button, Textarea and ScrollArea.
-export default function Chat({ app, onAppCreated, onBuilding }: {
+export default function Chat({ app, onAppCreated, onBuildingChange }: {
   app: App | null;
   onAppCreated: (app: App) => void;
-  onBuilding: () => void;
+  onBuildingChange: (building: boolean) => void;
 }) {
   const { messages, status, building, canSend, send } = useLiveChat({ app, onAppCreated });
   const [prompt, setPrompt] = useState("");
 
-  useEffect(() => {
-    if (building) onBuilding();
-  }, [building, onBuilding]);
+  useEffect(() => onBuildingChange(building), [building, onBuildingChange]);
 
   function submit() {
     if (!prompt.trim() || !canSend) return;

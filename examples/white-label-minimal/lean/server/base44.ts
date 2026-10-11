@@ -21,16 +21,17 @@ const customInstructions = `The user talks to you only through Tiny Sunny's chat
 dashboard, code view or Publish button, so never point them to one. Publishing isn't available yet:
 if they ask, say so.`;
 
-// Create app. The build starts inside this call.
+// Create app. The build starts inside this call. Base44 names the app from the prompt a
+// few seconds in; until the list is fetched again, the prompt stands in.
 export async function createApp(prompt: string): Promise<App> {
   const response = await fetch(`${host}/api/apps`, {
     method: "POST",
     headers: headers(),
-    body: JSON.stringify({ organization_id: workspaceId, name: prompt.slice(0, 80), initial_message: { content: prompt }, custom_instructions: customInstructions }),
+    body: JSON.stringify({ organization_id: workspaceId, user_description: prompt, initial_message: { content: prompt }, custom_instructions: customInstructions }),
   });
   if (!response.ok) throw new Error(`Create app failed: ${response.status}`);
   const app = await response.json();
-  return { id: app.id, name: app.name };
+  return { id: app.id, name: prompt.slice(0, 80) };
 }
 
 // List apps, newest first. With BASE44_ACCOUNT_EMAIL set, only the ones the integration
