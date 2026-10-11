@@ -19,21 +19,21 @@ export default function AppPreview({ app, live }: { app: App | null; live: boole
 
   if (!app) {
     return (
-      <main className="flex h-full items-center justify-center bg-muted p-6 text-sm text-muted-foreground">
-        Describe your app in the chat. It shows up here.
+      <main className="preview">
+        <p className="preview-message">Describe your app in the chat. It shows up here.</p>
       </main>
     );
   }
   return (
-    <main className="relative h-full">
+    <main className="preview">
       {!shown && (
-        <p className="absolute inset-0 flex items-center justify-center bg-muted text-sm text-muted-foreground">Starting the preview…</p>
+        <p className="preview-message">Starting the preview…</p>
       )}
       {latestUrl && shown !== "live" && (
-        <iframe src={latestUrl} title={app.name} onLoad={() => setShown("latest")} className="absolute inset-0 size-full border-0" />
+        <iframe src={latestUrl} title={app.name} onLoad={() => setShown("latest")} className="preview-frame" />
       )}
       {liveUrl && (
-        <iframe src={liveUrl} title={app.name} onLoad={() => setShown("live")} className={`absolute inset-0 size-full border-0 ${shown === "live" ? "" : "invisible"}`} />
+        <iframe src={liveUrl} title={app.name} onLoad={() => setShown("live")} className="preview-frame" data-hidden={shown !== "live"} />
       )}
     </main>
   );
