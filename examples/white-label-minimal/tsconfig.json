@@ -24,7 +24,7 @@
     "allowJs": true,
     "paths": {
       "@/*": [
-        "./lean/*"
+        "./*"
       ]
     }
   },
@@ -36,7 +36,6 @@
     ".next/dev/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules",
-    "tests/fixture"
+    "node_modules"
   ]
 }
