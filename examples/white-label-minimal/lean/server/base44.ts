@@ -16,12 +16,17 @@ function headers(json = true) {
   };
 }
 
+// Custom instructions: what the builder should know about Tiny, sent with every new app.
+const customInstructions = `The user talks to you only through Tiny Sunny's chat. They have no Base44 editor,
+dashboard, code view or Publish button, so never point them to one. Publishing isn't available yet:
+if they ask, say so.`;
+
 // Create app. The build starts inside this call.
 export async function createApp(prompt: string): Promise<App> {
   const response = await fetch(`${host}/api/apps`, {
     method: "POST",
     headers: headers(),
-    body: JSON.stringify({ organization_id: workspaceId, name: prompt.slice(0, 80), initial_message: { content: prompt } }),
+    body: JSON.stringify({ organization_id: workspaceId, name: prompt.slice(0, 80), initial_message: { content: prompt }, custom_instructions: customInstructions }),
   });
   if (!response.ok) throw new Error(`Create app failed: ${response.status}`);
   const app = await response.json();
@@ -84,22 +89,30 @@ const PREVIEW_VIEWER = "viewer@example.com";
 
 // Embed the app, signed in as the viewer: the latest build, or the live sandbox that
 // shows a build as it runs (boot it first). Provision the viewer, then mint a one-time
-// URL (valid 60 seconds).
+// URL (valid 60 seconds). A new app has no build yet and its latest preview answers 404,
+// so check with one URL and hand out a fresh one; null means there is nothing to show yet.
 export async function getPreviewUrl(appId: string, target: "latest_preview" | "live_preview") {
-  const embedHeaders = { api_key: process.env.BASE44_SVC_KEY!, "X-Active-Workspace-Id": workspaceId, "Content-Type": "application/json" };
   await fetch(`${host}/api/apps/${appId}/users/provisions`, {
     method: "POST",
-    headers: embedHeaders,
+    headers: embedHeaders(),
     body: JSON.stringify({ email: PREVIEW_VIEWER, role: "user" }),
   });
+  if (target === "latest_preview" && (await fetch(await embedUrl(appId, target))).status === 404) return null;
+  return embedUrl(appId, target);
+}
+
+function embedHeaders() {
+  return { api_key: process.env.BASE44_SVC_KEY!, "X-Active-Workspace-Id": workspaceId, "Content-Type": "application/json" };
+}
+
+async function embedUrl(appId: string, target: string) {
   const response = await fetch(`${host}/api/apps/${appId}/embed-url`, {
     method: "POST",
-    headers: embedHeaders,
+    headers: embedHeaders(),
     body: JSON.stringify({ email: PREVIEW_VIEWER, target }),
   });
   if (!response.ok) throw new Error(`Embed URL failed: ${response.status}`);
-  const data = await response.json();
-  return data.embed_url as string;
+  return (await response.json()).embed_url as string;
 }
 
 // The live sandbox is off until something boots it, and booting can take half a minute:

@@ -9,13 +9,15 @@ export default function AppPreview({ app, live }: { app: App | null; live: boole
   const [latestUrl, setLatestUrl] = useState<string | null>(null);
   const [liveUrl, setLiveUrl] = useState<string | null>(null);
   const [shown, setShown] = useState<"latest" | "live" | null>(null);
+  // A new app has no build yet, so it goes straight to the sandbox.
+  const [noBuild, setNoBuild] = useState(false);
 
   useEffect(() => {
-    if (app) getPreviewUrl(app.id, "latest_preview").then(setLatestUrl, console.error);
+    if (app) getPreviewUrl(app.id, "latest_preview").then((url) => (url ? setLatestUrl(url) : setNoBuild(true)), console.error);
   }, [app]);
 
   useEffect(() => {
-    if (!app || !live) return;
+    if (!app || !(live || noBuild)) return;
     let stopped = false;
     async function load() {
       while (!stopped && !(await bootLivePreview(app!.id))) await new Promise((resolve) => setTimeout(resolve, 3000));
@@ -25,7 +27,7 @@ export default function AppPreview({ app, live }: { app: App | null; live: boole
     return () => {
       stopped = true;
     };
-  }, [app, live]);
+  }, [app, live, noBuild]);
 
   if (!app) {
     return (
