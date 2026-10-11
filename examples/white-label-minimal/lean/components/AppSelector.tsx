@@ -1,6 +1,6 @@
 import { PlusIcon } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { App } from "../types";
+import type { App } from "../server/base44";
 
 type Props = { apps: App[]; selectedAppId: string | null; onSelectApp: (id: string | null) => void };
 

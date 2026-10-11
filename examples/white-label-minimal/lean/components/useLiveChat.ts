@@ -1,8 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { Base44PlatformClient, type ChatMessage } from "@base44/platform";
-import type { App } from "../types";
-import { createApp, openLiveSession, sendMessage } from "../server/base44";
+import { createApp, openLiveSession, sendMessage, type App } from "../server/base44";
 
 // The chat's state: the live connection to Base44, message ordering, create-or-send,
 // and the status line.

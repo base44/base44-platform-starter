@@ -1,7 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { getPreviewUrl, bootLivePreview } from "../server/base44";
-import type { App } from "../types";
+import { bootLivePreview, getPreviewUrl, type App } from "../server/base44";
 
 // The app's latest build. Once the app is building, the live sandbox boots and loads
 // behind it, then takes over and shows each change as it lands. Workspace remounts it per app.

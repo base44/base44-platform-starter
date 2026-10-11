@@ -4,7 +4,7 @@ import type { ToolCall } from "@base44/platform";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
-import type { App } from "../types";
+import type { App } from "../server/base44";
 import ToolQuestion from "./ToolQuestion";
 import { useLiveChat } from "./useLiveChat";
 

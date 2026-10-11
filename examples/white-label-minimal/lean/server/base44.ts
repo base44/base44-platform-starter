@@ -1,134 +1,103 @@
 "use server";
-// Tiny's server functions: Base44's REST calls, one function each. They run only on
-// the server, with Tiny's credentials, so the browser never sees them.
+// Tiny's calls to Base44. They run on the server, so the credentials never reach the browser.
 // Docs: https://docs.base44.com/developers/white-label/the-build-turn
-import type { App, ToolCallAnswer } from "../types";
+
+export type App = { id: string; name: string };
+export type ToolCallAnswer = { toolCallId: string; messageId: string; approve: boolean; extraUserInput?: object };
+type Options = { body?: object; headers?: Record<string, string> };
 
 const host = process.env.BASE44_PLATFORM_HOST!;
 const workspaceId = process.env.BASE44_WORKSPACE_ID!;
+const accessToken = { Authorization: `Bearer ${process.env.BASE44_ACCESS_TOKEN}` };
+const serviceKey = { Authorization: `Bearer ${process.env.BASE44_SVC_KEY}` };
+const embedKey = { api_key: process.env.BASE44_SVC_KEY! };
 
-// The Apps API takes the integration account's personal access token.
-function headers(json = true) {
-  return {
-    Authorization: `Bearer ${process.env.BASE44_ACCESS_TOKEN}`,
-    "X-Active-Workspace-Id": workspaceId,
-    ...(json && { "Content-Type": "application/json" }),
-  };
-}
+// Base44 won't sign the app's owner into an embed, so previews sign in as this app user.
+const PREVIEW_USER = "viewer@example.com";
 
-// Custom instructions: what the builder should know about Tiny, sent with every new app.
 const customInstructions = `The user talks to you only through Tiny Sunny's chat. They have no Base44 editor,
 dashboard, code view or Publish button, so never point them to one. Publishing isn't available yet:
 if they ask, say so.`;
 
-// Create app. The build starts inside this call. Base44 names the app from the prompt a
-// few seconds in; until the list is fetched again, the prompt stands in.
 export async function createApp(prompt: string): Promise<App> {
-  const response = await fetch(`${host}/api/apps`, {
-    method: "POST",
-    headers: headers(),
-    body: JSON.stringify({ organization_id: workspaceId, user_description: prompt, initial_message: { content: prompt }, custom_instructions: customInstructions }),
+  const app = await call("/api/apps", {
+    body: { organization_id: workspaceId, user_description: prompt, initial_message: { content: prompt }, custom_instructions: customInstructions },
   });
-  if (!response.ok) throw new Error(`Create app failed: ${response.status}`);
-  const app = await response.json();
+  // Base44 names the app a few seconds later; the prompt stands in until then.
   return { id: app.id, name: prompt.slice(0, 80) };
 }
 
-// List apps, newest first. With BASE44_ACCOUNT_EMAIL set, only the ones the integration
-// account created: the workspace can hold apps by other accounts, whose previews this
-// token cannot open.
+// With BASE44_ACCOUNT_EMAIL set, only the integration account's apps: previews of other accounts' apps fail.
 export async function listApps(): Promise<App[]> {
-  const response = await fetch(`${host}/api/apps?sort=-created_date`, { headers: headers(false) });
-  if (!response.ok) throw new Error(`List apps failed: ${response.status}`);
-  const apps: { id: string; name: string; created_by: string }[] = await response.json();
+  const apps: (App & { created_by: string })[] = await call("/api/apps?sort=-created_date");
   const account = process.env.BASE44_ACCOUNT_EMAIL;
-  return apps.filter((app) => !account || app.created_by === account).map((app) => ({ id: app.id, name: app.name }));
+  return apps.filter((app) => !account || app.created_by === account).map(({ id, name }) => ({ id, name }));
 }
 
-// Create socket session: a read-only live-updates session for one app. It takes the
-// workspace key; the browser gets only the session token.
+// The browser gets only a short-lived token for watching this one app.
 export async function openLiveSession(appId: string) {
-  const response = await fetch(`${host}/api/service/socket-sessions`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${process.env.BASE44_SVC_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ app_ids: [appId] }),
-  });
-  if (!response.ok) throw new Error(`Socket session failed: ${response.status}`);
-  const session = await response.json();
+  const session = await call("/api/service/socket-sessions", { body: { app_ids: [appId] }, headers: serviceKey });
   return { serverUrl: new URL(session.socket_url).origin, sessionToken: session.session_token as string };
 }
 
-// Send chat message: every prompt after the first.
 export async function sendMessage(appId: string, content: string) {
-  const request = fetch(`${host}/api/apps/${appId}/chat/message`, {
-    method: "POST",
-    headers: headers(),
-    body: JSON.stringify({ content }),
-  });
-  await acceptedOrRunning(request, "Send message");
+  await start(`/api/apps/${appId}/chat/message`, { body: { content } });
 }
 
-// Submit tool-call input: answer a question the builder waits on, or decline it.
-// The request id stays the same on a retry, so Base44 resumes the turn only once.
+// The same request id on a retry, so Base44 resumes the turn only once.
 export async function submitToolCallInput(appId: string, answer: ToolCallAnswer) {
-  const request = fetch(`${host}/api/apps/${appId}/chat/submit-tool-call-input`, {
-    method: "POST",
-    headers: { ...headers(), "X-Request-ID": `submit-${answer.toolCallId}` },
-    body: JSON.stringify({
+  await start(`/api/apps/${appId}/chat/submit-tool-call-input`, {
+    body: {
       tool_call_id: answer.toolCallId,
       message_id: answer.messageId,
       action: answer.approve ? "approved" : "rejected",
       extra_user_input: answer.extraUserInput ?? {},
-    }),
+    },
+    headers: { ...accessToken, "X-Request-ID": `submit-${answer.toolCallId}` },
   });
-  await acceptedOrRunning(request, "Submit answer");
 }
 
-// Until Tiny has sign-in, everyone views the preview as this one app user. Base44 will
-// not sign in the app's owner, editors or service accounts through an embed.
-const PREVIEW_VIEWER = "viewer@example.com";
-
-// Embed the app, signed in as the viewer: the latest build, or the live sandbox that
-// shows a build as it runs (boot it first). Provision the viewer, then mint a one-time
-// URL (valid 60 seconds). A new app has no build yet and its latest preview answers 404,
-// so check with one URL and hand out a fresh one; null means there is nothing to show yet.
+// A one-time URL, valid for 60 seconds. Null when the app has no build yet.
 export async function getPreviewUrl(appId: string, target: "latest_preview" | "live_preview") {
-  await fetch(`${host}/api/apps/${appId}/users/provisions`, {
-    method: "POST",
-    headers: embedHeaders(),
-    body: JSON.stringify({ email: PREVIEW_VIEWER, role: "user" }),
-  });
+  await request(`/api/apps/${appId}/users/provisions`, { body: { email: PREVIEW_USER, role: "user" }, headers: embedKey });
+  // Before the first build the latest preview is a 404 page. A URL works once, so check one and return another.
   if (target === "latest_preview" && (await fetch(await embedUrl(appId, target))).status === 404) return null;
   return embedUrl(appId, target);
 }
 
-function embedHeaders() {
-  return { api_key: process.env.BASE44_SVC_KEY!, "X-Active-Workspace-Id": workspaceId, "Content-Type": "application/json" };
-}
-
-async function embedUrl(appId: string, target: string) {
-  const response = await fetch(`${host}/api/apps/${appId}/embed-url`, {
-    method: "POST",
-    headers: embedHeaders(),
-    body: JSON.stringify({ email: PREVIEW_VIEWER, target }),
-  });
-  if (!response.ok) throw new Error(`Embed URL failed: ${response.status}`);
-  return (await response.json()).embed_url as string;
-}
-
-// The live sandbox is off until something boots it, and booting can take half a minute:
-// longer than a hosted server function may run. Ask it to boot, wait a few seconds, and
-// let the caller ask again until it is up.
+// Booting the sandbox can outlast a hosted function, so wait a few seconds and let the caller ask again.
 export async function bootLivePreview(appId: string) {
-  const request = fetch(`${host}/api/apps/${appId}/sandbox/preview-url`, { headers: headers(false) });
-  request.catch(() => {});
-  const response = await Promise.race([request, new Promise<null>((resolve) => setTimeout(resolve, 5000, null))]);
+  const response = await within(5000, request(`/api/apps/${appId}/sandbox/preview-url`));
   return !!response?.ok;
 }
 
-// Send and Submit stay open for the whole turn, and Next.js runs a page's server
-// calls one at a time. Wait only long enough to catch a refusal; live updates show the rest.
-async function acceptedOrRunning(request: Promise<Response>, call: string) {
-  const response = await Promise.race([request, new Promise<null>((resolve) => setTimeout(resolve, 3000, null))]);
-  if (response && !response.ok) throw new Error(`${call} failed: ${response.status}`);
+async function embedUrl(appId: string, target: string) {
+  const data = await call(`/api/apps/${appId}/embed-url`, { body: { email: PREVIEW_USER, target }, headers: embedKey });
+  return data.embed_url as string;
+}
+
+function request(path: string, { body, headers = accessToken }: Options = {}) {
+  return fetch(`${host}${path}`, {
+    method: body ? "POST" : "GET",
+    headers: { ...headers, "X-Active-Workspace-Id": workspaceId, "Content-Type": "application/json" },
+    body: body && JSON.stringify(body),
+  });
+}
+
+async function call(path: string, options?: Options) {
+  const response = await request(path, options);
+  if (!response.ok) throw new Error(`Base44 ${path} failed: ${response.status}`);
+  return response.json();
+}
+
+// Send and submit stay open for the whole build turn, and Next.js runs a page's server calls one at
+// a time. Wait only long enough to catch a refusal; the live updates show the rest.
+async function start(path: string, options: Options) {
+  const response = await within(3000, request(path, options));
+  if (response && !response.ok) throw new Error(`Base44 ${path} failed: ${response.status}`);
+}
+
+function within(ms: number, response: Promise<Response>) {
+  response.catch(() => {});
+  return Promise.race([response, new Promise<null>((resolve) => setTimeout(resolve, ms, null))]);
 }

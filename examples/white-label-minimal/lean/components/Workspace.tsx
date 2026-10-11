@@ -1,47 +1,43 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import type { App } from "../types";
-import { listApps } from "../server/base44";
+import { listApps, type App } from "../server/base44";
 import AppPreview from "./AppPreview";
 import Chat from "./Chat";
 import Header from "./Header";
 
-// Tiny's one screen. The selected app drives the preview and the chat.
 export default function Workspace() {
   const [apps, setApps] = useState<App[]>([]);
-  const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
-  // The app whose preview has switched to the live sandbox, once it started building.
+  const [appId, setAppId] = useState<string | null>(null);
   const [liveAppId, setLiveAppId] = useState<string | null>(null);
-  const selectedApp = apps.find((app) => app.id === selectedAppId) ?? null;
+  const app = apps.find((a) => a.id === appId) ?? null;
 
   useEffect(() => {
     listApps().then(setApps, console.error);
   }, []);
 
-  function onAppCreated(app: App) {
-    setApps((all) => [app, ...all]);
-    setSelectedAppId(app.id);
+  function onAppCreated(created: App) {
+    setApps((all) => [created, ...all]);
+    setAppId(created.id);
   }
 
+  // A build switches the preview to the live sandbox. When it ends, the list picks up a new app's name.
   const onBuildingChange = useCallback(
     (building: boolean) => {
-      if (building) setLiveAppId(selectedAppId);
-      // A build ended: fetch the list again for the name Base44 gave a new app.
-      else if (liveAppId === selectedAppId) listApps().then(setApps, console.error);
+      if (building) setLiveAppId(appId);
+      else if (liveAppId === appId) listApps().then(setApps, console.error);
     },
-    [selectedAppId, liveAppId],
+    [appId, liveAppId],
   );
 
   return (
     <div className="grid h-dvh grid-cols-[1fr_400px] grid-rows-[auto_minmax(0,1fr)]">
-      <Header apps={apps} selectedAppId={selectedAppId} onSelectApp={setSelectedAppId} />
-      {/* The chat comes first in the page so its server call goes first: Next.js runs a page's
-          server calls one at a time, and the preview's can wait half a minute for the sandbox. */}
+      <Header apps={apps} selectedAppId={appId} onSelectApp={setAppId} />
+      {/* The chat comes first so its server call runs first: Next.js runs them one at a time. */}
       <div className="col-start-2 row-start-2 min-h-0">
-        <Chat key={`chat-${selectedAppId}`} app={selectedApp} onAppCreated={onAppCreated} onBuildingChange={onBuildingChange} />
+        <Chat key={appId} app={app} onAppCreated={onAppCreated} onBuildingChange={onBuildingChange} />
       </div>
       <div className="col-start-1 row-start-2 min-h-0">
-        <AppPreview key={`preview-${selectedAppId}`} app={selectedApp} live={liveAppId === selectedAppId} />
+        <AppPreview key={appId} app={app} live={liveAppId === appId} />
       </div>
     </div>
   );

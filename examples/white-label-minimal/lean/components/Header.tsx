@@ -1,5 +1,5 @@
 import { Separator } from "@/components/ui/separator";
-import type { App } from "../types";
+import type { App } from "../server/base44";
 import AppSelector from "./AppSelector";
 
 type Props = { apps: App[]; selectedAppId: string | null; onSelectApp: (id: string | null) => void };
