@@ -6,11 +6,14 @@ export type App = { id: string; name: string };
 export type ToolCallAnswer = { toolCallId: string; messageId: string; approve: boolean; extraUserInput?: object };
 type Options = { body?: object; headers?: Record<string, string> };
 
-const host = process.env.BASE44_PLATFORM_HOST!;
-const workspaceId = process.env.BASE44_WORKSPACE_ID!;
-const accessToken = { Authorization: `Bearer ${process.env.BASE44_ACCESS_TOKEN}` };
-const serviceKey = { Authorization: `Bearer ${process.env.BASE44_SVC_KEY}` };
-const embedKey = { api_key: process.env.BASE44_SVC_KEY! };
+// Hardcoded for this branch: Base44's deploy preview, not app.base44.com.
+const host = "https://29417.preview.velino.org";
+const workspaceId = "6a65dbeeb723cfb1a697f349";
+// Every call takes one workspace key. Only this verification branch reads this variable; it lives in Netlify.
+const workspaceKey = process.env.TINY_LEAN_VELINO_WORKSPACE_KEY!;
+const accessToken = { api_key: workspaceKey };
+const serviceKey = { Authorization: `Bearer ${workspaceKey}` };
+const embedKey = { api_key: workspaceKey };
 
 // Base44 won't sign the app's owner into an embed, so previews sign in as this app user.
 const PREVIEW_USER = "viewer@example.com";
@@ -27,11 +30,9 @@ export async function createApp(prompt: string): Promise<App> {
   return { id: app.id, name: prompt.slice(0, 80) };
 }
 
-// With BASE44_ACCOUNT_EMAIL set, only the integration account's apps: previews of other accounts' apps fail.
 export async function listApps(): Promise<App[]> {
-  const apps: (App & { created_by: string })[] = await call("/api/apps?sort=-created_date");
-  const account = process.env.BASE44_ACCOUNT_EMAIL;
-  return apps.filter((app) => !account || app.created_by === account).map(({ id, name }) => ({ id, name }));
+  const apps: App[] = await call("/api/apps?sort=-created_date");
+  return apps.map(({ id, name }) => ({ id, name }));
 }
 
 // The browser gets only a short-lived token for watching this one app.
