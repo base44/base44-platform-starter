@@ -1,17 +1,16 @@
 "use client";
 import { useState } from "react";
+import type { ToolCall } from "@base44/platform";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
-import type { ChatProps } from "../../Chat";
-import { useLiveChat } from "../useLiveChat";
-import { toolLine } from "../toolLine";
-import ToolQuestion from "../ToolQuestion";
+import type { App } from "../types";
+import ToolQuestion from "./ToolQuestion";
+import { useLiveChat } from "./useLiveChat";
 
-// shadcn: no chat component, so we build one from its Button, Textarea and ScrollArea.
-export default function ShadcnChat({ app, onAppCreated }: ChatProps) {
-  const chat = useLiveChat({ app, onAppCreated });
-  const { messages, status, canSend, send } = chat;
+// The builder chat, from shadcn's Button, Textarea and ScrollArea.
+export default function Chat({ app, onAppCreated }: { app: App | null; onAppCreated: (app: App) => void }) {
+  const { messages, status, canSend, send } = useLiveChat({ app, onAppCreated });
   const [prompt, setPrompt] = useState("");
 
   function submit() {
@@ -21,7 +20,7 @@ export default function ShadcnChat({ app, onAppCreated }: ChatProps) {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col border-l">
       <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-3 p-4 text-sm">
           {messages.map((m) => (
@@ -54,4 +53,10 @@ export default function ShadcnChat({ app, onAppCreated }: ChatProps) {
       </div>
     </div>
   );
+}
+
+// One tool step as a short line, e.g. "✓ write_file src/pages/Home.jsx".
+function toolLine(tool: ToolCall) {
+  const icon = tool.status === "running" ? "…" : tool.status === "error" ? "✗" : "✓";
+  return `${icon} ${tool.name} ${tool.display?.file_paths?.join(", ") ?? ""}`;
 }

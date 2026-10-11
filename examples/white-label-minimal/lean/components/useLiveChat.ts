@@ -1,15 +1,14 @@
 "use client";
 import { useEffect, useState } from "react";
 import { Base44PlatformClient, type ChatMessage } from "@base44/platform";
-import type { Base44App } from "../../../sdk";
-import { createApp, openLiveSession, sendMessage } from "../../../server/base44";
+import type { App } from "../types";
+import { createApp, openLiveSession, sendMessage } from "../server/base44";
 
-// Without the headless library, every chat UI needs this: the live connection to
-// Base44, message ordering, create-or-send, and the status line. Written by hand,
-// straight against @base44/platform and Tiny's server.
+// The chat's state: the live connection to Base44, message ordering, create-or-send,
+// and the status line.
 export function useLiveChat({ app, onAppCreated }: {
-  app: Base44App | null;
-  onAppCreated: (app: Base44App) => void;
+  app: App | null;
+  onAppCreated: (app: App) => void;
 }) {
   const appId = app?.id ?? null;
   const [messages, setMessages] = useState<ChatMessage[]>([]);

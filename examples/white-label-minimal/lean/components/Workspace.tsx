@@ -1,14 +1,14 @@
 "use client";
 import { useEffect, useState } from "react";
-import type { Base44App } from "../sdk";
+import type { App } from "../types";
 import { listApps } from "../server/base44";
 import AppPreview from "./AppPreview";
-import Chat from "./chats/Chat";
+import Chat from "./Chat";
 import Header from "./Header";
 
 // Tiny's one screen. The selected app drives the preview and the chat.
 export default function Workspace() {
-  const [apps, setApps] = useState<Base44App[]>([]);
+  const [apps, setApps] = useState<App[]>([]);
   const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
   const selectedApp = apps.find((app) => app.id === selectedAppId) ?? null;
 
@@ -16,7 +16,7 @@ export default function Workspace() {
     listApps().then(setApps, console.error);
   }, []);
 
-  function onAppCreated(app: Base44App) {
+  function onAppCreated(app: App) {
     setApps((all) => [app, ...all]);
     setSelectedAppId(app.id);
   }

@@ -2,7 +2,7 @@
 // Tiny's server functions: Base44's REST calls, one function each. They run only on
 // the server, with Tiny's credentials, so the browser never sees them.
 // Docs: https://docs.base44.com/developers/white-label/the-build-turn
-import type { Base44App, ToolCallAnswer } from "../sdk";
+import type { App, ToolCallAnswer } from "../types";
 
 const host = process.env.BASE44_PLATFORM_HOST!;
 const workspaceId = process.env.BASE44_WORKSPACE_ID!;
@@ -17,7 +17,7 @@ function headers(json = true) {
 }
 
 // Create app. The build starts inside this call.
-export async function createApp(prompt: string): Promise<Base44App> {
+export async function createApp(prompt: string): Promise<App> {
   const response = await fetch(`${host}/api/apps`, {
     method: "POST",
     headers: headers(),
@@ -31,7 +31,7 @@ export async function createApp(prompt: string): Promise<Base44App> {
 // List apps, newest first. With BASE44_ACCOUNT_EMAIL set, only the ones the integration
 // account created: the workspace can hold apps by other accounts, whose previews this
 // token cannot open.
-export async function listApps(): Promise<Base44App[]> {
+export async function listApps(): Promise<App[]> {
   const response = await fetch(`${host}/api/apps?sort=-created_date`, { headers: headers(false) });
   if (!response.ok) throw new Error(`List apps failed: ${response.status}`);
   const apps: { id: string; name: string; created_by: string }[] = await response.json();
