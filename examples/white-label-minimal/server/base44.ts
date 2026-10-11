@@ -35,11 +35,11 @@ export async function openLiveSession(appId: string) {
 }
 
 export async function sendMessage(appId: string, content: string) {
-  await start(`/api/apps/${appId}/chat/message`, { body: { content } });
+  await call(`/api/apps/${appId}/chat/message`, { body: { content } });
 }
 
 export async function submitToolCallInput(appId: string, answer: ToolCallAnswer) {
-  await start(`/api/apps/${appId}/chat/submit-tool-call-input`, {
+  await call(`/api/apps/${appId}/chat/submit-tool-call-input`, {
     body: {
       tool_call_id: answer.toolCallId,
       message_id: answer.messageId,
@@ -68,11 +68,4 @@ async function call(path: string, options?: Options) {
   const response = await request(path, options);
   if (!response.ok) throw new Error(`Base44 ${path} failed: ${response.status}`);
   return response.json();
-}
-
-async function start(path: string, options: Options) {
-  const pending = request(path, options);
-  pending.catch(() => {});
-  const response = await Promise.race([pending, new Promise<null>((resolve) => setTimeout(resolve, 3000, null))]);
-  if (response && !response.ok) throw new Error(`Base44 ${path} failed: ${response.status}`);
 }
