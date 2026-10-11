@@ -1,32 +1,21 @@
 "use client";
 import { useEffect, useState } from "react";
-import { bootLivePreview, getPreviewUrl, type App } from "../server/base44";
+import { getPreviewUrl, type App } from "../server/base44";
 
-// The app's latest build. Once the app is building, the live sandbox boots and loads
-// behind it, then takes over and shows each change as it lands. Workspace remounts it per app.
+// The app's latest build. Once the app is building, the live sandbox loads behind it, then
+// takes over and shows each change as it lands.
 export default function AppPreview({ app, live }: { app: App | null; live: boolean }) {
   const [latestUrl, setLatestUrl] = useState<string | null>(null);
   const [liveUrl, setLiveUrl] = useState<string | null>(null);
   const [shown, setShown] = useState<"latest" | "live" | null>(null);
-  // A new app has no build yet, so it goes straight to the sandbox.
-  const [noBuild, setNoBuild] = useState(false);
 
   useEffect(() => {
-    if (app) getPreviewUrl(app.id, "latest_preview").then((url) => (url ? setLatestUrl(url) : setNoBuild(true)), console.error);
+    if (app) getPreviewUrl(app.id, "latest_preview").then(setLatestUrl, console.error);
   }, [app]);
 
   useEffect(() => {
-    if (!app || !(live || noBuild)) return;
-    let stopped = false;
-    async function load() {
-      while (!stopped && !(await bootLivePreview(app!.id))) await new Promise((resolve) => setTimeout(resolve, 3000));
-      if (!stopped) setLiveUrl(await getPreviewUrl(app!.id, "live_preview"));
-    }
-    load().catch(console.error);
-    return () => {
-      stopped = true;
-    };
-  }, [app, live, noBuild]);
+    if (app && live) getPreviewUrl(app.id, "live_preview").then(setLiveUrl, console.error);
+  }, [app, live]);
 
   if (!app) {
     return (

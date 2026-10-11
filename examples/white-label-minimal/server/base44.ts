@@ -57,21 +57,9 @@ export async function submitToolCallInput(appId: string, answer: ToolCallAnswer)
   });
 }
 
-// A one-time URL, valid for 60 seconds. Null when the app has no build yet.
+// A one-time URL, valid for 60 seconds.
 export async function getPreviewUrl(appId: string, target: "latest_preview" | "live_preview") {
   await request(`/api/apps/${appId}/users/provisions`, { body: { email: PREVIEW_USER, role: "user" }, headers: embedKey });
-  // Before the first build the latest preview is a 404 page. A URL works once, so check one and return another.
-  if (target === "latest_preview" && (await fetch(await embedUrl(appId, target))).status === 404) return null;
-  return embedUrl(appId, target);
-}
-
-// Booting the sandbox can outlast a hosted function, so wait a few seconds and let the caller ask again.
-export async function bootLivePreview(appId: string) {
-  const response = await within(5000, request(`/api/apps/${appId}/sandbox/preview-url`));
-  return !!response?.ok;
-}
-
-async function embedUrl(appId: string, target: string) {
   const data = await call(`/api/apps/${appId}/embed-url`, { body: { email: PREVIEW_USER, target }, headers: embedKey });
   return data.embed_url as string;
 }
@@ -93,11 +81,8 @@ async function call(path: string, options?: Options) {
 // Send and submit stay open for the whole build turn, and Next.js runs a page's server calls one at
 // a time. Wait only long enough to catch a refusal; the live updates show the rest.
 async function start(path: string, options: Options) {
-  const response = await within(3000, request(path, options));
+  const pending = request(path, options);
+  pending.catch(() => {});
+  const response = await Promise.race([pending, new Promise<null>((resolve) => setTimeout(resolve, 3000, null))]);
   if (response && !response.ok) throw new Error(`Base44 ${path} failed: ${response.status}`);
-}
-
-function within(ms: number, response: Promise<Response>) {
-  response.catch(() => {});
-  return Promise.race([response, new Promise<null>((resolve) => setTimeout(resolve, ms, null))]);
 }

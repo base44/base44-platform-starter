@@ -16,7 +16,7 @@ Every Base44 call is one function in [server/base44.ts](server/base44.ts).
 | [The build turn](https://docs.base44.com/developers/white-label/the-build-turn) | `createApp`, `sendMessage`, `submitToolCallInput` |
 | Watch it build, live | `openLiveSession`, and the socket in [components/useLiveChat.ts](components/useLiveChat.ts) |
 | Answer the builder's questions | [components/ToolQuestion.tsx](components/ToolQuestion.tsx): a choice, values to enter, or an approval |
-| [Embed the app](https://docs.base44.com/developers/white-label/embed-the-app) | `getPreviewUrl`, `bootLivePreview`, and [components/AppPreview.tsx](components/AppPreview.tsx) |
+| [Embed the app](https://docs.base44.com/developers/white-label/embed-the-app) | `getPreviewUrl` and [components/AppPreview.tsx](components/AppPreview.tsx) |
 | [Custom instructions](https://docs.base44.com/developers/white-label/custom-instructions) | `customInstructions`, sent with every new app |
 
 The UI is [shadcn](https://ui.shadcn.com) components: [Workspace](components/Workspace.tsx) holds
@@ -28,11 +28,9 @@ and [AppPreview](components/AppPreview.tsx) show it.
 The preview shows the app signed in as one app user, through an embed: Base44 won't sign the app's
 owner into one.
 
-- **Latest build** (`latest_preview`) shows first. Before an app's first build there is none, and
-  the preview goes straight to the sandbox.
+- **Latest build** (`latest_preview`) shows first.
 - **Live sandbox** (`live_preview`) takes over once the app is building, and shows each change as
-  it lands. The sandbox doesn't start on its own, so `bootLivePreview` asks Base44 to start it, a
-  few seconds at a time so no call outlasts a hosted function.
+  it lands.
 
 ## Run locally
 
