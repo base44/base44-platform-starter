@@ -75,7 +75,7 @@ function request(path: string, { body, headers = accessToken }: Options = {}) {
 
 async function call(path: string, options?: Options) {
   const response = await request(path, options);
-  if (!response.ok) throw new Error(`Base44 ${path} failed: ${response.status}`);
+  if (!response.ok) throw new Error(`Base44 ${path} failed: ${response.status} ${await response.text()}`);
   return response.json();
 }
 
@@ -85,5 +85,5 @@ async function start(path: string, options: Options) {
   const pending = request(path, options);
   pending.catch(() => {});
   const response = await Promise.race([pending, new Promise<null>((resolve) => setTimeout(resolve, 3000, null))]);
-  if (response && !response.ok) throw new Error(`Base44 ${path} failed: ${response.status}`);
+  if (response && !response.ok) throw new Error(`Base44 ${path} failed: ${response.status} ${await response.text()}`);
 }
