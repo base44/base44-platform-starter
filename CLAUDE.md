@@ -30,7 +30,7 @@ Next.js App Router · TypeScript · Tailwind 4 · Postgres + Prisma · NextAuth 
 | 2. One Base44 account, and the shell keeps its builders apart | `src/lib/base44Config.ts`, `src/lib/appOwnership.ts` |
 | 3. A server-side allow-list in front of Base44's REST API | `src/app/api/base44/platform/route.ts` |
 | 4. A public data API the built apps call | `src/app/api/sunny/route.ts`, `src/lib/builderInstructions.ts` |
-| 5. Signed inbound webhooks from Base44 | `src/app/api/base44/webhooks/route.ts`, `src/lib/base44WebhookSignature.ts` |
+| 5. Signed inbound webhooks from Base44 | `src/app/api/base44/webhooks/route.ts`, `src/lib/base44Webhooks.ts` |
 
 ## Conventions
 
@@ -51,9 +51,11 @@ Next.js App Router · TypeScript · Tailwind 4 · Postgres + Prisma · NextAuth 
   client can read and delete its own rows but never create one — a client-written row would claim
   another builder's app. The webhook receiver joins an event to users through `ownersOf(appId)`
   there, which returns emails and nothing else.
-- **An inbound webhook is untrusted until its signature verifies.** `src/lib/base44WebhookSignature.ts`
-  is the boundary: the URL is public, so `app_id` — which decides whose pins get removed — is
-  attacker-controlled until it returns ok. Verify the **raw** body text. Keys come from
+- **An inbound webhook is untrusted until its signature verifies.** `src/lib/base44Webhooks.ts`
+  is the boundary: it wires `@base44/platform/server`'s verifier to this deployment's config. The
+  URL is public, so `app_id` — which decides whose pins get removed — is attacker-controlled until
+  it verifies. The route mounts the SDK's `createHandler`, which reads the **raw** body, answers the
+  activation probe and picks the status code; don't parse the body before it. Keys come from
   `BASE44_WEBHOOK_PUBLIC_KEYS` only (public keys, not secrets); pin both through a rotation.
 - **The receiver keeps no state.** It acts on `app.deleted.v1` only, by deleting the owner's
   `Widget` rows through `entityCrud.ts`; that is idempotent and order-safe, so there is no event

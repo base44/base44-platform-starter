@@ -47,7 +47,7 @@ Five boundaries, five steps — four calling out to Base44, one where it calls b
 | [2](#step-2--one-base44-account-and-you-keep-your-users-apart) | One Base44 account for the whole platform — and you keep your users apart. | `src/lib/base44Config.ts`, `src/lib/appOwnership.ts` |
 | [3](#step-3--call-base44-from-your-server-behind-an-allow-list) | A server-side proxy in front of Base44's REST API. | `src/app/api/base44/platform/route.ts` |
 | [4](#step-4--let-the-built-apps-talk-to-your-data) | A public API the built apps call, plus instructions teaching them how. | `src/app/api/sunny/route.ts`, `src/lib/builderInstructions.ts` |
-| [5](#step-5--let-base44-tell-you-what-happened) | Signed inbound webhooks, so you learn about deletions at all — and act on them. | `src/app/api/base44/webhooks/route.ts`, `src/lib/base44WebhookSignature.ts` |
+| [5](#step-5--let-base44-tell-you-what-happened) | Signed inbound webhooks, so you learn about deletions at all — and act on them. | `src/app/api/base44/webhooks/route.ts`, `src/lib/base44Webhooks.ts` |
 
 ---
 
@@ -292,8 +292,9 @@ so duplicates and out-of-order deliveries need no extra state.
 
 **The signature is the whole security boundary.** The URL is public, so nothing in a request is
 trustworthy until it verifies. Base44 signs Ed25519 (`v1a`) over
-`webhook-id + "." + webhook-timestamp + "." + raw body`. Verify the body text as received —
-re-serializing it changes the bytes and breaks every signature.
+`webhook-id + "." + webhook-timestamp + "." + raw body`. `@base44/platform/server` verifies it:
+the route mounts its `createHandler`, which reads the body as received — re-serializing it changes
+the bytes and breaks every signature — answers the activation probe, and picks the status code.
 
 **`app.deleted` is trash, not erasure** — restorable for 30 days. Remove only what would show a
 missing app; never purge.
