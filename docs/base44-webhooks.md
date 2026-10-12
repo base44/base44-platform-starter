@@ -8,13 +8,16 @@ deleted app indefinitely.
 
 `POST /api/base44/webhooks` (`src/app/api/base44/webhooks/route.ts`):
 
-1. Verifies the signature (`src/lib/base44WebhookSignature.ts`). Nothing else runs before this.
-2. Echoes the `challenge` for `webhook.test.v1` — that is how the endpoint activates.
+1. Verifies the signature. Nothing else runs before this. The route mounts `createHandler` from
+   `@base44/platform/server`, configured in `src/lib/base44Webhooks.ts`.
+2. Echoes the `challenge` for `webhook.test.v1` — that is how the endpoint activates. The SDK
+   handler does this itself, after verifying.
 3. On `app.deleted.v1`, looks up who built `app_id` in `AppOwnership` (`ownersOf()` in
    `src/lib/appOwnership.ts`) and deletes those users' `Widget` rows for the app. Nothing in the
    payload names a Sunny user — upstream every app belongs to the one integration account — and
    nothing needs to.
-4. Answers 2xx to everything else.
+4. Answers 204 to everything else, 400 to a delivery that fails verification, and 500 when the keys
+   are missing or a handler threw.
 
 It keeps no state. Deleting pins is idempotent, so a redelivery is harmless, and a restore never puts
 pins back, so a late `app.deleted` arriving after an `app.restored` leaves the same result as one
@@ -46,7 +49,8 @@ follows redirects. For local development, tunnel (`ngrok`, `cloudflared`).
 
 ## Verifying a delivery
 
-Standard Webhooks `v1a`, Ed25519:
+The SDK does this (`platform.webhooks.verifyEvent`, which `createHandler` calls). For the record,
+it is Standard Webhooks `v1a`, Ed25519:
 
 ```
 signed payload = webhook-id + "." + webhook-timestamp + "." + <raw request body>
@@ -59,11 +63,14 @@ header         = webhook-signature: v1a,<base64> [v1a,<base64> ...]
 - Timestamps older than 300 seconds are refused.
 
 Keys come from `BASE44_WEBHOOK_PUBLIC_KEYS` only, so verification makes no network call. Missing or
-malformed, the receiver answers 500 and the event stays on Base44's retry ladder. On a rotation,
+malformed, the receiver answers 500 and the event stays on Base44's retry ladder. So does a missing
+`BASE44_SVC_KEY` or `BASE44_PLATFORM_HOST`: the SDK client requires both, though verifying uses
+neither. On a rotation,
 deploy the new key alongside the old one inside the overlap window, then drop the old one.
 
-`npm run webhook:smoke` covers the negative cases: tampered body, relabelled id, unknown key, stale
-timestamp, truncated key.
+`npm run webhook:smoke` covers the negative cases (tampered body, relabelled id, unknown key, stale
+timestamp, truncated key) and the handler's status codes, against the SDK as installed. Run it
+after bumping `@base44/platform`.
 
 ## Delivery semantics
 
