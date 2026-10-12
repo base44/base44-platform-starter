@@ -55,7 +55,9 @@ export const accessToken = () => required("BASE44_ACCESS_TOKEN");
  * src/lib/embedSession.ts) and register the outbound webhook endpoint. Sent as
  * `api_key`, never `Bearer`.
  *
- * Optional: without it the builder still works, and embedded apps load signed out.
+ * Optional: without it the builder still works and embedded apps load signed out,
+ * but the webhook receiver cannot start — the `@base44/platform` client it
+ * verifies with requires a key, though verifying never sends it.
  */
 export const svcKey = () => required("BASE44_SVC_KEY");
 
@@ -79,7 +81,7 @@ export const platformHost = () => required("BASE44_PLATFORM_HOST").replace(/\/+$
  *
  * `whpk_`-prefixed, whitespace- or comma-separated, printed by
  * `npm run webhook:register`. Required by the receiver: it verifies against
- * these and nothing else — see src/lib/base44WebhookSignature.ts.
+ * these and nothing else — see src/lib/base44Webhooks.ts.
  *
  * **The one BASE44_* value that is not a secret.** It is a public key: it
  * verifies signatures and cannot produce them, so leaking it buys nothing. It
