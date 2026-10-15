@@ -41,26 +41,25 @@ export class MissingConfigError extends Error {
  * `Authorization: Bearer …` on every Apps API call, so it is the credential
  * behind everything the builder does.
  *
- * Create it in the enterprise workspace, not the account's personal one, or
- * builds miss the design system, skills and plan set up there. The account needs
+ * Create it in the white-label workspace (Builder plan or higher), not the
+ * account's personal one, or builds miss the design system, skills and plan set
+ * up there. Give it Full access: everything but reading is a write. The account needs
  * the Editor role or higher in that workspace: viewers and guests cannot create
  * apps, and deploy succeeds only for an Editor.
  */
 export const accessToken = () => required("BASE44_ACCESS_TOKEN");
 
 /**
- * The `b44k_` **workspace API key**. Not for building — that is the access token
- * above — but for the two things only a workspace key can do: sign a viewer into
- * an embedded app (provision an app user, mint an embed sign-in token; see
- * src/lib/embedSession.ts) and register the outbound webhook endpoint. Sent as
- * `api_key`, never `Bearer`.
+ * The `b44k_` **workspace API key**. Only for registering the outbound webhook
+ * endpoint (see `webhookKey`); every request path uses the access token above.
+ * Workspace keys and outbound webhooks need a Business plan or higher.
  *
- * Optional: without it the builder still works, and embedded apps load signed out.
+ * Optional: without it everything works except `npm run webhook:register`.
  */
 export const svcKey = () => required("BASE44_SVC_KEY");
 
 /**
- * The Base44 enterprise workspace every app is built in. Sent as
+ * The Base44 white-label workspace every app is built in. Sent as
  * `X-Active-Workspace-Id` on every platform call — Base44 checks permissions
  * against the active workspace, not the body — and as `createApp`'s
  * `organization_id`. One workspace, one place to govern.

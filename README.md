@@ -57,10 +57,10 @@ You need, from Base44:
 
 | What | Why |
 | --- | --- |
-| An **enterprise workspace**, used by this platform alone | All your users' apps live in it, so you have one place to govern, and listing apps means listing it |
+| A **white-label workspace** on the Builder plan or higher, used by this platform alone | All your users' apps live in it, so you have one place to govern, and listing apps means listing it |
 | Its **workspace id** | Sent as `X-Active-Workspace-Id` on every platform call |
-| An **integration account** with Editor or higher in that workspace, and its **personal access token** created *in* that workspace | The one identity that builds everything — see [step 2](#step-2--one-base44-account-and-you-keep-your-users-apart) |
-| Optionally a **workspace API key** (`b44k_…`) | Signs viewers into embedded apps and registers webhooks. Not needed to build |
+| An **integration account** with Editor or higher in that workspace, and its **personal access token** created *in* that workspace, with Full access to all apps | The one identity that builds everything — see [step 2](#step-2--one-base44-account-and-you-keep-your-users-apart) |
+| Optionally a **workspace API key** (`b44k_…`), on a Business plan or higher | Registers the outbound webhook endpoint. Nothing else needs it |
 | The **platform host** your workspace is served from | Base of every REST call |
 
 Those land in env as `BASE44_ACCESS_TOKEN`, `BASE44_ORG_ID`, `BASE44_PLATFORM_HOST` and
@@ -129,7 +129,7 @@ export const accessToken = () => required("BASE44_ACCESS_TOKEN");   // the accou
 export const orgId       = () => required("BASE44_ORG_ID");         // the workspace it builds in
 ```
 
-Two things about that token: create it **in your enterprise workspace**, not the account's
+Two things about that token: create it **in your white-label workspace**, not the account's
 personal one (or builds miss the design system, skills and plan you set up there), and give the
 account **Editor or higher** — viewers and guests can't create apps, and deploy succeeds only for an
 Editor.
@@ -159,8 +159,8 @@ Three rules worth copying:
 
 There's no "Connect" step, no per-user token to refresh, and offboarding a user is deleting their
 rows: their apps stay in the account, and what they lose is the rows that let them reach those apps
-through you. The workspace API key (`BASE44_SVC_KEY`) is still around, but only for what a workspace
-key alone can do — signing a viewer into an embedded app, and registering webhooks.
+through you. The same token signs a viewer into an embedded app. The workspace API key
+(`BASE44_SVC_KEY`) is only for registering webhooks, which need a Business plan or higher.
 
 → The model in full, the failure classes, and the containment rules:
 **[docs/base44-identity.md](docs/base44-identity.md)** · Base44's own description:
@@ -349,7 +349,7 @@ npm run webhook:smoke    # step 5: the inbound signature, negative controls
 | `501 bridge_misconfigured` | A `BASE44_*` env var is missing, or Base44 answered `401` to the integration account's token (revoked, expired). A deployment problem, not a user one — the UI says the builder is unavailable |
 | `404 not_found` on an app-scoped action | The caller has no `AppOwnership` row for that app. Built before ownership was tracked? Insert the row |
 | `403` on deploy | The integration account isn't an Editor in the workspace |
-| Builds ignore your design system or skills | The token was created in the account's personal workspace. Create it in the enterprise workspace |
+| Builds ignore your design system or skills | The token was created in the account's personal workspace. Create it in the white-label workspace |
 | `sendMessage` times out at ~30s | Your own timeout, not Base44's. Build turns need ~120s |
 | A new app doesn't appear in the list | Its `AppOwnership` row was not recorded — the server logs this loudly at create |
 
