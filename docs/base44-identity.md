@@ -47,8 +47,9 @@ headers: {
 
 Three rules for the token:
 
-- **Create it in your enterprise workspace**, not the account's personal workspace, or your builds
-  miss the design system, skills and plan you set up there.
+- **Create it in your white-label workspace** (Builder plan or higher), not the account's personal
+  workspace, or your builds miss the design system, skills and plan you set up there. Give it Full
+  access to all apps: apps it builds later must be in reach too.
 - **The account needs Editor or higher** in that workspace. Viewers and guests can't create apps,
   and deploy only succeeds for an Editor.
 - **It is the most sensitive value you hold.** It can do anything the account can, to every app
@@ -62,12 +63,14 @@ There is no per-user token to mint, store, refresh or revoke, and no "Connect" s
 builder is either configured on a deployment or it is not; `POST /api/base44/platform
 {action:"status"}` answers which, from config alone.
 
+The same token signs a viewer into an embedded app: provisioning an app user and minting an embed
+sign-in token (`src/lib/embedSession.ts`) are allowed for anyone who can edit the app.
+
 ### What the workspace key is still for
 
-`BASE44_SVC_KEY`, the `b44k_` workspace API key, does **not** build apps. It is for the two things
-only a workspace key can do: signing a viewer into an embedded app — provisioning an app user and
-minting an embed sign-in token (`src/lib/embedSession.ts`) — and registering the outbound webhook
-endpoint. It is optional: without it the builder still works, and embedded apps load signed out.
+`BASE44_SVC_KEY`, the `b44k_` workspace API key, is only for registering the outbound webhook
+endpoint. Workspace keys and outbound webhooks need a Business plan or higher. It is optional:
+without it everything works except `npm run webhook:register`.
 
 ---
 
@@ -114,7 +117,7 @@ inserting its row for the right user.
 ## Lifecycle
 
 ```
-set up      create the token in the enterprise workspace (Editor+) → env → deploy
+set up      create the token in the white-label workspace (Editor+) → env → deploy
             `status` answers 200 configured; the builder UI appears
 
 build       browser → /api/base44/platform {action} → ownership check → Bearer <token> → Base44

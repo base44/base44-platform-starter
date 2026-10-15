@@ -229,7 +229,7 @@ Support only these operations:
 
 The module must:
 
-- Read `BASE44_API_KEY`, `BASE44_ORG_ID`, and `BASE44_PLATFORM_HOST` only on the server.
+- Read `BASE44_ACCESS_TOKEN`, `BASE44_WORKSPACE_ID`, and `BASE44_PLATFORM_HOST` only on the server.
 - Send `X-Active-Workspace-Id` on applicable requests.
 - Send `organization_id` when creating an app.
 - Pass `initial_message` and `custom_instructions` in the create request.
