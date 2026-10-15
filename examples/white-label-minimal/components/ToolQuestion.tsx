@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import type { ToolCall, ToolQuestionArguments, ToolSecretArguments } from "@base44/platform";
+import type { Question, SecretField, ToolCall } from "@base44/platform";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { submitToolCallInput } from "../server/base44";
@@ -12,9 +12,12 @@ export default function ToolQuestion({ appId, messageId, tool }: { appId: string
   const [picked, setPicked] = useState<Record<number, string[]>>({});
   const [secrets, setSecrets] = useState<Record<string, string>>({});
   const kind = tool.waiting_on?.kind;
-  const questions = kind === "choice" ? (tool.arguments as ToolQuestionArguments)?.questions ?? [] : [];
+  // ToolCall includes OtherToolCall, which has no arguments, so narrow with `in` after the name.
+  let questions: Question[] = [];
+  if (kind === "choice" && tool.name === "ask_clarifying_questions" && "arguments" in tool) questions = tool.arguments?.questions ?? [];
   // Tiny passes these values to Base44 and keeps none.
-  const fields = kind === "input" ? (tool.arguments as ToolSecretArguments)?.secrets_schema ?? [] : [];
+  let fields: SecretField[] = [];
+  if (kind === "input" && tool.name === "set_secrets" && "arguments" in tool) fields = tool.arguments?.secrets_schema ?? [];
 
   function answer(approve: boolean, extraUserInput?: object) {
     setSent(true);
@@ -35,7 +38,7 @@ export default function ToolQuestion({ appId, messageId, tool }: { appId: string
 
   return (
     <div className="question">
-      {kind === "approval" && <p>Allow {tool.name}? {tool.approval?.reason ?? tool.approval?.details?.summary}</p>}
+      {kind === "approval" && <p>Allow {tool.name}? {approvalText(tool)}</p>}
       {questions.map((q, i) => (
         <div key={i} className="question-item">
           <p className="question-title">{q.question}</p>
@@ -57,4 +60,13 @@ export default function ToolQuestion({ appId, messageId, tool }: { appId: string
       </div>
     </div>
   );
+}
+
+// Why a guard paused the call. Some guards, such as bash_approval, give no reason.
+function approvalText(tool: ToolCall) {
+  const approval = tool.approval;
+  if (!approval || !("reason" in approval)) return "";
+  if (approval.reason) return approval.reason;
+  if (approval.details && "summary" in approval.details) return approval.details.summary ?? "";
+  return "";
 }

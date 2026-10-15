@@ -69,5 +69,6 @@ export default function Chat({ app, onAppCreated, onBuildingChange }: {
 // One tool step as a short line, e.g. "✓ write_file src/pages/Home.jsx".
 function toolLine(tool: ToolCall) {
   const icon = tool.status === "running" ? "…" : tool.status === "error" ? "✗" : "✓";
-  return `${icon} ${tool.name} ${tool.display?.file_paths?.join(", ") ?? ""}`;
+  const files = "display" in tool && tool.display && "file_paths" in tool.display ? tool.display.file_paths : undefined;
+  return `${icon} ${tool.name} ${files?.join(", ") ?? ""}`;
 }
