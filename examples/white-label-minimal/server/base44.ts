@@ -30,7 +30,7 @@ export async function listApps(): Promise<App[]> {
 }
 
 export async function openLiveSession(appId: string) {
-  const session = await call("/api/service/socket-sessions", { body: { app_ids: [appId] } });
+  const session = await call("/api/v1/socket-sessions", { body: { app_ids: [appId] } });
   return { serverUrl: new URL(session.socket_url).origin, sessionToken: session.session_token as string };
 }
 
