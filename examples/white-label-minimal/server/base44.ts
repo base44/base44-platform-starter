@@ -33,15 +33,20 @@ export async function listApps(): Promise<App[]> {
 
 export async function openLiveSession(appId: string) {
   const session = await call("/api/service/socket-sessions", { body: { app_ids: [appId] }, headers: serviceKey });
-  return { serverUrl: new URL(session.socket_url).origin, sessionToken: session.session_token as string };
+  return { socketUrl: session.socket_url as string, sessionToken: session.session_token as string };
 }
 
+// Base44 holds this request open for the whole turn, and Next.js runs one server action at a time,
+// so waiting for it would hold every later call. Wait only long enough to catch a refusal.
 export async function sendMessage(appId: string, content: string) {
-  await call(`/api/apps/${appId}/chat/message`, { body: { content } });
+  const sent = request(`/api/apps/${appId}/chat/message`, { body: { content } });
+  const response = await Promise.race([sent, new Promise<null>((resolve) => setTimeout(resolve, 3000, null))]);
+  if (response && !response.ok) throw new Error(`Base44 /chat/message failed: ${response.status}`);
 }
 
+// Held open for the resumed turn, like sendMessage.
 export async function submitToolCallInput(appId: string, answer: ToolCallAnswer) {
-  await call(`/api/apps/${appId}/chat/submit-tool-call-input`, {
+  const sent = request(`/api/apps/${appId}/chat/submit-tool-call-input`, {
     body: {
       tool_call_id: answer.toolCallId,
       message_id: answer.messageId,
@@ -50,6 +55,8 @@ export async function submitToolCallInput(appId: string, answer: ToolCallAnswer)
     },
     headers: { ...accessToken, "X-Request-ID": `submit-${answer.toolCallId}` },
   });
+  const response = await Promise.race([sent, new Promise<null>((resolve) => setTimeout(resolve, 3000, null))]);
+  if (response && !response.ok) throw new Error(`Base44 /chat/submit-tool-call-input failed: ${response.status}`);
 }
 
 export async function getPreviewUrl(appId: string, target: "latest_preview" | "live_preview") {
