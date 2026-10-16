@@ -1,4 +1,5 @@
 "use server";
+import type { SocketSession } from "@base44/platform/react";
 
 export type App = { id: string; name: string };
 export type ToolCallAnswer = { toolCallId: string; messageId: string; approve: boolean; extraUserInput?: object };
@@ -31,9 +32,9 @@ export async function listApps(): Promise<App[]> {
     .map(({ id, name }) => ({ id, name }));
 }
 
-export async function openLiveSession(appId: string) {
-  const session = await call("/api/service/socket-sessions", { body: { app_ids: [appId] }, headers: serviceKey });
-  return { socketUrl: session.socket_url as string, sessionToken: session.session_token as string };
+// The body holds only a session token, never the key, so it goes to the browser unchanged.
+export async function openLiveSession(appId: string): Promise<SocketSession> {
+  return call("/api/service/socket-sessions", { body: { app_ids: [appId] }, headers: serviceKey });
 }
 
 // Base44 holds this request open for the whole turn, and Next.js runs one server action at a time,
