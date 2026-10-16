@@ -18,14 +18,16 @@ export default function Chat({ app, onAppCreated, onBuildingChange }: {
   const chat = useBase44Chat({ appId: app?.id ?? null, backend, onAppCreated });
   const [prompt, setPrompt] = useState("");
   const building = chat.status === "building";
+  // Send only when the builder can take a prompt now. After a failed build, a prompt can ask for the fix.
+  const canSend = chat.status === "ready" || chat.status === "error";
 
   useEffect(() => {
     onBuildingChange(building);
   }, [building, onBuildingChange]);
 
-  // The first prompt creates the app; every later one goes to it. Base44 queues a prompt sent mid-build.
+  // The first prompt creates the app; every later one goes to it.
   function submit() {
-    if (!prompt.trim()) return;
+    if (!canSend || !prompt.trim()) return;
     if (app) chat.send(prompt);
     else chat.create(prompt);
     setPrompt("");
@@ -47,11 +49,6 @@ export default function Chat({ app, onAppCreated, onBuildingChange }: {
               )}
             </div>
           ))}
-          {/* Base44 runs these in order once the builder is free. */}
-          {chat.queue.length > 0 && <p className="chat-queued-label">Queued</p>}
-          {chat.queue.map((queued) => (
-            <p key={queued.id} className="chat-queued">{queued.content}</p>
-          ))}
           <StatusLine chat={chat} hasApp={!!app} />
         </StickToBottom.Content>
       </StickToBottom>
@@ -68,7 +65,7 @@ export default function Chat({ app, onAppCreated, onBuildingChange }: {
           className="chat-input"
           rows={1}
         />
-        <Button onClick={submit} disabled={!prompt.trim()}>Send</Button>
+        <Button onClick={submit} disabled={!canSend || !prompt.trim()}>Send</Button>
       </div>
     </div>
   );
