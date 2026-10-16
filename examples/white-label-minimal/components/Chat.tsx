@@ -1,28 +1,33 @@
 "use client";
 import { useEffect, useState } from "react";
-import type { ToolCall } from "@base44/platform";
+import { useBase44Chat, type Base44Chat, type Base44ChatBackend, type ChatStep } from "@base44/platform/react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { StickToBottom } from "use-stick-to-bottom";
-import type { App } from "../server/base44";
+import { createApp, openLiveSession, sendMessage, submitToolCallInput, type App } from "../server/base44";
 import ToolQuestion from "./ToolQuestion";
-import { useLiveChat } from "./useLiveChat";
+
+// The four Base44 calls, run on the server. The hook calls them, so the browser never holds a key.
+const backend: Base44ChatBackend = { createApp, openLiveSession, sendMessage, submitToolCallInput };
 
 export default function Chat({ app, onAppCreated, onBuildingChange }: {
   app: App | null;
   onAppCreated: (app: App) => void;
   onBuildingChange: (building: boolean) => void;
 }) {
-  const { messages, status, building, canSend, send } = useLiveChat({ app, onAppCreated });
+  const chat = useBase44Chat({ appId: app?.id ?? null, backend, onAppCreated });
   const [prompt, setPrompt] = useState("");
+  const building = chat.status === "building";
 
   useEffect(() => {
     onBuildingChange(building);
   }, [building, onBuildingChange]);
 
+  // The first prompt creates the app; every later one goes to it. Base44 queues a prompt sent mid-build.
   function submit() {
-    if (!prompt.trim() || !canSend) return;
-    send(prompt);
+    if (!prompt.trim()) return;
+    if (app) chat.send(prompt);
+    else chat.create(prompt);
     setPrompt("");
   }
 
@@ -30,21 +35,22 @@ export default function Chat({ app, onAppCreated, onBuildingChange }: {
     <div className="chat">
       <StickToBottom className="chat-scroll" initial="instant">
         <StickToBottom.Content className="chat-messages">
-          {messages.map((m) => (
-            <div key={m.id} className="chat-message">
-              {m.content && (
-                <p className={m.role === "user" ? "chat-user-text" : "chat-assistant-text"}>{m.content}</p>
-              )}
-              {m.tool_calls?.map((tool) =>
-                tool.status === "waiting_for_user_input" && app ? (
-                  <ToolQuestion key={tool.id} appId={app.id} messageId={m.id!} tool={tool} />
+          {chat.items.map((item) => (
+            <div key={item.id} className="chat-message">
+              {item.text && <p className={item.role === "user" ? "chat-user-text" : "chat-assistant-text"}>{item.text}</p>}
+              {item.steps.map((step) =>
+                step.question ? (
+                  <ToolQuestion key={step.id} question={step.question} />
                 ) : (
-                  <p key={tool.id} className="chat-tool-line">{toolLine(tool)}</p>
+                  <p key={step.id} className="chat-tool-line">{stepIcon(step)} {step.label}</p>
                 ),
               )}
             </div>
           ))}
-          {status && <p className="chat-status">{status}</p>}
+          {chat.queue.map((queued) => (
+            <p key={queued.id} className="chat-user-text">{queued.content} · Queued</p>
+          ))}
+          <StatusLine chat={chat} hasApp={!!app} />
         </StickToBottom.Content>
       </StickToBottom>
       <div className="chat-composer">
@@ -60,14 +66,34 @@ export default function Chat({ app, onAppCreated, onBuildingChange }: {
           className="chat-input"
           rows={1}
         />
-        <Button onClick={submit} disabled={!canSend}>Send</Button>
+        <Button onClick={submit} disabled={!prompt.trim()}>Send</Button>
       </div>
     </div>
   );
 }
 
-// One tool step as a short line, e.g. "✓ write_file src/pages/Home.jsx".
-function toolLine(tool: ToolCall) {
-  const icon = tool.status === "running" ? "…" : tool.status === "error" ? "✗" : "✓";
-  return `${icon} ${tool.name} ${tool.display?.file_paths?.join(", ") ?? ""}`;
+function stepIcon(step: ChatStep) {
+  if (step.status === "running") return "…";
+  if (step.status === "waiting") return "?";
+  if (step.status === "error") return "✗";
+  if (step.status === "stopped") return "–";
+  return "✓";
+}
+
+// Tiny's wording for what the hook reports.
+function StatusLine({ chat, hasApp }: { chat: Base44Chat; hasApp: boolean }) {
+  let text = "";
+  if (chat.error) text = chat.error.message;
+  else if (chat.connection === "reconnecting") text = "Reconnecting…";
+  else if (chat.status === "submitted") text = hasApp ? "Sending…" : "Creating app…";
+  else if (chat.status === "waiting") text = "Waiting for your answer";
+  else if (chat.status === "building") text = "Building…";
+  else if (hasApp && chat.connection === "connecting") text = "Loading the conversation…";
+  if (!text) return null;
+  return (
+    <p className="chat-status">
+      {text}
+      {chat.error && <Button size="sm" variant="ghost" onClick={chat.clearError}>Dismiss</Button>}
+    </p>
+  );
 }

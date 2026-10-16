@@ -1,59 +1,61 @@
 "use client";
 import { useState } from "react";
-import type { ToolCall, ToolQuestionArguments, ToolSecretArguments } from "@base44/platform";
+import type { ChatQuestion } from "@base44/platform/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { submitToolCallInput } from "../server/base44";
 
-// A tool step the builder waits on: a choice, values to enter (such as API keys), or an
-// approval. Declining is always an answer.
-export default function ToolQuestion({ appId, messageId, tool }: { appId: string; messageId: string; tool: ToolCall }) {
+// A question the builder waits on: a choice, secrets to enter (such as API keys), or an
+// approval. Its actions are already bound to its tool call, and declining is always an answer.
+export default function ToolQuestion({ question }: { question: ChatQuestion }) {
   const [sent, setSent] = useState(false);
-  const [picked, setPicked] = useState<Record<number, string[]>>({});
-  const [secrets, setSecrets] = useState<Record<string, string>>({});
-  const kind = tool.waiting_on?.kind;
-  const questions = kind === "choice" ? (tool.arguments as ToolQuestionArguments)?.questions ?? [] : [];
+  const [picked, setPicked] = useState<string[][]>(question.kind === "choice" ? question.questions.map(() => []) : []);
   // Tiny passes these values to Base44 and keeps none.
-  const fields = kind === "input" ? (tool.arguments as ToolSecretArguments)?.secrets_schema ?? [] : [];
+  const [secrets, setSecrets] = useState<Record<string, string>>({});
 
-  function answer(approve: boolean, extraUserInput?: object) {
+  // A failed answer opens the question again, so the buttons come back.
+  async function send(action: () => Promise<void>) {
     setSent(true);
-    submitToolCallInput(appId, { toolCallId: tool.id!, messageId, approve, extraUserInput }).catch(() => setSent(false));
+    await action();
+    setSent(false);
   }
 
-  function pick(index: number, label: string, multi?: boolean) {
-    const current = picked[index] ?? [];
-    const next = !multi ? [label] : current.includes(label) ? current.filter((l) => l !== label) : [...current, label];
-    setPicked({ ...picked, [index]: next });
+  function pick(index: number, label: string, multi: boolean) {
+    const current = picked[index];
+    let next = [label];
+    if (multi && current.includes(label)) next = current.filter((l) => l !== label);
+    else if (multi) next = [...current, label];
+    setPicked(picked.map((labels, i) => (i === index ? next : labels)));
   }
 
   function submit() {
-    if (kind === "choice") answer(true, { answers: questions.map((_, i) => ({ question_index: i, selected_labels: picked[i] ?? [] })) });
-    else if (kind === "input") answer(true, { secrets });
-    else answer(true);
+    if (question.kind === "choice") return send(() => question.answer(picked));
+    if (question.kind === "secrets") return send(() => question.submit(secrets));
+    return send(question.approve);
   }
 
   return (
     <div className="question">
-      {kind === "approval" && <p>Allow {tool.name}? {tool.approval?.reason ?? tool.approval?.details?.summary}</p>}
-      {questions.map((q, i) => (
-        <div key={i} className="question-item">
-          <p className="question-title">{q.question}</p>
-          <div className="question-options">
-            {(q.options ?? []).map((o) => (typeof o === "string" ? o : o.label ?? "")).map((label) => (
-              <Button key={label} size="sm" variant={picked[i]?.includes(label) ? "default" : "outline"} onClick={() => pick(i, label, q.multi_select)}>
-                {label}
-              </Button>
-            ))}
+      {question.kind === "approval" && <p>Allow {question.action}? {question.reason}</p>}
+      {question.kind === "choice" &&
+        question.questions.map((q, i) => (
+          <div key={i} className="question-item">
+            <p className="question-title">{q.text}</p>
+            <div className="question-options">
+              {q.options.map((label) => (
+                <Button key={label} size="sm" variant={picked[i].includes(label) ? "default" : "outline"} onClick={() => pick(i, label, q.multi)}>
+                  {label}
+                </Button>
+              ))}
+            </div>
           </div>
-        </div>
-      ))}
-      {fields.map(({ secretName = "" }) => (
-        <Input key={secretName} type="password" placeholder={secretName} onChange={(e) => setSecrets({ ...secrets, [secretName]: e.target.value })} />
-      ))}
+        ))}
+      {question.kind === "secrets" &&
+        question.fields.map(({ name }) => (
+          <Input key={name} type="password" placeholder={name} onChange={(e) => setSecrets({ ...secrets, [name]: e.target.value })} />
+        ))}
       <div className="question-actions">
-        <Button size="sm" onClick={submit} disabled={sent}>{kind === "approval" ? "Allow" : "Submit"}</Button>
-        <Button size="sm" variant="ghost" onClick={() => answer(false)} disabled={sent}>Decline</Button>
+        <Button size="sm" onClick={submit} disabled={sent}>{question.kind === "approval" ? "Allow" : "Submit"}</Button>
+        <Button size="sm" variant="ghost" onClick={() => send(question.decline)} disabled={sent}>Decline</Button>
       </div>
     </div>
   );
