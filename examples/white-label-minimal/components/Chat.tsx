@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useBase44Chat, type Base44Chat, type Base44ChatBackend, type ChatStep } from "@base44/platform/react";
+import { useBase44Chat, type Base44Chat, type Base44ChatBackend, type ChatItem, type ChatStep } from "@base44/platform/react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { StickToBottom } from "use-stick-to-bottom";
@@ -37,7 +37,7 @@ export default function Chat({ app, onAppCreated, onBuildingChange }: {
         <StickToBottom.Content className="chat-messages">
           {chat.items.map((item) => (
             <div key={item.id} className="chat-message">
-              {item.text && <p className={item.role === "user" ? "chat-user-text" : "chat-assistant-text"}>{item.text}</p>}
+              {item.text && <p className={textClass(item)}>{item.text}</p>}
               {item.steps.map((step) =>
                 step.question ? (
                   <ToolQuestion key={step.id} question={step.question} />
@@ -47,8 +47,10 @@ export default function Chat({ app, onAppCreated, onBuildingChange }: {
               )}
             </div>
           ))}
+          {/* Base44 runs these in order once the builder is free. */}
+          {chat.queue.length > 0 && <p className="chat-queued-label">Queued</p>}
           {chat.queue.map((queued) => (
-            <p key={queued.id} className="chat-user-text">{queued.content} · Queued</p>
+            <p key={queued.id} className="chat-queued">{queued.content}</p>
           ))}
           <StatusLine chat={chat} hasApp={!!app} />
         </StickToBottom.Content>
@@ -70,6 +72,13 @@ export default function Chat({ app, onAppCreated, onBuildingChange }: {
       </div>
     </div>
   );
+}
+
+// A prompt Base44 hasn't confirmed yet shows faded.
+function textClass(item: ChatItem) {
+  if (item.role === "assistant") return "chat-assistant-text";
+  if (item.pending) return "chat-user-text chat-pending";
+  return "chat-user-text";
 }
 
 function stepIcon(step: ChatStep) {
