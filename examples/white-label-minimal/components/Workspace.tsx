@@ -32,7 +32,7 @@ export default function Workspace() {
     <div className="workspace">
       <Header apps={apps} selectedAppId={appId} onSelectApp={setAppId} />
       <AppPreview key={`preview-${appId}`} app={app} live={liveAppId === appId} />
-      <Chat key={`chat-${appId}`} app={app} onAppCreated={onAppCreated} onBuildingChange={onBuildingChange} />
+      <Chat app={app} onAppCreated={onAppCreated} onBuildingChange={onBuildingChange} />
     </div>
   );
 }
