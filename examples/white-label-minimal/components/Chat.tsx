@@ -90,7 +90,6 @@ function stepIcon(step: ChatStep) {
 function StatusLine({ chat, hasApp }: { chat: Base44Chat; hasApp: boolean }) {
   let text = "";
   if (chat.error) text = chat.error.message;
-  else if (chat.connection === "reconnecting") text = "Reconnecting…";
   else if (chat.status === "submitted") text = hasApp ? "Sending…" : "Creating app…";
   else if (chat.status === "waiting") text = "Waiting for your answer";
   else if (chat.status === "building") text = "Building…";
