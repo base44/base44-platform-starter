@@ -60,9 +60,17 @@ export async function submitToolCallInput(appId: string, answer: ToolCallAnswer)
   if (response && !response.ok) throw new Error(`Base44 /chat/submit-tool-call-input failed: ${response.status}`);
 }
 
-export async function getPreviewUrl(appId: string, target: "latest_preview" | "live_preview") {
+// A new app has no latest preview until its first build gives it a slug: Base44 answers 400
+// app_has_no_slug, so there is no URL yet rather than an error.
+export async function getPreviewUrl(appId: string, target: "latest_preview" | "live_preview"): Promise<string | null> {
   await request(`/api/apps/${appId}/users/provisions`, { body: { email: PREVIEW_USER, role: "user" }, headers: embedKey });
-  const data = await call(`/api/apps/${appId}/embed-url`, { body: { email: PREVIEW_USER, target }, headers: embedKey });
+  const response = await request(`/api/apps/${appId}/embed-url`, { body: { email: PREVIEW_USER, target }, headers: embedKey });
+  if (response.status === 400) {
+    const { error } = await response.json().catch(() => ({}));
+    if (error?.code === "app_has_no_slug") return null;
+  }
+  if (!response.ok) throw new Error(`Base44 /api/apps/${appId}/embed-url failed: ${response.status}`);
+  const data = await response.json();
   return data.embed_url as string;
 }
 
