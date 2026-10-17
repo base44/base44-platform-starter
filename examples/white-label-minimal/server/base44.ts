@@ -1,4 +1,5 @@
 "use server";
+import type { SocketSession } from "@base44/platform";
 
 export type App = { id: string; name: string };
 export type ToolCallAnswer = { toolCallId: string; messageId: string; approve: boolean; extraUserInput?: object };
@@ -31,9 +32,10 @@ export async function listApps(): Promise<App[]> {
     .map(({ id, name }) => ({ id, name }));
 }
 
-export async function openLiveSession(appId: string) {
+// The browser's socket needs only these three fields; session_id stays on the server.
+export async function openLiveSession(appId: string): Promise<SocketSession> {
   const session = await call("/api/service/socket-sessions", { body: { app_ids: [appId] }, headers: serviceKey });
-  return { serverUrl: new URL(session.socket_url).origin, sessionToken: session.session_token as string };
+  return { session_token: session.session_token, socket_url: session.socket_url, socket_path: session.socket_path };
 }
 
 export async function sendMessage(appId: string, content: string) {

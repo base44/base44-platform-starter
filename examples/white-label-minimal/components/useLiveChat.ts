@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Base44PlatformClient, type ChatMessage } from "@base44/platform";
+import { createPlatformClient, type Message } from "@base44/platform";
 import { createApp, openLiveSession, sendMessage, type App } from "../server/base44";
 
 // The chat's state: the live connection to Base44, message ordering, create-or-send,
@@ -10,7 +10,7 @@ export function useLiveChat({ app, onAppCreated }: {
   onAppCreated: (app: App) => void;
 }) {
   const appId = app?.id ?? null;
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [building, setBuilding] = useState(false);
   const [loading, setLoading] = useState(!!appId);
   const [creating, setCreating] = useState(false);
@@ -20,37 +20,33 @@ export function useLiveChat({ app, onAppCreated }: {
   useEffect(() => {
     if (!appId) return;
     let stopped = false;
-    let socket: { close(): void } | undefined;
-    const fail = (e: { code?: string; message?: string }) => setError(e.code || e.message || "Live updates failed");
-
-    openLiveSession(appId)
-      .then(({ serverUrl, sessionToken }) => {
-        if (stopped) return;
-        const builder = new Base44PlatformClient({ serverUrl, getSessionToken: () => sessionToken }).builder.init({ onError: fail });
-        socket = builder;
-        builder.subscribe(appId, {
-          onSnapshot: (snapshot) => {
-            setMessages(snapshot.messages);
-            setLoading(false);
-            setBuilding(snapshot.status?.state === "processing");
-          },
-          onEvent: (event) => {
-            if (event.type === "message.updated") {
-              const message = event.data.message;
-              // Replace the message with the same id in place, or add it at the end.
-              setMessages((all) => (all.some((m) => m.id === message.id) ? all.map((m) => (m.id === message.id ? message : m)) : [...all, message]));
-            }
-            if (event.type === "app.status_changed") setBuilding(event.data.status?.state === "processing");
-          },
-          onError: fail,
-        });
-        return builder.connect();
-      })
-      .catch(fail);
+    // close() rejects a pending connect; that is not an error to show.
+    const fail = (e: { code?: string; message?: string }) => {
+      if (!stopped) setError(e.code || e.message || "Live updates failed");
+    };
+    // The SDK calls getSession on connect, and again when the session expires.
+    const builder = createPlatformClient().builder.init({ getSession: () => openLiveSession(appId), onError: fail });
+    builder.subscribe(appId, {
+      onSnapshot: (snapshot) => {
+        setMessages(snapshot.messages);
+        setLoading(false);
+        setBuilding(snapshot.status?.state === "processing");
+      },
+      onEvent: (event) => {
+        if (event.type === "message.updated") {
+          const message = event.data.message;
+          // Replace the message with the same id in place, or add it at the end.
+          setMessages((all) => (all.some((m) => m.id === message.id) ? all.map((m) => (m.id === message.id ? message : m)) : [...all, message]));
+        }
+        if (event.type === "app.status_changed") setBuilding(event.data.status?.state === "processing");
+      },
+      onError: fail,
+    });
+    builder.connect().catch(fail);
 
     return () => {
       stopped = true;
-      socket?.close();
+      builder.close();
     };
   }, [appId]);
 
