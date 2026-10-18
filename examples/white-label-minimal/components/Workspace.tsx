@@ -1,9 +1,16 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { listApps, type App } from "../server/base44";
+import { Base44ChatProvider, useChatState, type Base44ChatBackend } from "@base44/platform/react";
+import { createApp, listApps, openLiveSession, sendMessage, submitToolCallInput, type App } from "../server/base44";
 import AppPreview from "./AppPreview";
-import Chat from "./Chat";
+import Chat, { Step, Text } from "./Chat";
 import Header from "./Header";
+import { questionParts } from "./QuestionParts";
+
+// The four Base44 calls, run on the server. The chat calls them, so the browser never holds a key.
+const backend: Base44ChatBackend = { createApp, openLiveSession, sendMessage, submitToolCallInput };
+// Tiny's parts. Every question kind needs one; the text and step parts are optional.
+const components = { message: { Text, Step }, question: questionParts };
 
 export default function Workspace() {
   const [apps, setApps] = useState<App[]>([]);
@@ -28,11 +35,24 @@ export default function Workspace() {
     [appId, liveAppId],
   );
 
+  // One provider above everything that reads the chat.
   return (
-    <div className="workspace">
-      <Header apps={apps} selectedAppId={appId} onSelectApp={setAppId} />
-      <AppPreview key={`preview-${appId}`} app={app} live={liveAppId === appId} />
-      <Chat app={app} onAppCreated={onAppCreated} onBuildingChange={onBuildingChange} />
-    </div>
+    <Base44ChatProvider appId={appId} backend={backend} onAppCreated={onAppCreated} components={components}>
+      <div className="workspace">
+        <Header apps={apps} selectedAppId={appId} onSelectApp={setAppId} />
+        <AppPreview key={`preview-${appId}`} app={app} live={liveAppId === appId} />
+        <Chat hasApp={!!app} />
+        <BuildWatcher onBuildingChange={onBuildingChange} />
+      </div>
+    </Base44ChatProvider>
   );
+}
+
+// Tells the workspace when a build starts and ends, so the preview goes live and the app list refreshes.
+function BuildWatcher({ onBuildingChange }: { onBuildingChange: (building: boolean) => void }) {
+  const building = useChatState().status === "building";
+  useEffect(() => {
+    onBuildingChange(building);
+  }, [building, onBuildingChange]);
+  return null;
 }

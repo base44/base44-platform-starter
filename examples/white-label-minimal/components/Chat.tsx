@@ -1,35 +1,24 @@
 "use client";
-import { useEffect, useState } from "react";
-import { useBase44Chat, type Base44Chat, type Base44ChatBackend, type ChatItem, type ChatStep } from "@base44/platform/react";
+import { useState } from "react";
+import { Message, useChatActions, useChatState, type ChatStep, type ChatState, type StepProps, type TextProps } from "@base44/platform/react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { StickToBottom } from "use-stick-to-bottom";
-import { createApp, openLiveSession, sendMessage, submitToolCallInput, type App } from "../server/base44";
-import ToolQuestion from "./ToolQuestion";
 
-// The four Base44 calls, run on the server. The hook calls them, so the browser never holds a key.
-const backend: Base44ChatBackend = { createApp, openLiveSession, sendMessage, submitToolCallInput };
-
-export default function Chat({ app, onAppCreated, onBuildingChange }: {
-  app: App | null;
-  onAppCreated: (app: App) => void;
-  onBuildingChange: (building: boolean) => void;
-}) {
-  const chat = useBase44Chat({ appId: app?.id ?? null, backend, onAppCreated });
+// The chat reads the chat that Workspace's <Base44ChatProvider> runs. <Message> draws each item with
+// Tiny's parts: the text and step parts below, and the question parts from QuestionParts.
+export default function Chat({ hasApp }: { hasApp: boolean }) {
+  const { items, status } = useChatState();
+  const { send, create } = useChatActions();
   const [prompt, setPrompt] = useState("");
-  const building = chat.status === "building";
   // Send only when the builder can take a prompt now. After a failed build, a prompt can ask for the fix.
-  const canSend = chat.status === "ready" || chat.status === "error";
-
-  useEffect(() => {
-    onBuildingChange(building);
-  }, [building, onBuildingChange]);
+  const canSend = status === "ready" || status === "error";
 
   // The first prompt creates the app; every later one goes to it.
   function submit() {
     if (!canSend || !prompt.trim()) return;
-    if (app) chat.send(prompt);
-    else chat.create(prompt);
+    if (hasApp) send(prompt);
+    else create(prompt);
     setPrompt("");
   }
 
@@ -37,19 +26,12 @@ export default function Chat({ app, onAppCreated, onBuildingChange }: {
     <div className="chat">
       <StickToBottom className="chat-scroll" initial="instant">
         <StickToBottom.Content className="chat-messages">
-          {chat.items.map((item) => (
+          {items.map((item) => (
             <div key={item.id} className="chat-message">
-              {item.text && <p className={textClass(item)}>{item.text}</p>}
-              {item.steps.map((step) =>
-                step.question ? (
-                  <ToolQuestion key={step.id} question={step.question} />
-                ) : (
-                  <p key={step.id} className="chat-tool-line">{stepIcon(step)} {step.label}</p>
-                ),
-              )}
+              <Message item={item} />
             </div>
           ))}
-          <StatusLine chat={chat} hasApp={!!app} />
+          <StatusLine hasApp={hasApp} />
         </StickToBottom.Content>
       </StickToBottom>
       <div className="chat-composer">
@@ -61,7 +43,7 @@ export default function Chat({ app, onAppCreated, onBuildingChange }: {
             e.preventDefault();
             submit();
           }}
-          placeholder={app ? "Ask for a change…" : "Describe your app…"}
+          placeholder={hasApp ? "Ask for a change…" : "Describe your app…"}
           className="chat-input"
           rows={1}
         />
@@ -72,10 +54,15 @@ export default function Chat({ app, onAppCreated, onBuildingChange }: {
 }
 
 // A prompt Base44 hasn't confirmed yet shows faded.
-function textClass(item: ChatItem) {
-  if (item.role === "assistant") return "chat-assistant-text";
-  if (item.pending) return "chat-user-text chat-pending";
-  return "chat-user-text";
+export function Text({ text, role, pending }: TextProps) {
+  let className = "chat-user-text";
+  if (role === "assistant") className = "chat-assistant-text";
+  else if (pending) className = "chat-user-text chat-pending";
+  return <p className={className}>{text}</p>;
+}
+
+export function Step(step: StepProps) {
+  return <p className="chat-tool-line">{stepIcon(step)} {step.label}</p>;
 }
 
 function stepIcon(step: ChatStep) {
@@ -86,8 +73,10 @@ function stepIcon(step: ChatStep) {
   return "✓";
 }
 
-// Tiny's wording for what the hook reports.
-function StatusLine({ chat, hasApp }: { chat: Base44Chat; hasApp: boolean }) {
+// Tiny's wording for what the chat reports.
+function StatusLine({ hasApp }: { hasApp: boolean }) {
+  const chat: ChatState = useChatState();
+  const { clearError } = useChatActions();
   let text = "";
   if (chat.error) text = chat.error.message;
   else if (chat.status === "submitted") text = hasApp ? "Sending…" : "Creating app…";
@@ -98,7 +87,7 @@ function StatusLine({ chat, hasApp }: { chat: Base44Chat; hasApp: boolean }) {
   return (
     <p className="chat-status">
       {text}
-      {chat.error && <Button size="sm" variant="ghost" onClick={chat.clearError}>Dismiss</Button>}
+      {chat.error && <Button size="sm" variant="ghost" onClick={clearError}>Dismiss</Button>}
     </p>
   );
 }
