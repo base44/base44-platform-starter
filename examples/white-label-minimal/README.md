@@ -15,7 +15,7 @@ Every Base44 call is one function in [server/base44.ts](server/base44.ts).
 | --- | --- |
 | [The build turn](https://docs.base44.com/developers/white-label/the-build-turn) | `createApp`, `sendMessage`, `submitToolCallInput` |
 | Watch it build, live | `openLiveSession`, and the socket in [components/useLiveChat.ts](components/useLiveChat.ts) |
-| Answer the builder's questions | [components/ToolQuestion.tsx](components/ToolQuestion.tsx): a choice, values to enter, or an approval |
+| Answer the AI's questions | [components/ToolQuestion.tsx](components/ToolQuestion.tsx): a choice, values to enter, or an approval |
 | [Embed the app](https://docs.base44.com/developers/white-label/embed-the-app) | `getPreviewUrl` and [components/AppPreview.tsx](components/AppPreview.tsx) |
 | [Custom instructions](https://docs.base44.com/developers/white-label/custom-instructions) | `customInstructions`, sent with every new app |
 
@@ -56,7 +56,7 @@ Open [Tiny Sunny](http://127.0.0.1:3001).
 
 - **Sign-in and app ownership.** Everyone sees every app. In production, sign your users in, record
   who created each app, and check it on every call: Base44 sees only the one account.
-- **Publishing.** The builder is told it isn't available.
+- **Publishing.** The AI is told it isn't available.
 - **Closing the live session.** It expires after an hour.
 
 ## Deploy to Netlify

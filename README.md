@@ -1,7 +1,7 @@
 # Build your own platform on Base44
 
 **Base44** is an AI app builder: describe an app, get a real, deployed app. This repo shows how to
-put that builder *inside your own product*, so your users build apps under your brand, your login
+put its app editor *inside your own product*, so your users build apps under your brand, your login
 and your governance — and those apps can read and write your product's data.
 
 This README is a walkthrough. It has four steps, each one a boundary you have to get right, with
@@ -325,8 +325,8 @@ npm run db:migrate
 npm run dev
 ```
 
-Without the `BASE44_*` variables everything works except the builder: the bridge answers
-`501 bridge_misconfigured` and the UI says the builder is not configured. That's on purpose — you
+Without the `BASE44_*` variables everything works except the app editor: the bridge answers
+`501 bridge_misconfigured` and the UI says the app editor is not configured. That's on purpose — you
 can explore the product before you have a workspace.
 
 Checks, each one asserting a boundary above:
@@ -346,7 +346,7 @@ npm run webhook:smoke    # step 5: the inbound signature, negative controls
 
 | Symptom | Likely cause |
 | --- | --- |
-| `501 bridge_misconfigured` | A `BASE44_*` env var is missing, or Base44 answered `401` to the integration account's token (revoked, expired). A deployment problem, not a user one — the UI says the builder is unavailable |
+| `501 bridge_misconfigured` | A `BASE44_*` env var is missing, or Base44 answered `401` to the integration account's token (revoked, expired). A deployment problem, not a user one — the UI says the app editor is unavailable |
 | `404 not_found` on an app-scoped action | The caller has no `AppOwnership` row for that app. Built before ownership was tracked? Insert the row |
 | `403` on deploy | The integration account isn't an Editor in the workspace |
 | Builds ignore your design system or skills | The token was created in the account's personal workspace. Create it in the enterprise workspace |
@@ -361,7 +361,7 @@ npm run webhook:smoke    # step 5: the inbound signature, negative controls
 - **[docs/base44-built-apps.md](docs/base44-built-apps.md)** — instructions, skills, and the
   callback API
 - **[docs/sunny-platform-skill.md](docs/sunny-platform-skill.md)** — the skill text a built app
-  reads, as a worked example of documenting your data model for a builder
+  reads, as a worked example of documenting your data model for the AI
 - [docs/deploy.md](docs/deploy.md) — deploying to Netlify + Neon
 - [CLAUDE.md](CLAUDE.md) — the conventions this repo holds itself to, and where each boundary
   is enforced in the code

@@ -167,8 +167,8 @@ curl -s -D- -o /dev/null -b /tmp/j -X POST --data "csrfToken=$T" "$P/api/auth/si
   lives in the Base44 workspace and hardcodes one host (`docs/sunny-platform-skill.md`,
   `<SUNNY_HOST>`), so an app in a preview reads and writes **production** rows — scoped to
   its viewer, but production data all the same. Making it follow the deployment means a
-  per-environment skill, or teaching the builder instructions to inject the shell's own origin.
-- **Base44 credentials on previews or not.** Without them a preview says the builder is not
+  per-environment skill, or teaching the custom instructions to inject the shell's own origin.
+- **Base44 credentials on previews or not.** Without them a preview says the app editor is not
   configured and everything else works. With them, previews share the production account and
   workspace, so apps built in a preview land in production's workspace — and their `AppOwnership`
   rows land in the preview's database branch, so production will not list them. Nothing per-user

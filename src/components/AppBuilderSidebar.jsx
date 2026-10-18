@@ -813,7 +813,7 @@ export default function AppBuilderSidebar({
             )}
             {builderReady === false && embedded && (
               <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
-                <p className="text-sm text-muted-foreground">The app builder is not configured on this deployment.</p>
+                <p className="text-sm text-muted-foreground">The app editor is not configured on this deployment.</p>
                 <button
                   disabled={rechecking}
                   onClick={async () => {

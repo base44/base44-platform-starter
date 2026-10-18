@@ -3,7 +3,7 @@
 Reference implementation of a **white-label platform built on Base44**. Base44 is the backend and
 app-factory; this repo is the shell a company wraps around it. **Sunny** is the worked example — a
 work-management product (boards / groups / items / widgets) whose users can build their own apps via
-Base44's builder, embedded here.
+Base44's app editor, embedded here.
 
 Read `README.md` first: it is the walkthrough, organised around the four boundaries this repo exists
 to demonstrate.
@@ -99,7 +99,7 @@ needs neither — it mints its own keypair.
 
 - `docs/base44-identity.md` — the one-account model, the access token, and keeping builders apart
 - `docs/base44-platform-api.md` — the platform REST endpoints
-- `docs/base44-built-apps.md` — builder instructions, skills, and the callback API
+- `docs/base44-built-apps.md` — custom instructions, skills, and the callback API
 - `docs/sunny-platform-skill.md` — the skill text a built app reads, as a worked example
 - `docs/base44-webhooks.md` — inbound events: registration, signature, delivery semantics
 - `docs/deploy.md` — Netlify + Neon

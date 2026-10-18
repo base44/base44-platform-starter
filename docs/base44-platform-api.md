@@ -121,7 +121,7 @@ stick.
 
 ### `GET /api/apps/{appId}/chat/full-conversation?limit=100&skip=0`
 
-The full builder transcript, typically polled every few seconds while a build runs. Every tool
+The full AI chat transcript, typically polled every few seconds while a build runs. Every tool
 call's arguments and results come back with it — file contents included — so the body grows all
 build long. Watch this one: a late-build read is much heavier than an early one, so if you see
 timeouts here, raise the limit rather than treating it as an upstream fault.
@@ -146,7 +146,7 @@ build finished — poll the app and the conversation after.
 }
 ```
 
-When a builder turn pauses on a `requires_user_input` tool call: `rejected` records the call as
+When a build turn pauses on a `requires_user_input` tool call: `rejected` records the call as
 stopped and the tool never runs; `approved` runs it with `extra_user_input` injected as its
 `user_input` argument.
 
@@ -191,7 +191,7 @@ either side of the call. Re-check that if anything ever sends more than `name`.
 
 | Missing env var (thrown before any call) | Deployment isn't configured | `501 bridge_misconfigured` — **not** 400 and **not** 502. Echoing env var names into a response body is also worth avoiding |
 
-Client-side, `bridge_misconfigured` is one UI state ("the builder is not available here") — see
+Client-side, `bridge_misconfigured` is one UI state ("the app editor is not available here") — see
 `isBuilderUnavailable()` in `src/lib/base44Platform.ts` — and `not_found` on an app-scoped action
 means the caller does not own the app they named.
 

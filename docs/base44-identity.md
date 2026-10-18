@@ -59,7 +59,7 @@ It lands in env as `BASE44_ACCESS_TOKEN`, next to `BASE44_ORG_ID` (the workspace
 and `BASE44_PLATFORM_HOST`. See `.env.example`.
 
 There is no per-user token to mint, store, refresh or revoke, and no "Connect" step in the UI. The
-builder is either configured on a deployment or it is not; `POST /api/base44/platform
+app editor is either configured on a deployment or it is not; `POST /api/base44/platform
 {action:"status"}` answers which, from config alone.
 
 ### What the workspace key is still for
@@ -67,7 +67,7 @@ builder is either configured on a deployment or it is not; `POST /api/base44/pla
 `BASE44_SVC_KEY`, the `b44k_` workspace API key, does **not** build apps. It is for the two things
 only a workspace key can do: signing a viewer into an embedded app — provisioning an app user and
 minting an embed sign-in token (`src/lib/embedSession.ts`) — and registering the outbound webhook
-endpoint. It is optional: without it the builder still works, and embedded apps load signed out.
+endpoint. It is optional: without it the app editor still works, and embedded apps load signed out.
 
 ---
 
@@ -115,7 +115,7 @@ inserting its row for the right user.
 
 ```
 set up      create the token in the enterprise workspace (Editor+) → env → deploy
-            `status` answers 200 configured; the builder UI appears
+            `status` answers 200 configured; the app editor appears
 
 build       browser → /api/base44/platform {action} → ownership check → Bearer <token> → Base44
             every app lands in the one account, in your workspace

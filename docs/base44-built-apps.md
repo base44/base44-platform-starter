@@ -22,12 +22,12 @@ data lives) and **an API** (the data itself).
 
 ## Two instruction channels, and why they're separate
 
-Every builder turn pays for the always-on instructions, so they have to stay small. Base44 gives you
+Every build turn pays for the always-on instructions, so they have to stay small. Base44 gives you
 a second channel that's loaded on demand.
 
 | | `custom_instructions` | Skill |
 | --- | --- | --- |
-| Where | The app's `custom_instructions` field, set at create | A workspace skill document the builder loads by name |
+| Where | The app's `custom_instructions` field, set at create | A workspace skill document the AI loads by name |
 | Cost | Every turn | Only when loaded |
 | Length | Keep it a page | As long as it needs to be |
 | Content | Runtime constraints, visual direction, **a router** | The endpoint, actions, schemas, gotchas, an example |
@@ -37,7 +37,7 @@ a second channel that's loaded on demand.
 `src/lib/builderInstructions.ts` covers three things:
 
 1. **Context** — what your product is, and that this app was generated from inside it to extend it.
-2. **Runtime constraints** — the ones the builder can't discover. In this repo: embedded in a
+2. **Runtime constraints** — the ones the AI can't discover. In this repo: embedded in a
    sandboxed iframe (`allow-scripts allow-same-origin allow-forms allow-popups`), user-resizable and
    short by default, so design for a small viewport that scales up; no top-level navigation, no
    downloads, no full-screen; `public_without_login`, so no sign-in UI to build — but the data is
@@ -153,7 +153,7 @@ Once apps are built against it, they are deployed code you don't control. So:
 - **Freeze the shapes.** This repo asserts the contract action by action (`npm run sunny:smoke`)
   precisely because built apps depend on it.
 
-### An example of the client the builder writes
+### An example of the client the AI writes
 
 ```js
 const API = "https://your-host/api/sunny";

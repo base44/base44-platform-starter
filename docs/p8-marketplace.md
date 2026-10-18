@@ -54,7 +54,7 @@ The **Add widget** picker reads both halves. **My apps** reads only the built ha
 merge stays in one place so the two surfaces cannot disagree about a URL or a
 screenshot — only about which apps they have reason to show.
 
-That split is what lets *Publish* and *Edit in builder* sit unconditionally on a My apps
+That split is what lets *Publish* and *Edit app* sit unconditionally on a My apps
 card: everything on that page is the user's own code, so neither control has a case to
 hide for.
 
@@ -111,12 +111,12 @@ Three ways in, and the third is the one that matters:
 * **My apps → Publish** on any app you built. Labelled, not a bare storefront glyph:
   an icon does not say "offer this to other people", and nobody hovers a control whose
   meaning they have not already guessed.
-* **From the chat.** Opening the builder from the market passes `origin: "market"`, and
+* **From the chat.** Opening the app editor from the market passes `origin: "market"`, and
   the finished app's ready card offers **Add to the market** as its primary action —
   deploy, then the listing dialog.
 
 That last one follows a pattern this codebase already had: `origin: "home-widget"`
-makes the ready card offer *Add to my widgets*. **Where the builder was opened from is
+makes the ready card offer *Add to my widgets*. **Where the app editor was opened from is
 already a statement of intent**, so it picks the destination instead of asking. Someone
 who clicked "Build an app" inside the market is building it *for* the market.
 
@@ -137,7 +137,7 @@ two correct answers, which is the same as having none.
 
 The line that actually exists in the data is **authorship**:
 
-* **My apps** — code you wrote. Open it, rename it, edit it in the builder, publish it.
+* **My apps** — code you wrote. Open it, rename it, edit it in the app editor, publish it.
   Every affordance on the page assumes you own the thing.
 * **Market** — everything that crosses accounts. Browse and preview what other people
   built, install it, and manage your own listings. Installed apps live here, under
@@ -145,7 +145,7 @@ The line that actually exists in the data is **authorship**:
   place: this is the page that granted somebody else's code access to your data, and it
   is the page that takes it back.
 
-The route matches the name: `/apps`, which `?app=` deep links from the builder and the
+The route matches the name: `/apps`, which `?app=` deep links from the app editor and the
 widgets point at. `/MyTools` still redirects there — those are URLs people keep.
 
 The nav says **My apps**, not *Apps*. Beside *Market* the possessive is doing the work —
@@ -160,14 +160,14 @@ picker that opens on thirteen of your own apps buries the two you just installed
 
 ## The market refreshes itself
 
-The builder is a side panel over whatever page you were on, so you can publish an app
+The app editor is a side panel over whatever page you were on, so you can publish an app
 from the chat while looking straight at the market grid behind it — and the grid has no
 reason to refetch. The only fix was a manual reload, which reads as "it didn't work".
 
 `src/lib/marketEvents.ts` is a `market-changed` window event, the same shape as the
 `widgets-updated` and `app-rebuilt` events this codebase already uses to coordinate
 across surfaces. It is announced from **`PublishDialog`** rather than from each caller:
-the builder, the My apps page and the market page all publish through that one component,
+the app editor, the My apps page and the market page all publish through that one component,
 so a new caller gets the refresh for free instead of having to remember. Install and
 uninstall announce it too.
 
@@ -201,7 +201,7 @@ Three glyphs were doing work no glyph can do:
 
 Uninstall now lives on **Apps**, not in the market. A storefront is for getting things;
 managing what you already have belongs next to the thing itself. That also makes the
-two card kinds symmetrical: an app you built offers *Publish* and *Edit in builder*, an
+two card kinds symmetrical: an app you built offers *Publish* and *Edit app*, an
 app you installed offers *Uninstall*.
 
 ## Where you meet it
@@ -211,7 +211,7 @@ app you installed offers *Uninstall*.
 | **Market** in the top nav | the catalogue: Browse / Installed / Published by me |
 | **Apps** in the top nav | everything you can open, filtered by source |
 | Home | an App market card with a live count, and *Build your own* |
-| Add widget | links to the market and the builder |
+| Add widget | links to the market and the app editor |
 | Apps | a labelled *Publish* on each app you built |
 | Market header | *Build an app* — the market is where you learn nobody built the thing you need |
 
@@ -227,7 +227,7 @@ app you installed offers *Uninstall*.
 
 ## What is left
 
-**Publish from chat.** The builder should offer to publish when an app is ready — a
+**Publish from chat.** The AI should offer to publish when an app is ready — a
 tool widget with the assistant proposing the title and the one-liner. Wants P6's
 `InvokeLLM`.
 
