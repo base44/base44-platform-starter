@@ -34,9 +34,9 @@ const EVENT_TYPES = ["app.deleted.v1"];
 // Functions, not constants: these read required env vars, and at module scope a
 // missing one throws before main() can catch it — a stack trace where
 // MissingConfigError's own sentence is what the operator needs.
-const endpointsUrl = () => `${platformHost()}/api/service/outbound-webhooks/endpoints`;
-const keysUrl = () =>
-  `${platformHost()}/api/workspace/public/outbound-webhooks/${orgId()}/keys`;
+const apiBase = () => `${platformHost()}/api/v1/outbound-webhooks`;
+const endpointsUrl = () => `${apiBase()}/endpoints`;
+const keysUrl = () => `${apiBase()}/workspaces/${orgId()}/keys`;
 
 type Endpoint = { id: string; target_url: string; state: string; activated_at: string | null };
 type Activation = {
@@ -136,11 +136,19 @@ function report({ endpoint, activated, http_status, failure_category, detail }: 
   }
 }
 
+/** Every published key, following `next_cursor`: the receiver must trust them all. */
 async function publishedKeys(): Promise<string[]> {
-  const res = await fetch(keysUrl(), { cache: "no-store" });
-  if (!res.ok) throw new Error(`key set returned ${res.status}`);
-  const { keys = [] } = (await res.json()) as { keys?: { public_key: string }[] };
-  return keys.map((k) => k.public_key);
+  const found: string[] = [];
+  let cursor: string | null = null;
+  do {
+    const url = cursor ? `${keysUrl()}?cursor=${encodeURIComponent(cursor)}` : keysUrl();
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) throw new Error(`key set returned ${res.status}`);
+    const page = (await res.json()) as { keys?: { public_key: string }[]; next_cursor?: string | null };
+    found.push(...(page.keys ?? []).map((k) => k.public_key));
+    cursor = page.next_cursor ?? null;
+  } while (cursor);
+  return found;
 }
 
 async function main() {
