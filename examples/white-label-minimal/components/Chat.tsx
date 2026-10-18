@@ -44,7 +44,13 @@ export default function Chat({ app, onAppCreated, onBuildingChange }: {
                 step.question ? (
                   <ToolQuestion key={step.id} question={step.question} />
                 ) : (
-                  <p key={step.id} className="chat-tool-line">{stepIcon(step)} {step.label}</p>
+                  <div key={step.id}>
+                    <p className="chat-tool-line">{stepIcon(step)} {step.label}</p>
+                    {/* What the user answered stays after the question closes. */}
+                    {step.answered?.map((answer, i) => (
+                      <p key={i} className="chat-answer">{answer.question}: {[...answer.labels, answer.text].filter(Boolean).join(", ")}</p>
+                    ))}
+                  </div>
                 ),
               )}
             </div>

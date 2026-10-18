@@ -1,14 +1,16 @@
 "use client";
 import { useState } from "react";
-import type { ChatQuestion } from "@base44/platform/react";
+import type { ApprovalDetails, ChatQuestion } from "@base44/platform/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-// A question the builder waits on: a choice, secrets to enter (such as API keys), or an
-// approval. Its actions are already bound to its tool call, and declining is always an answer.
+// A question the AI waits on: a choice (options, or free text), secrets to enter (such as API
+// keys), or an approval. Its actions are already bound to its tool call, and declining is always
+// an answer.
 export default function ToolQuestion({ question }: { question: ChatQuestion }) {
   const [sent, setSent] = useState(false);
   const [picked, setPicked] = useState<string[][]>(question.kind === "choice" ? question.questions.map(() => []) : []);
+  const [texts, setTexts] = useState<string[]>([]);
   // Tiny passes these values to Base44 and keeps none.
   const [secrets, setSecrets] = useState<Record<string, string>>({});
 
@@ -28,7 +30,7 @@ export default function ToolQuestion({ question }: { question: ChatQuestion }) {
   }
 
   function submit() {
-    if (question.kind === "choice") return send(() => question.answer(picked));
+    if (question.kind === "choice") return send(() => question.answer(picked, texts));
     if (question.kind === "secrets") return send(() => question.submit(secrets));
     return send(question.approve);
   }
@@ -36,17 +38,22 @@ export default function ToolQuestion({ question }: { question: ChatQuestion }) {
   return (
     <div className="question">
       {question.kind === "approval" && <p>Allow {question.action}? {question.reason}</p>}
+      {question.kind === "approval" && <p className="question-details">{describe(question.details)}</p>}
       {question.kind === "choice" &&
         question.questions.map((q, i) => (
           <div key={i} className="question-item">
             <p className="question-title">{q.text}</p>
-            <div className="question-options">
-              {q.options.map((label) => (
-                <Button key={label} size="sm" variant={picked[i].includes(label) ? "default" : "outline"} onClick={() => pick(i, label, q.multi)}>
-                  {label}
-                </Button>
-              ))}
-            </div>
+            {q.type === "text_input" ? (
+              <Input onChange={(e) => setTexts(Object.assign([...texts], { [i]: e.target.value }))} />
+            ) : (
+              <div className="question-options">
+                {q.options.map((label) => (
+                  <Button key={label} size="sm" variant={picked[i].includes(label) ? "default" : "outline"} onClick={() => pick(i, label, q.multi)}>
+                    {label}
+                  </Button>
+                ))}
+              </div>
+            )}
           </div>
         ))}
       {question.kind === "secrets" &&
@@ -59,4 +66,17 @@ export default function ToolQuestion({ question }: { question: ChatQuestion }) {
       </div>
     </div>
   );
+}
+
+// What the approved action would do, as far as Base44's check says.
+function describe(details: ApprovalDetails) {
+  const parts: string[] = [];
+  if (details.summary) parts.push(details.summary);
+  if (details.entityName) parts.push(`Entity: ${details.entityName}`);
+  if (details.changeType) parts.push(`Change: ${details.changeType}`);
+  if (details.changedOps?.length) parts.push(`Access: ${details.changedOps.join(", ")}`);
+  if (details.functionName) parts.push(`Function: ${details.functionName}`);
+  if (details.method) parts.push(`Method: ${details.method}`);
+  if (details.inspectionFailed) parts.push("Base44 couldn't check this function's code");
+  return parts.join(" · ");
 }
