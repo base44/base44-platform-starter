@@ -18,7 +18,7 @@ export default function Chat({ app, onAppCreated, onBuildingChange }: {
   const chat = useBase44Chat({ appId: app?.id ?? null, backend, onAppCreated });
   const [prompt, setPrompt] = useState("");
   const building = chat.status === "building";
-  // Send only when the builder can take a prompt now. After a failed build, a prompt can ask for the fix.
+  // Send only when the AI can take a prompt now. After a failed build, a prompt can ask for the fix.
   const canSend = chat.status === "ready" || chat.status === "error";
 
   useEffect(() => {
