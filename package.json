@@ -28,6 +28,7 @@
     "minimal:typecheck": "npm run typecheck --workspace @base44/white-label-minimal"
   },
   "dependencies": {
+    "@base44/platform": "^0.4.0",
     "@hello-pangea/dnd": "^18.0.1",
     "@prisma/client": "^6.19.3",
     "@radix-ui/react-checkbox": "^1.1.4",

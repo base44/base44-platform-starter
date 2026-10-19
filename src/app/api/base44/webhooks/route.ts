@@ -4,19 +4,21 @@
  * renders from its own stored url, and `listApps` never reports a deletion.
  *
  * Status codes are instructions to Base44: non-2xx is retried (8 attempts over
- * ~27h) and enough failures auto-pause the endpoint, so unhandled types get 2xx.
+ * ~27h) and enough failures auto-pause the endpoint. The SDK's handler picks
+ * them: 400 for a delivery that fails verification, 500 for missing keys or a
+ * handler that threw, 204 otherwise, including event types with no handler. It
+ * answers the `webhook.test.v1` activation probe itself, after verifying it.
  */
 
+import { WebhookVerificationError } from "@base44/platform/server";
 import { NextResponse } from "next/server";
 
 import { ownersOf } from "@/lib/appOwnership";
-import { verifyWebhook } from "@/lib/base44WebhookSignature";
+import { verifyOptions, webhooks } from "@/lib/base44Webhooks";
 import { deleteEntity, listEntities } from "@/lib/entityCrud";
 
-// node:crypto for Ed25519, so not the edge runtime.
+// Prisma, so not the edge runtime.
 export const runtime = "nodejs";
-
-type CloudEvent = { type: string; data: Record<string, unknown> };
 
 /**
  * The event names the app; `AppOwnership` says whose it is. Upstream every app has
@@ -28,8 +30,7 @@ type CloudEvent = { type: string; data: Record<string, unknown> };
  * an on-time one, since a restore never puts pins back. `AppOwnership` stays —
  * a trashed app already drops out of `listApps`, and a restored one comes back.
  */
-async function removePins(appId: unknown) {
-  if (typeof appId !== "string") return;
+async function removePins(appId: string) {
   // Empty for an app built by another tool in the same workspace: nothing of ours to remove.
   for (const email of await ownersOf(appId)) {
     // Scoped through the RLS predicate to one owner at a time.
@@ -41,26 +42,23 @@ async function removePins(appId: unknown) {
 }
 
 export async function POST(request: Request) {
-  const rawBody = await request.text();
-
+  let options;
   try {
-    const verified = verifyWebhook(request.headers, rawBody);
-    if (!verified.ok) {
-      console.warn("[base44-webhook] rejected:", verified.reason);
-      return NextResponse.json({ error: "invalid_signature" }, { status: 400 });
-    }
+    options = verifyOptions();
   } catch (err) {
     console.error("[base44-webhook] cannot verify:", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: "receiver_misconfigured" }, { status: 500 });
   }
 
-  const event = JSON.parse(rawBody) as CloudEvent;
-  // Activation: echo the challenge, only after the signature verified.
-  if (event.type === "webhook.test.v1") {
-    return NextResponse.json({ challenge: event.data.challenge });
-  }
-  if (event.type === "app.deleted.v1") {
-    await removePins(event.data.app_id);
-  }
-  return NextResponse.json({ ok: true });
+  const handle = webhooks.createHandler({
+    ...options,
+    on: {
+      "app.deleted.v1": (event) => removePins(event.data.app_id),
+    },
+    onError: (err) => {
+      if (err instanceof WebhookVerificationError) console.warn("[base44-webhook] rejected:", err.code);
+      else console.error("[base44-webhook] failed:", err instanceof Error ? err.message : err);
+    },
+  });
+  return handle(request);
 }
