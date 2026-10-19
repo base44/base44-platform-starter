@@ -8,8 +8,6 @@ type Options = { body?: object; headers?: Record<string, string> };
 const host = process.env.BASE44_PLATFORM_HOST!;
 const workspaceId = process.env.BASE44_WORKSPACE_ID!;
 const accessToken = { Authorization: `Bearer ${process.env.BASE44_ACCESS_TOKEN}` };
-const serviceKey = { Authorization: `Bearer ${process.env.BASE44_SVC_KEY}` };
-const embedKey = { api_key: process.env.BASE44_SVC_KEY! };
 
 const PREVIEW_USER = "viewer@example.com";
 
@@ -32,9 +30,9 @@ export async function listApps(): Promise<App[]> {
     .map(({ id, name }) => ({ id, name }));
 }
 
-// The body holds only a session token, never the key, so it goes to the browser unchanged.
+// The body holds only a session token, never the access token, so it goes to the browser unchanged.
 export async function openLiveSession(appId: string): Promise<SocketSession> {
-  return call("/api/service/socket-sessions", { body: { app_ids: [appId] }, headers: serviceKey });
+  return call("/api/v1/socket-sessions", { body: { app_ids: [appId] } });
 }
 
 // Base44 holds this request open for the whole turn, and Next.js runs one server action at a time,
@@ -63,8 +61,8 @@ export async function submitToolCallInput(appId: string, answer: ToolCallAnswer)
 // A new app has no latest preview until its first build gives it a slug: Base44 answers 400
 // app_has_no_slug, so there is no URL yet rather than an error.
 export async function getPreviewUrl(appId: string, target: "latest_preview" | "live_preview"): Promise<string | null> {
-  await request(`/api/apps/${appId}/users/provisions`, { body: { email: PREVIEW_USER, role: "user" }, headers: embedKey });
-  const response = await request(`/api/apps/${appId}/embed-url`, { body: { email: PREVIEW_USER, target }, headers: embedKey });
+  await request(`/api/apps/${appId}/users/provisions`, { body: { email: PREVIEW_USER, role: "user" } });
+  const response = await request(`/api/apps/${appId}/embed-url`, { body: { email: PREVIEW_USER, target } });
   if (response.status === 400) {
     const { error } = await response.json().catch(() => ({}));
     if (error?.code === "app_has_no_slug") return null;

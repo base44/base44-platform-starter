@@ -14,7 +14,7 @@
  *     the caller has that row. `listApps` reads the workspace's apps and keeps
  *     the caller's own — see `listOwnedApps`.
  *
- * Governance stays intact: the token is pinned to the enterprise workspace via
+ * Governance stays intact: the token is pinned to the white-label workspace via
  * `X-Active-Workspace-Id` (and `createApp`'s `organization_id`). That workspace is
  * Sunny's alone, so it is the whole boundary upstream.
  *
