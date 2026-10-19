@@ -43,8 +43,9 @@ cp examples/white-label-minimal/.env.example examples/white-label-minimal/.env.l
 
 Fill in `.env.local` with the integration account's
 [personal access token](https://docs.base44.com/Workspaces/Personal-access-tokens), created in your
-enterprise workspace with access to all apps, the workspace ID, and a workspace API key with the
-`apps:watch` scope. Then:
+white-label workspace (Builder plan or higher) with Full access to all apps, and the workspace ID.
+The token is the only credential: it builds, opens live updates and signs viewers into previews.
+Then:
 
 ```sh
 npm run minimal:dev
