@@ -1,9 +1,8 @@
 # The `sunny-platform` skill
 
-The block below is a **worked example** of the second half of step 4 in the
-[README](../README.md): the on-demand skill a built app loads before it writes code against your
-data. `src/lib/builderInstructions.ts` carries the always-on instructions that route to it; this is
-the long document those instructions point at.
+The block below is a **worked example** of the on-demand skill a built app loads before it writes
+code against your data. `src/lib/builderInstructions.ts` carries the always-on custom instructions
+that route to it; this is the long document those instructions point at.
 
 To use it, install it as a skill in your Base44 workspace, replacing `<SUNNY_HOST>` with your
 deployed host. There is no secret to hand over — the app asks the page embedding it for a token.

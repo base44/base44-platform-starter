@@ -2,7 +2,7 @@
  * Contract test for /api/sunny — the public data API that externally-hosted built
  * apps call. Getting this *nearly* right silently breaks deployed apps, so every
  * assertion here is a statement about the wire contract in
- * the `sunny-platform` skill (docs/sunny-platform-skill.md), not about this
+ * the `sunny-platform` skill (src/lib/sunny-platform-skill.md), not about this
  * implementation.
  *
  * What it pins down:

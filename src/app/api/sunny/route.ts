@@ -2,7 +2,7 @@
  * POST /api/sunny — the public data API for the apps this shell's users build.
  *
  * The spec is the `sunny-platform` skill the builder reads (see
- * docs/sunny-platform-skill.md), not this file: built apps are written against
+ * src/lib/sunny-platform-skill.md), not this file: built apps are written against
  * that contract, so the actions, params, response keys and error strings all have
  * to match it. `npm run sunny:smoke` asserts that contract action by action.
  *

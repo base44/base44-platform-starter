@@ -133,7 +133,7 @@ const OPS: Record<string, Op> = {
     method: "GET",
     path: (p) => `/api/apps/${str(p.appId)}`,
   },
-  /** `name` only. PUT, not PATCH — see docs/base44-platform-api.md. */
+  /** `name` only. PUT, not PATCH. */
   renameApp: {
     method: "PUT",
     path: (p) => `/api/apps/${str(p.appId)}`,

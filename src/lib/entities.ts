@@ -252,7 +252,7 @@ export function parseBody(model: UserOwnedModel, body: unknown, mode: "create" |
 /**
  * Like `parseBody`, but for the **public** API in /api/sunny, whose documented
  * behaviour is that anything outside its writable list "is dropped silently"
- * (docs/sunny-platform-skill.md). Rejecting
+ * (src/lib/sunny-platform-skill.md). Rejecting
  * unknown keys there would break built apps that send extra fields.
  *
  * `allowed` is that route's own writable list, intersected with this model's

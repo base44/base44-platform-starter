@@ -5,8 +5,8 @@ app-factory; this repo is the shell a company wraps around it. **Sunny** is the 
 work-management product (boards / groups / items / widgets) whose users can build their own apps via
 Base44's builder, embedded here.
 
-Read `README.md` first: it is the walkthrough, organised around the four boundaries this repo exists
-to demonstrate.
+Read `README.md` first: it lists the boundaries this repo exists to demonstrate and where each
+lives in the code.
 
 ## What this is / isn't
 
@@ -99,9 +99,6 @@ needs neither — it mints its own keypair.
 
 ## Docs
 
-- `docs/base44-identity.md` — the one-account model, the access token, and keeping builders apart
-- `docs/base44-platform-api.md` — the platform REST endpoints
-- `docs/base44-built-apps.md` — builder instructions, skills, and the callback API
-- `docs/sunny-platform-skill.md` — the skill text a built app reads, as a worked example
-- `docs/base44-webhooks.md` — inbound events: registration, signature, delivery semantics
-- `docs/deploy.md` — Netlify + Neon
+The integration guide is on the docs site, starting at
+https://docs.base44.com/developers/white-label/overview. `src/lib/sunny-platform-skill.md` is the
+skill text a built app reads, installed in the Base44 workspace; `/api/sunny` is held to it.
