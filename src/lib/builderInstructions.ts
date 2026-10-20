@@ -9,7 +9,7 @@
  * Every turn pays for this text, so it stays a router. The actual API and data
  * model live in a Base44 **skill** — a document the builder loads on demand —
  * named below. Keep SKILL_NAME in sync with that skill's frontmatter `name`; the
- * text of ours is in docs/sunny-platform-skill.md.
+ * text of ours is in src/lib/sunny-platform-skill.md.
  */
 
 const SKILL_NAME = "sunny-platform";

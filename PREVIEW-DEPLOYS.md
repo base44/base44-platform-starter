@@ -1,7 +1,7 @@
 # Deploy previews: what this branch does, and what is still missing
 
-Working note for the `feat/deploy-preview-auth` branch. The durable reference is
-[`docs/deploy.md`](docs/deploy.md) → *Preview deployments*; this file is the status of the change
+Working note for the `feat/deploy-preview-auth` branch. The deploy steps are
+in the [README](README.md) → *Deploy*; this file is the status of the change
 and the list of things a human with Netlify, Neon and Google access still has to do.
 
 **State:** the code side is done and verified locally. The platform side — Netlify env vars, a
@@ -30,7 +30,7 @@ A Netlify deploy preview gets a fresh URL per pull request
 | `scripts/auth-smoke.ts`, `base44-live-check.ts`, `base44-smoke.ts`, `entity-api-smoke.ts`, `marketplace-smoke.ts`, `sunny-api-smoke.ts` | Mint through that helper instead of calling `encode()` with the v4 cookie name |
 | `netlify.toml` | `[context.deploy-preview]` and `[context.branch-deploy]` build with `npm run build` — the database-free build — so no pull request can run a migration |
 | `next.config.ts`, `src/lib/auth.ts` | Pin a preview's origin to Netlify's `DEPLOY_PRIME_URL` (the deploy *alias*) instead of deriving it from the request host, which Netlify fills with the deploy *permalink*. `next.config.ts` bakes the value in because the function's runtime env does not carry Netlify's build variables |
-| `.env.example`, `docs/deploy.md` | `AUTH_REDIRECT_PROXY_URL`, the shared-secret requirement, why `NEXTAUTH_URL` must be production-only, and the Neon-branch story |
+| `.env.example`, `README.md` | `AUTH_REDIRECT_PROXY_URL`, the shared-secret requirement, why `NEXTAUTH_URL` must be production-only, and the Neon-branch story |
 
 Nothing about the app's own behaviour changed: same session shape, same `/api/auth/callback/google`
 path, so **the existing Google OAuth client needs no new entry**.
@@ -164,11 +164,11 @@ curl -s -D- -o /dev/null -b /tmp/j -X POST --data "csrfToken=$T" "$P/api/auth/si
   that secret. If that is not acceptable, the alternative is a second Netlify site plus a second
   Google client acting as its own proxy for previews, at the cost of a separate secret to rotate.
 - **Built apps in a preview still call production's `/api/sunny`.** The `sunny-platform` skill
-  lives in the Base44 workspace and hardcodes one host (`docs/sunny-platform-skill.md`,
+  lives in the Base44 workspace and hardcodes one host (`src/lib/sunny-platform-skill.md`,
   `<SUNNY_HOST>`), so an app in a preview reads and writes **production** rows — scoped to
   its viewer, but production data all the same. Making it follow the deployment means a
-  per-environment skill, or teaching the builder instructions to inject the shell's own origin.
-- **Base44 credentials on previews or not.** Without them a preview says the builder is not
+  per-environment skill, or having `builderInstructions.ts` put the shell's own origin into the custom instructions.
+- **Base44 credentials on previews or not.** Without them a preview says app building is not
   configured and everything else works. With them, previews share the production account and
   workspace, so apps built in a preview land in production's workspace — and their `AppOwnership`
   rows land in the preview's database branch, so production will not list them. Nothing per-user

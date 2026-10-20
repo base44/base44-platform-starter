@@ -2,7 +2,7 @@
 # on detection — do not add it as a plugin here.
 #
 # `build:deploy` applies pending Prisma migrations before `next build`, so a
-# deploy is what moves the schema forward. See docs/deploy.md.
+# deploy is what moves the schema forward. See README.md → Deploy.
 
 [build]
   command = "npm run build:deploy"
@@ -25,7 +25,7 @@
 # `build:deploy` is `prisma migrate deploy && next build`, so a preview holding
 # production's DATABASE_URL would move production's schema forward on every pull
 # request. `npm run build` is the database-free build; point the preview scope at a
-# Neon branch and apply schema changes to it yourself. See docs/deploy.md.
+# Neon branch and apply schema changes to it yourself. See README.md → Deploy.
 [context.deploy-preview]
   command = "npm run build"
 

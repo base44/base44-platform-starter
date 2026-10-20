@@ -1,5 +1,5 @@
 /**
- * Manual live checklist for the Base44 bridge (docs/base44-identity.md).
+ * Manual live checklist for the Base44 bridge.
  *
  * This is NOT part of `npm test` and never will be: it **calls a live Base44
  * workspace** with the integration account's real access token. It exists
