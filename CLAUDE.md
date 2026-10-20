@@ -3,7 +3,7 @@
 Reference implementation of a **white-label platform built on Base44**. Base44 is the backend and
 app-factory; this repo is the shell a company wraps around it. **Sunny** is the worked example — a
 work-management product (boards / groups / items / widgets) whose users can build their own apps via
-Base44's builder, embedded here.
+Base44, from a chat panel inside the product.
 
 Read `README.md` first: it lists the boundaries this repo exists to demonstrate and where each
 lives in the code.
