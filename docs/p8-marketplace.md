@@ -227,7 +227,7 @@ app you installed offers *Uninstall*.
 
 ## What is left
 
-**Publish from chat.** The AI should offer to publish when an app is ready — a
+**Publish from chat.** The AI chat should offer to publish when an app is ready — a
 tool widget with the assistant proposing the title and the one-liner. Wants P6's
 `InvokeLLM`.
 

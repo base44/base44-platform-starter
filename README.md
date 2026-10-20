@@ -361,7 +361,7 @@ npm run webhook:smoke    # step 5: the inbound signature, negative controls
 - **[docs/base44-built-apps.md](docs/base44-built-apps.md)** — instructions, skills, and the
   callback API
 - **[docs/sunny-platform-skill.md](docs/sunny-platform-skill.md)** — the skill text a built app
-  reads, as a worked example of documenting your data model for the AI
+  reads, as a worked example of documenting your data model for the AI chat
 - [docs/deploy.md](docs/deploy.md) — deploying to Netlify + Neon
 - [CLAUDE.md](CLAUDE.md) — the conventions this repo holds itself to, and where each boundary
   is enforced in the code
