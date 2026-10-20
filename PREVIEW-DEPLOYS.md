@@ -1,7 +1,7 @@
 # Deploy previews: what this branch does, and what is still missing
 
-Working note for the `feat/deploy-preview-auth` branch. The durable reference is
-the short version is in the [README](README.md) → *Deploy*; this file is the status of the change
+Working note for the `feat/deploy-preview-auth` branch. The deploy steps are
+in the [README](README.md) → *Deploy*; this file is the status of the change
 and the list of things a human with Netlify, Neon and Google access still has to do.
 
 **State:** the code side is done and verified locally. The platform side — Netlify env vars, a
