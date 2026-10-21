@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useBase44Chat, type Base44Chat, type Base44ChatBackend, type ChatItem, type ChatStep } from "@base44/platform/react";
+import { useChat, type UseChatResult, type ChatBackend, type ChatItem, type ChatStep } from "@base44/platform/react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import Markdown from "react-markdown";
@@ -9,14 +9,14 @@ import { createApp, openLiveSession, sendMessage, submitToolCallInput, type App 
 import ToolQuestion from "./ToolQuestion";
 
 // The four Base44 calls, run on the server. The hook calls them, so the browser never holds a key.
-const backend: Base44ChatBackend = { createApp, openLiveSession, sendMessage, submitToolCallInput };
+const backend: ChatBackend = { createApp, openLiveSession, sendMessage, submitToolCallInput };
 
 export default function Chat({ app, onAppCreated, onBuildingChange }: {
   app: App | null;
   onAppCreated: (app: App) => void;
   onBuildingChange: (building: boolean) => void;
 }) {
-  const chat = useBase44Chat({ appId: app?.id ?? null, backend, onAppCreated });
+  const chat = useChat({ appId: app?.id ?? null, backend, onAppCreated });
   const [prompt, setPrompt] = useState("");
   const building = chat.status === "building";
   // Send only when the AI can take a prompt now. After a failed build, a prompt can ask for the fix.
@@ -99,7 +99,7 @@ function stepIcon(step: ChatStep) {
 }
 
 // Tiny's wording for what the hook reports.
-function StatusLine({ chat, hasApp }: { chat: Base44Chat; hasApp: boolean }) {
+function StatusLine({ chat, hasApp }: { chat: UseChatResult; hasApp: boolean }) {
   let text = "";
   if (chat.error) text = chat.error.message;
   else if (chat.status === "submitted") text = hasApp ? "Sending…" : "Creating app…";
