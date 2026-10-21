@@ -7,7 +7,7 @@
 
 [build.environment]
   NODE_VERSION = "24"
-  # This example pins @base44/platform 0.1.0, outside the root's 0.3.0 range, so
-  # npm installs it under the example's own node_modules, which the secrets
-  # scanner would otherwise read. Installed packages are never served.
+  # When this example's @base44/platform range leaves the root's, npm installs it
+  # under the example's own node_modules, which the secrets scanner would
+  # otherwise read. Installed packages are never served.
   SECRETS_SCAN_OMIT_PATHS = "examples/white-label-minimal/node_modules/**"

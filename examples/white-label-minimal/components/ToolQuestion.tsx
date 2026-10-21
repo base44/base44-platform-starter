@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import type { ApprovalDetails, ChatQuestion } from "@base44/platform/react";
+import type { ChatQuestion } from "@base44/platform/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -38,7 +38,6 @@ export default function ToolQuestion({ question }: { question: ChatQuestion }) {
   return (
     <div className="question">
       {question.kind === "approval" && <p>Allow {question.action}? {question.reason}</p>}
-      {question.kind === "approval" && <p className="question-details">{describe(question.details)}</p>}
       {question.kind === "choice" &&
         question.questions.map((q, i) => (
           <div key={i} className="question-item">
@@ -66,17 +65,4 @@ export default function ToolQuestion({ question }: { question: ChatQuestion }) {
       </div>
     </div>
   );
-}
-
-// What the approved action would do, as far as Base44's check says.
-function describe(details: ApprovalDetails) {
-  const parts: string[] = [];
-  if (details.summary) parts.push(details.summary);
-  if (details.entityName) parts.push(`Entity: ${details.entityName}`);
-  if (details.changeType) parts.push(`Change: ${details.changeType}`);
-  if (details.changedOps?.length) parts.push(`Access: ${details.changedOps.join(", ")}`);
-  if (details.functionName) parts.push(`Function: ${details.functionName}`);
-  if (details.method) parts.push(`Method: ${details.method}`);
-  if (details.inspectionFailed) parts.push("Base44 couldn't check this function's code");
-  return parts.join(" · ");
 }

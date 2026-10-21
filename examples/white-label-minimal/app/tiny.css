@@ -83,9 +83,6 @@
 .question-options {
   @apply flex flex-wrap gap-2;
 }
-.question-details {
-  @apply text-xs text-muted-foreground;
-}
 .chat-answer {
   @apply ml-4 text-xs text-muted-foreground;
 }
