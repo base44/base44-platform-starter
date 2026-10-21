@@ -216,7 +216,7 @@ const CLEAN_ID = /^[A-Za-z0-9_-]+$/;
 function send(path: string, op: Op, body: string | undefined, params: Params) {
   const url = `${platformHost()}${path}`;
   const headers: Record<string, string> = {
-    api_key: workspaceApiKey(),
+    Authorization: `Bearer ${workspaceApiKey()}`,
     "Content-Type": "application/json",
     "X-Active-Workspace-Id": orgId(),
     ...(op.headers?.(params) ?? {}),

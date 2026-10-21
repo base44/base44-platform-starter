@@ -51,7 +51,7 @@ export class EmbedError extends Error {
  */
 function headers() {
   return {
-    api_key: workspaceApiKey(),
+    Authorization: `Bearer ${workspaceApiKey()}`,
     "X-Active-Workspace-Id": orgId(),
     "Content-Type": "application/json",
   };

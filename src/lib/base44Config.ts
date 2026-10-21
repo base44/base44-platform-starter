@@ -37,8 +37,8 @@ export class MissingConfigError extends Error {
 }
 
 /**
- * The white-label workspace's `b44k_` **workspace API key**. Sent as the
- * `api_key` header on every Apps API call, so it is the credential behind
+ * The white-label workspace's `b44k_` **workspace API key**. Sent as
+ * `Authorization: Bearer …` on every Apps API call, so it is the credential behind
  * everything the builder does. With Full access it runs as the workspace owner,
  * contained to the workspace.
  *
