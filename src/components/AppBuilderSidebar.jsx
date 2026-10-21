@@ -10,24 +10,25 @@
  *   1. `useAuth().builderAvailable` gates the UI: is the Base44 bridge configured
  *      on this deployment? One integration account builds every app, server-side,
  *      so there is nothing per-user to connect — unavailable means "not here".
- *   2. First submit → `platform.createApp()` with the prompt, a locally-derived
- *      name, and `buildCustomInstructions()` — the text Base44's builder applies on
- *      every turn. Later submits → `platform.sendMessage()` on the same app.
- *   3. **Base44 builds asynchronously**, so there is no completion callback: this
- *      polls `getApp` + `getConversation` (fast while `status.state === "processing"`,
- *      slowly when idle) and re-renders from whatever the platform reports.
- *   4. A builder turn can *pause* on a tool call needing input — approval,
- *      clarifying questions, secrets. Those arrive as `tool_calls` with status
- *      `waiting_for_user_input`, get rendered as widgets
- *      (`src/components/builder/`), and resume the turn via
- *      `submitToolCallInput()`.
- *   5. Preview boots a sandbox (`getPreviewUrl`, up to ~40s) into an iframe; "Save
+ *   2. The chat runs on `useChat` from `@base44/platform/react`, over `chatBackend`
+ *      below: four calls, each through the proxy. It follows the app live over a
+ *      socket session the proxy opens (`openLiveSession`), so the conversation,
+ *      the turn's status and its steps arrive as they happen, with no polling.
+ *   3. First submit → `chat.create()`, which calls `platform.createApp()` with the
+ *      prompt, a locally-derived name, and `buildCustomInstructions()` — the text
+ *      Base44's builder applies on every turn. Later submits → `chat.send()`.
+ *   4. A builder turn can *pause* on a question — approval, clarifying questions,
+ *      secrets. The hook binds each to its tool call, the widgets in
+ *      `src/components/builder/` render it, and its own actions resume the turn.
+ *   5. The app's own fields (commit hashes, deploy state) come from `getApp`,
+ *      fetched again whenever the chat's status changes.
+ *   6. Preview boots a sandbox (`getPreviewUrl`, up to ~40s) into an iframe; "Save
  *      to My Tools" deploys and records local ownership.
  *
- * Because every reply is awaited against a moving target, `shownAppIdRef` records
- * which app the chat is *meant* to be showing and every commit checks it first —
- * otherwise a poll that lands after the user navigates away re-hydrates the app it
- * was fetched for.
+ * Because every `getApp` reply is awaited against a moving target, `shownAppIdRef`
+ * records which app the chat is *meant* to be showing and every commit checks it
+ * first — otherwise a reply that lands after the user navigates away re-hydrates
+ * the app it was fetched for.
  */
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import * as platform from "@/lib/base44Platform";
@@ -43,12 +44,12 @@ import { Widget as WidgetEntity } from "@/lib/entityClient";
 import AppPreviewModal from "@/components/AppPreviewModal";
 import { Textarea } from "@/components/ui/textarea";
 import ReactMarkdown from "react-markdown";
+import { useChat } from "@base44/platform/react";
 import {
   Send,
   Plus,
   Loader2,
   AlertTriangle,
-  ChevronDown,
   Bot,
   User,
   X,
@@ -57,122 +58,73 @@ import {
   Hammer,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
-import { widgetFor } from "@/components/builder/toolWidgets";
+import QuestionWidget from "@/components/builder/QuestionWidget";
+import ToolRow from "@/components/builder/ToolRow";
 import AppReadyWidget from "@/components/builder/widgets/AppReadyWidget";
 import PublishDialog from "@/components/market/PublishDialog";
 import AppNameField from "@/components/AppNameField";
 
-const BUILDING_POLL_MS = 2500;
-const IDLE_POLL_MS = 8000;
-const TOOL_PENDING = ["running", "waiting_for_user_input"];
-const TOOL_FAILED = ["error", "stopped"];
+/**
+ * The four calls `useChat` makes, each through the allow-listed proxy. The first
+ * prompt names the app and carries the builder instructions; a tool-call answer
+ * travels under a request id stable per tool call (see `submitRequestId`).
+ */
+const chatBackend = {
+  createApp: (prompt) =>
+    platform.createApp({
+      prompt,
+      name: suggestAppName(prompt),
+      customInstructions: buildCustomInstructions(),
+    }),
+  openLiveSession: (appId) => platform.openLiveSession(appId),
+  sendMessage: async (appId, content) => {
+    await platform.sendMessage(appId, content);
+  },
+  submitToolCallInput: async (appId, { toolCallId, messageId, approve, extraUserInput }) => {
+    await platform.submitToolCallInput(appId, toolCallId, approve, extraUserInput, { messageId });
+  },
+};
 
-function ToolCallDisplay({ toolCall }) {
-  const [expanded, setExpanded] = useState(false);
-  const isPending = TOOL_PENDING.includes(toolCall.status);
-  const isFailed = TOOL_FAILED.includes(toolCall.status);
-  let parsedArgs = null;
-  try {
-    parsedArgs = toolCall.arguments_string ? JSON.parse(toolCall.arguments_string) : null;
-  } catch {}
-
-  return (
-    <div className="mt-2 text-xs border border-border rounded overflow-hidden">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2 px-3 py-2 bg-secondary hover:bg-secondary/70 transition-colors text-left"
-      >
-        {isPending ? (
-          <Loader2 className="w-3 h-3 animate-spin text-accent flex-shrink-0" />
-        ) : isFailed ? (
-          <span className="w-2 h-2 rounded-full bg-destructive flex-shrink-0" />
-        ) : (
-          <span className="w-2 h-2 rounded-full bg-foreground/40 flex-shrink-0" />
-        )}
-        <span className="font-medium text-foreground font-mono truncate">{toolCall.name}</span>
-        <ChevronDown
-          className={`w-3 h-3 ml-auto text-muted-foreground transition-transform flex-shrink-0 ${expanded ? "rotate-180" : ""}`}
-        />
-      </button>
-      {expanded && (
-        <div className="px-3 py-2 space-y-2 bg-card text-muted-foreground">
-          {toolCall.arguments_string && (
-            <div>
-              <p className="font-medium text-foreground mb-1 text-xs">Arguments:</p>
-              <pre className="bg-secondary p-2 rounded text-xs overflow-auto max-h-32 whitespace-pre-wrap">
-                {parsedArgs ? JSON.stringify(parsedArgs, null, 2) : toolCall.arguments_string}
-              </pre>
-            </div>
-          )}
-          {toolCall.results && (
-            <div>
-              <p className="font-medium text-foreground mb-1 text-xs">Result:</p>
-              <pre className="bg-secondary p-2 rounded text-xs overflow-auto max-h-32 whitespace-pre-wrap">
-                {toolCall.results}
-              </pre>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
+/** A step with an open question renders its widget; any other step is a line of activity. */
+function StepRow({ step }) {
+  if (step.question) return <QuestionWidget step={step} question={step.question} />;
+  // What the user answered stays under the step after the question closes.
+  const answered = step.answered?.map((a, i) => (
+    <p key={i}>
+      {a.question}: {[...a.labels, a.text].filter(Boolean).join(", ")}
+    </p>
+  ));
+  return <ToolRow status={step.status} name={step.label} summary={answered?.length ? answered : null} />;
 }
 
-function renderToolCall(tc, i, { message, appId, isLastAssistant, onSubmitted }) {
-  const Widget = widgetFor(tc);
-  if (!Widget) return <ToolCallDisplay key={tc.id || i} toolCall={tc} />;
-
-  let parsedArgs = null;
-  try {
-    parsedArgs = tc.arguments_string ? JSON.parse(tc.arguments_string) : null;
-  } catch {}
+function MessageBubble({ item }) {
+  const isUser = item.role === "user";
+  if (!item.text && item.steps.length === 0) return null;
 
   return (
-    <Widget
-      key={tc.id || i}
-      toolCall={tc}
-      parsedArgs={parsedArgs}
-      isLastRunningTool={isLastAssistant && tc.status === "running"}
-      appId={appId}
-      messageId={message.id}
-      onSubmitted={onSubmitted}
-    />
-  );
-}
-
-function MessageBubble({ message, appId, isLastAssistant, onSubmitted }) {
-  const isUser = message.role === "user";
-  const text =
-    typeof message.content === "string"
-      ? message.content
-      : platform.messageText?.(message.content) || "";
-  const toolCalls = message.tool_calls || [];
-  if (!text && toolCalls.length === 0) return null;
-
-  return (
-    <div className={`flex gap-2.5 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
+    <div className={`flex gap-2.5 ${isUser ? "flex-row-reverse" : "flex-row"} ${item.pending ? "opacity-60" : ""}`}>
       <div
         className={`flex-shrink-0 w-6 h-6 rounded flex items-center justify-center ${isUser ? "bg-primary text-primary-foreground" : "bg-secondary border border-border text-muted-foreground"}`}
       >
         {isUser ? <User className="w-3 h-3" /> : <Bot className="w-3 h-3" />}
       </div>
       <div className={`max-w-[82%] flex flex-col gap-1 ${isUser ? "items-end" : "items-start"}`}>
-        {text && (
+        {item.text && (
           <div
             className={`px-3 py-2 rounded text-xs leading-relaxed ${isUser ? "bg-primary text-primary-foreground" : "bg-card border border-border text-foreground"}`}
           >
             {isUser ? (
-              <p className="whitespace-pre-wrap">{text}</p>
+              <p className="whitespace-pre-wrap">{item.text}</p>
             ) : (
               <ReactMarkdown className="prose prose-xs max-w-none prose-p:text-foreground prose-headings:text-foreground prose-strong:text-foreground prose-li:text-foreground prose-pre:bg-secondary prose-code:text-foreground">
-                {text}
+                {item.text}
               </ReactMarkdown>
             )}
           </div>
         )}
-        {toolCalls.map((tc, i) =>
-          renderToolCall(tc, i, { message, appId, isLastAssistant, onSubmitted }),
-        )}
+        {item.steps.map((step) => (
+          <StepRow key={step.id} step={step} />
+        ))}
       </div>
     </div>
   );
@@ -199,9 +151,7 @@ export default function AppBuilderSidebar({
   const [apps, setApps] = useState([]);
   const [isLoadingApps, setIsLoadingApps] = useState(false);
   const [activeApp, setActiveApp] = useState(null);
-  const [buildMessages, setBuildMessages] = useState([]);
   const [buildInput, setBuildInput] = useState("");
-  const [isSending, setIsSending] = useState(false);
   const [buildView, setBuildView] = useState("list"); // "list" | "chat"
 
   const { builderAvailable, recheck } = useAuth();
@@ -210,9 +160,6 @@ export default function AppBuilderSidebar({
   const [builderReady, setBuilderReady] = useState(null);
 
   const [error, setError] = useState(null);
-  // A send in flight. The composer holds the text until the conversation carries
-  // it; `userCount` is the fallback for when the server normalises what it stores.
-  const [pendingSend, setPendingSend] = useState(null);
   // Which turn the ready card was dismissed for. Openness itself is derived below.
   const [dismissedReadyFor, setDismissedReadyFor] = useState(null);
   // Server truth, so re-entering cannot offer to pin an already-pinned app.
@@ -259,23 +206,34 @@ export default function AppBuilderSidebar({
   const shownAppIdRef = useRef(null);
   // Same idea for the preview poll loop, which runs for up to 40s.
   const previewReqRef = useRef(0);
-  // One refresh at a time. A conversation fetch can outlast the poll interval —
-  // the transcript grows all build long — and overlapping refreshes each re-fetch
-  // a bigger body, so they queue up behind each other until the proxy's timeout
-  // fires. The symptom is intermittent `getConversation` timeouts on a build that
-  // is otherwise progressing fine.
-  const refreshInFlightRef = useRef(false);
+  // Which composer a create came from. Leaving the composer bumps it, so an app
+  // created after the user moved on is listed but not opened.
   const composerReqRef = useRef(0);
+  const createReqRef = useRef(null);
 
   const resetComposer = useCallback(() => {
     composerReqRef.current++;
     setBuildInput("");
-    setPendingSend(null);
-    setIsSending(false);
   }, []);
 
   const activeAppId = activeApp?.id || null;
-  const isBuilding = activeApp?.status?.state === "processing";
+
+  const handleAppCreated = (app) => {
+    setApps((prev) => [app, ...prev]);
+    if (createReqRef.current !== composerReqRef.current) return;
+    shownAppIdRef.current = app.id;
+    setActiveApp(app);
+    onAppCreated?.(app);
+  };
+  const chat = useChat({ appId: activeAppId, backend: chatBackend, onAppCreated: handleAppCreated });
+  const isBuilding = chat.status === "building";
+  // Turn paused on a question: lock the composer so a typed prompt can't race
+  // into the paused turn.
+  const awaitingInput = chat.status === "waiting";
+  const isSending = chat.status === "submitted";
+  // A prompt goes only when the builder can take one now. After a failed build,
+  // a prompt can ask for the fix.
+  const canSend = chat.status === "ready" || chat.status === "error";
 
   useEffect(() => {
     onActiveAppChange?.(activeApp);
@@ -304,7 +262,7 @@ export default function AppBuilderSidebar({
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [buildMessages, pendingSend]);
+  }, [chat.items]);
   useEffect(() => {
     if (embedded && open && requestId > 0 && initialAppId == null && buildView === "chat" && builderReady === true) {
       composerInputRef.current?.focus();
@@ -317,7 +275,6 @@ export default function AppBuilderSidebar({
       shownAppIdRef.current = initialAppId;
       setBuildView("chat");
       setActiveApp(null);
-      setBuildMessages([]);
       resetComposer();
       setError(null);
       setDismissedReadyFor(null);
@@ -325,14 +282,7 @@ export default function AppBuilderSidebar({
       platform
         .getApp(initialAppId)
         .then((app) => {
-          if (shownAppIdRef.current !== initialAppId) return null;
-          setActiveApp(app);
-          return platform.getConversation(initialAppId, { limit: 100 });
-        })
-        .then((conv) => {
-          if (!conv || shownAppIdRef.current !== initialAppId) return;
-          const visible = (conv?.messages || []).filter((m) => !m.hidden);
-          setBuildMessages(visible);
+          if (shownAppIdRef.current === initialAppId) setActiveApp(app);
         })
         .catch((err) => setError(err.message));
     }
@@ -388,35 +338,28 @@ export default function AppBuilderSidebar({
       .finally(() => setIsLoadingApps(false));
   }, [builderReady]);
 
-  // Poll for build updates
+  // The app's own fields, which the chat doesn't carry.
   const refresh = useCallback(async (appId) => {
-    const [app, conversation] = await Promise.all([
-      platform.getApp(appId),
-      platform.getConversation(appId, { limit: 100 }),
-    ]);
+    const app = await platform.getApp(appId);
     // The list row is always safe to freshen — it is keyed by id either way.
     setApps((prev) => prev.map((a) => (a.id === app.id ? { ...a, ...app } : a)));
     // The chat is not: if the user has since gone back or started a new app,
-    // committing here would put the old conversation back on screen.
+    // committing here would put the old app back on screen.
     if (shownAppIdRef.current !== appId) return;
-    const visible = (conversation?.messages || []).filter((m) => !m.hidden);
     setActiveApp(app);
-    setBuildMessages(visible);
   }, []);
 
+  // A turn that starts, pauses or ends changes the app (status, commit hash), so
+  // fetch it again on every change of the chat's status.
   useEffect(() => {
     if (!activeAppId) return;
-    const id = setInterval(() => {
-      if (refreshInFlightRef.current) return;
-      refreshInFlightRef.current = true;
-      refresh(activeAppId)
-        .catch(() => {})
-        .finally(() => {
-          refreshInFlightRef.current = false;
-        });
-    }, isBuilding ? BUILDING_POLL_MS : IDLE_POLL_MS);
-    return () => clearInterval(id);
-  }, [activeAppId, isBuilding, refresh]);
+    refresh(activeAppId).catch(() => {});
+  }, [activeAppId, chat.status, refresh]);
+
+  // A 501 mid-session flips the builder off here too.
+  useEffect(() => {
+    if (platform.isBuilderUnavailable(chat.error?.cause)) setBuilderReady(false);
+  }, [chat.error]);
 
   // The one way to get to an empty composer. Clearing `shownAppIdRef` is the part
   // that matters: it invalidates any refresh already in flight for the app we are
@@ -424,7 +367,6 @@ export default function AppBuilderSidebar({
   const startNewApp = useCallback(() => {
     shownAppIdRef.current = null;
     setActiveApp(null);
-    setBuildMessages([]);
     resetComposer();
     setError(null);
     setDismissedReadyFor(null);
@@ -504,53 +446,29 @@ export default function AppBuilderSidebar({
   }, []);
 
   // App build submit
-  const submitBuild = async () => {
+  const submitBuild = () => {
     const content = buildInput.trim();
-    // Answer the pending user-input widget before sending a free-form message,
-    // or it races into the paused turn.
-    if (!content || isSending || pendingSend || awaitingInput || isBuilding) return;
-    const req = composerReqRef.current;
+    // Answer the open question before sending a free-form prompt, or it races
+    // into the paused turn.
+    if (!content || !canSend) return;
     // Carrying on, so the card steps aside.
     if (appReady) setDismissedReadyFor(lastAssistantId);
     setSavedAs(null);
     setEditedAppId(activeApp?.id ?? null);
-    // Deliberately not clearing the composer; the effect above retires it.
-    setPendingSend({ text: content, userCount: userMessageCount });
-    setIsSending(true);
     setError(null);
-    try {
-      if (!activeApp) {
-        const name = suggestAppName(content);
-        const app = await platform.createApp({
-          prompt: content,
-          name,
-          customInstructions: buildCustomInstructions(),
-        });
-        setApps((prev) => [app, ...prev]);
-        if (composerReqRef.current !== req) return;
-        shownAppIdRef.current = app.id;
-        setActiveApp(app);
-        onAppCreated?.(app);
-        await refresh(app.id);
-      } else {
-        await platform.sendMessage(activeApp.id, content);
-        if (composerReqRef.current !== req) return;
-        await refresh(activeApp.id);
-      }
-    } catch (err) {
-      if (composerReqRef.current !== req) return;
-      if (platform.isBuilderUnavailable(err)) setBuilderReady(false);
-      setError(err.message);
-      setPendingSend(null);
-    } finally {
-      if (composerReqRef.current === req) setIsSending(false);
+    // The prompt shows at once as a pending item, so the composer clears now.
+    setBuildInput("");
+    if (activeApp) {
+      chat.send(content);
+      return;
     }
+    createReqRef.current = composerReqRef.current;
+    chat.create(content);
   };
 
   const selectApp = async (app) => {
     shownAppIdRef.current = app.id;
     setActiveApp(app);
-    setBuildMessages([]);
     resetComposer();
     setError(null);
     setDismissedReadyFor(null);
@@ -569,7 +487,6 @@ export default function AppBuilderSidebar({
     // the user pressed "create new".
     shownAppIdRef.current = null;
     setActiveApp(null);
-    setBuildMessages([]);
     resetComposer();
     setBuildView("list");
     setError(null);
@@ -625,70 +542,30 @@ export default function AppBuilderSidebar({
   openPreviewRef.current = openPreview;
 
 
-  // Newest assistant message drives the running-shimmer; widget interactivity is
-  // gated on tool-call status, not position.
-  const lastBuildAssistantIndex = buildMessages.reduce(
-    (acc, m, i) => (m.role === "assistant" ? i : acc),
-    -1,
-  );
-  // Turn paused on a user-input widget — lock the build composer so a typed
-  // message can't race into the paused turn.
-  const awaitingInput = buildMessages.some((m) =>
-    (m.tool_calls || []).some((tc) => tc.status === "waiting_for_user_input"),
-  );
-
-  const userMessageCount = buildMessages.filter((m) => m.role === "user").length;
-  const lastAssistantId =
-    lastBuildAssistantIndex >= 0 ? (buildMessages[lastBuildAssistantIndex]?.id ?? null) : null;
+  const items = chat.items;
+  const lastAssistantId = items.findLast((item) => item.role === "assistant")?.id ?? null;
 
   /**
    * Derived, not remembered: it used to open on a `processing -> settled` edge, so
    * only the client that watched the build finish ever saw it.
    */
-  // `status.state` reads "ready" in the gap between sending and the builder
-  // picking it up, which popped the card on the previous turn's result. The
-  // conversation's shape is reliable: assistant last, no tool call in flight.
-  const lastVisible = buildMessages.length ? buildMessages[buildMessages.length - 1] : null;
-  // Only this turn: a tool left `running` by an abandoned turn would otherwise hide
-  // the card for good, and it is the only way to publish.
-  const lastUserIndex = buildMessages.reduce((acc, m, i) => (m.role === "user" ? i : acc), -1);
-  const hasToolInFlight = buildMessages
+  // The conversation's shape: assistant last, nothing pending, no step in flight.
+  const lastItem = items.length ? items[items.length - 1] : null;
+  // Only this turn: a step left `running` by an abandoned turn would otherwise
+  // hide the card for good, and it is the only way to publish.
+  const lastUserIndex = items.findLastIndex((item) => item.role === "user");
+  const hasStepInFlight = items
     .slice(lastUserIndex + 1)
-    .some((m) => (m.tool_calls || []).some((tc) => TOOL_PENDING.includes(tc.status)));
+    .some((item) => item.steps.some((step) => step.status === "running" || step.status === "waiting"));
 
   const appReady =
     Boolean(activeApp) &&
-    !isBuilding &&
-    !awaitingInput &&
-    !hasToolInFlight &&
-    !pendingSend &&
-    lastVisible?.role === "assistant" &&
+    chat.status === "ready" &&
+    !hasStepInFlight &&
+    lastItem?.role === "assistant" &&
+    !lastItem.pending &&
     lastAssistantId !== null &&
     dismissedReadyFor !== lastAssistantId;
-
-  // Retire the held text once the conversation carries it. Two tests, because an
-  // exact match alone strands text the server normalised.
-  useEffect(() => {
-    if (!pendingSend) return;
-    const landed =
-      userMessageCount > pendingSend.userCount ||
-      buildMessages.some(
-        (m) =>
-          m.role === "user" &&
-          (typeof m.content === "string" ? m.content : platform.messageText?.(m.content) || "") ===
-            pendingSend.text,
-      );
-    if (!landed) return;
-    setBuildInput((current) => (current === pendingSend.text ? "" : current));
-    setPendingSend(null);
-  }, [pendingSend, buildMessages, userMessageCount]);
-
-  // Never stay locked on an echo that never arrives.
-  useEffect(() => {
-    if (!pendingSend) return;
-    const t = setTimeout(() => setPendingSend(null), 30000);
-    return () => clearTimeout(t);
-  }, [pendingSend]);
 
   // So the card cannot offer a pin that already exists.
   useEffect(() => {
@@ -707,7 +584,7 @@ export default function AppBuilderSidebar({
     };
   }, [activeAppId, savedAs]);
 
-  // The builder reports no completion, so "finished" is an edge in the poll.
+  // "Finished" is an edge in the chat's status.
   const buildingAppIdRef = useRef(null);
   useEffect(() => {
     if (!activeAppId) {
@@ -798,10 +675,15 @@ export default function AppBuilderSidebar({
               </div>
             </div>
 
-            {error && (
+            {(error || chat.error) && (
               <div className="mx-4 mt-3 flex gap-2 items-start bg-destructive/10 border border-destructive/20 rounded px-3 py-2.5 flex-shrink-0">
                 <AlertTriangle className="w-3.5 h-3.5 text-destructive mt-0.5 flex-shrink-0" />
-                <p className="text-xs text-destructive">{error}</p>
+                <p className="text-xs text-destructive flex-1">{error || chat.error.message}</p>
+                {!error && (
+                  <button onClick={chat.clearError} aria-label="Dismiss" className="text-destructive/70 hover:text-destructive">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
             )}
 
@@ -897,7 +779,7 @@ export default function AppBuilderSidebar({
             {builderReady === true && buildView === "chat" && (
               <>
                 <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4" role="region" aria-label="Conversation">
-                  {!activeApp && buildMessages.length === 0 && (
+                  {!activeApp && items.length === 0 && (
                     <div className="flex flex-col items-center justify-center h-full gap-3 text-center py-10">
                       <Hammer className="w-8 h-8 text-muted-foreground/40" />
                       <div>
@@ -919,21 +801,14 @@ export default function AppBuilderSidebar({
                       </div>
                     </div>
                   )}
-                  {buildMessages.map((msg, i) => (
-                    <MessageBubble
-                      key={msg.id || i}
-                      message={msg}
-                      appId={activeAppId}
-                      isLastAssistant={i === lastBuildAssistantIndex}
-                      onSubmitted={() => refresh(activeAppId).catch(() => {})}
-                    />
-                  ))}
-                  {pendingSend && !buildMessages.some((message) =>
-                    message.role === "user" &&
-                    (typeof message.content === "string" ? message.content : platform.messageText?.(message.content) || "") === pendingSend.text,
-                  ) && (
-                    <MessageBubble message={{ id: "pending-send", role: "user", content: pendingSend.text }} />
+                  {activeApp && items.length === 0 && chat.connection === "connecting" && (
+                    <div className="flex justify-center pt-10">
+                      <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" aria-label="Loading the conversation" />
+                    </div>
                   )}
+                  {items.map((item) => (
+                    <MessageBubble key={item.id} item={item} />
+                  ))}
                   {isBuilding && (
                     <div className="flex items-center gap-2 text-xs text-muted-foreground pl-8">
                       <Loader2 className="w-3 h-3 animate-spin" /> building…
@@ -974,7 +849,7 @@ export default function AppBuilderSidebar({
                   <div className="flex gap-2 items-end">
                     <Textarea
                       ref={composerInputRef}
-                      value={pendingSend ? "" : buildInput}
+                      value={buildInput}
                       onChange={(e) => setBuildInput(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && !e.shiftKey) {
@@ -982,7 +857,7 @@ export default function AppBuilderSidebar({
                           submitBuild();
                         }
                       }}
-                      disabled={awaitingInput || Boolean(pendingSend) || isBuilding}
+                      disabled={!canSend}
                       aria-label={activeApp ? "What should change?" : "What would you like to build?"}
                       placeholder={
                         awaitingInput
@@ -997,7 +872,7 @@ export default function AppBuilderSidebar({
 
                     <button
                       onClick={submitBuild}
-                      disabled={!buildInput.trim() || isSending || Boolean(pendingSend) || awaitingInput || isBuilding}
+                      disabled={!buildInput.trim() || !canSend}
                       aria-label={activeApp ? "Send prompt" : "Create app"}
                       className="flex-shrink-0 w-9 h-9 bg-primary text-primary-foreground rounded flex items-center justify-center hover:bg-primary/90 transition-colors disabled:opacity-40"
                     >

@@ -1,18 +1,17 @@
 import { Loader2 } from "lucide-react";
 
-const PENDING = ["running", "waiting_for_user_input", "pending"];
+const PENDING = ["running", "waiting"];
 const FAILED = ["error", "stopped"];
 
 /**
- * Shared chrome for a user-input tool row, so status presentation can't drift
- * between widgets. Mirrors the generic ToolCallDisplay's visual language (same
- * border/spinner tokens) but always shows its summary and interactive slot —
- * a form folded inside a collapsed row is the worst failure mode in this design.
+ * One step of a builder turn, with `useChat`'s step status. Every step renders
+ * through it, so status presentation can't drift between widgets. It always
+ * shows its summary and interactive slot: a form folded inside a collapsed row
+ * is the worst failure mode in this design.
  */
-export default function ToolRow({ status, name, isLastRunningTool, summary, form }) {
+export default function ToolRow({ status, name, summary, form }) {
   const pending = PENDING.includes(status);
   const failed = FAILED.includes(status);
-  const running = status === "running";
 
   return (
     <div className="mt-2 text-xs border border-border rounded overflow-hidden">
@@ -24,11 +23,7 @@ export default function ToolRow({ status, name, isLastRunningTool, summary, form
         ) : (
           <span className="w-2 h-2 rounded-full bg-foreground/40 flex-shrink-0" />
         )}
-        <span
-          className={`font-medium text-foreground font-mono ${running && isLastRunningTool ? "opacity-70" : ""}`}
-        >
-          {name}
-        </span>
+        <span className="font-medium text-foreground truncate">{name}</span>
       </div>
       {summary && <div className="px-3 py-2 text-muted-foreground bg-card">{summary}</div>}
       {form && (

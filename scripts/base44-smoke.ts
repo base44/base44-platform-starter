@@ -218,7 +218,7 @@ async function main() {
   const foreign: Record<string, unknown>[] = [
     { action: "getApp", appId: APP },
     { action: "renameApp", appId: APP, name: "mine now" },
-    { action: "getConversation", appId: APP },
+    { action: "openLiveSession", appId: APP },
     { action: "sendMessage", appId: APP, content: "add a delete-all button" },
     { action: "getPreviewUrl", appId: APP },
     { action: "deployApp", appId: APP },
