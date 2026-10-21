@@ -73,15 +73,6 @@ const DEFAULT_TIMEOUT_MS = 30_000;
  */
 const BUILDER_TIMEOUT_MS = 120_000;
 
-/**
- * The full builder transcript, and it is polled every few seconds while a build
- * runs. Every tool call's `arguments_string` and `results` come back with it —
- * file contents included — so the body grows all build long and a late-build read
- * does not reliably fit in 30s. A slow read is not an upstream fault; timing it
- * out at the default just turns a working build into an error banner.
- */
-const CONVERSATION_TIMEOUT_MS = 60_000;
-
 const str = (v: unknown) => (v === undefined || v === null ? "" : String(v));
 const num = (v: unknown, fallback: number) => String(Number(v) > 0 ? Number(v) : fallback);
 
@@ -139,14 +130,15 @@ const OPS: Record<string, Op> = {
     path: (p) => `/api/apps/${str(p.appId)}`,
     body: (p) => ({ name: str(p.name).trim() }),
   },
-  getConversation: {
-    method: "GET",
-    timeoutMs: CONVERSATION_TIMEOUT_MS,
-    path: (p) =>
-      `/api/apps/${str(p.appId)}/chat/full-conversation?${new URLSearchParams({
-        limit: num(p.limit, 100),
-        skip: String(Number(p.skip) || 0),
-      })}`,
+  /**
+   * A read-only socket session for one app, which the browser's chat
+   * (`useChat`) follows live. The body carries a session token scoped to this
+   * app, never the access token, so it goes to the browser unchanged.
+   */
+  openLiveSession: {
+    method: "POST",
+    path: () => "/api/v1/socket-sessions",
+    body: (p) => ({ app_ids: [str(p.appId)] }),
   },
   sendMessage: {
     method: "POST",
@@ -200,7 +192,7 @@ const OPS: Record<string, Op> = {
 const APP_SCOPED = [
   "getApp",
   "renameApp",
-  "getConversation",
+  "openLiveSession",
   "sendMessage",
   "getPreviewUrl",
   "deployApp",

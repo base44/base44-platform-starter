@@ -13,6 +13,8 @@
  * app they named.
  */
 
+import type { SocketSession } from "@base44/platform/react";
+
 export class Base44CallError extends Error {
   code: string | null;
   status: number | null;
@@ -127,13 +129,16 @@ export const renameApp = (appId: string, name: string) =>
 
 export const getApp = (appId: string) => call("getApp", { appId }) as Promise<App>;
 
-/** The builder conversation, chronological, newest last. */
-export const getConversation = (appId: string, { limit = 100, skip = 0 } = {}) =>
-  call("getConversation", { appId, limit, skip });
+/**
+ * A read-only socket session for one app, for `useChat` to follow it live. The
+ * body holds a session token scoped to the app, never the access token.
+ */
+export const openLiveSession = (appId: string) =>
+  call("openLiveSession", { appId }) as Promise<SocketSession>;
 
 /**
- * Sends a builder message. Fire-and-forget: the response reflects the message
- * being queued, not the build finishing. Poll the app + conversation after.
+ * Sends a builder message. Base44 holds the request open while the turn runs;
+ * the chat follows the turn over the live session, not this response.
  */
 export const sendMessage = (appId: string, content: string) =>
   call("sendMessage", { appId, content });
@@ -203,21 +208,4 @@ export function publishedUrl(slug?: string | null): string | null {
 export function previewUrl(slug?: string | null): string | null {
   if (!slug || !APP_HOST) return null;
   return `https://preview--${slug}.${APP_HOST}/`;
-}
-
-/**
- * Message `content` arrives as a string, a dict, or provider content blocks
- * depending on the message. Flatten all of it to display text.
- */
-export function messageText(content: unknown): string {
-  if (!content) return "";
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((b) => (typeof b === "string" ? b : (b as { text?: string })?.text || ""))
-      .filter(Boolean)
-      .join("\n\n");
-  }
-  const text = (content as { text?: string })?.text;
-  return typeof text === "string" ? text : "";
 }
