@@ -4,8 +4,8 @@ A minimal Base44 white-label integration: describe an app in a chat, watch Base4
 its questions, and see it in a preview.
 
 It follows Base44's [tenancy model](https://docs.base44.com/developers/white-label/tenancy-and-credentials):
-one Base44 account owns every app, and Tiny's server calls Base44 with that account's credentials.
-They never reach the browser.
+one Base44 account owns every app, and Tiny's server calls Base44 with the workspace's API key.
+It never reaches the browser.
 
 ## From the docs to the code
 
@@ -41,10 +41,9 @@ npm install
 cp examples/white-label-minimal/.env.example examples/white-label-minimal/.env.local
 ```
 
-Fill in `.env.local` with the integration account's
-[personal access token](https://docs.base44.com/Workspaces/Personal-access-tokens), created in your
-white-label workspace (Builder plan or higher) with Full access to all apps, and the workspace ID.
-The token is the only credential: it builds, opens live updates and signs viewers into previews.
+Fill in `.env.local` with a workspace API key (`b44k_`) of your white-label workspace, with Full
+access, and the workspace ID. The key is the only credential: it runs as the workspace owner, and
+it builds, opens live updates and signs viewers into previews.
 Then:
 
 ```sh
@@ -56,7 +55,7 @@ Open [Tiny Sunny](http://127.0.0.1:3001).
 ## Kept out to stay minimal
 
 - **Sign-in and app ownership.** Everyone sees every app. In production, sign your users in, record
-  who created each app, and check it on every call: Base44 sees only the one account.
+  who created each app, and check it on every call: Base44 sees only the workspace owner.
 - **Publishing.** The AI chat is told it isn't available.
 - **Closing the live session.** It expires after an hour.
 

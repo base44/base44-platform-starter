@@ -7,7 +7,7 @@ type Options = { body?: object; headers?: Record<string, string> };
 
 const host = process.env.BASE44_PLATFORM_HOST!;
 const workspaceId = process.env.BASE44_WORKSPACE_ID!;
-const accessToken = { Authorization: `Bearer ${process.env.BASE44_ACCESS_TOKEN}` };
+const workspaceKey = { Authorization: `Bearer ${process.env.BASE44_WORKSPACE_API_KEY}` };
 
 const PREVIEW_USER = "viewer@example.com";
 
@@ -30,7 +30,7 @@ export async function listApps(): Promise<App[]> {
     .map(({ id, name }) => ({ id, name }));
 }
 
-// The body holds only a session token, never the access token, so it goes to the browser unchanged.
+// The body holds only a session token, never the workspace key, so it goes to the browser unchanged.
 export async function openLiveSession(appId: string): Promise<SocketSession> {
   return call("/api/v1/socket-sessions", { body: { app_ids: [appId] } });
 }
@@ -48,7 +48,7 @@ export async function submitToolCallInput(appId: string, answer: ToolCallAnswer)
       action: answer.approve ? "approved" : "rejected",
       extra_user_input: answer.extraUserInput ?? {},
     },
-    headers: { ...accessToken, "X-Request-ID": `submit-${answer.toolCallId}` },
+    headers: { ...workspaceKey, "X-Request-ID": `submit-${answer.toolCallId}` },
   });
   await waitForRefusal("/chat/submit-tool-call-input", sent);
 }
@@ -85,7 +85,7 @@ async function waitForRefusal(name: string, sent: Promise<Response>) {
   if (!response.ok) throw new Error(`Base44 ${name} failed: ${response.status}`);
 }
 
-function request(path: string, { body, headers = accessToken }: Options = {}) {
+function request(path: string, { body, headers = workspaceKey }: Options = {}) {
   return fetch(`${host}${path}`, {
     method: body ? "POST" : "GET",
     headers: { ...headers, "X-Active-Workspace-Id": workspaceId, "Content-Type": "application/json" },
