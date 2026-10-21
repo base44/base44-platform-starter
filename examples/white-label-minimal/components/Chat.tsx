@@ -1,28 +1,36 @@
 "use client";
 import { useEffect, useState } from "react";
-import type { ToolCall } from "@base44/platform";
+import { useChat, type UseChatResult, type ChatBackend, type ChatItem, type ChatStep } from "@base44/platform/react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import Markdown from "react-markdown";
 import { StickToBottom } from "use-stick-to-bottom";
-import type { App } from "../server/base44";
+import { createApp, openLiveSession, sendMessage, submitToolCallInput, type App } from "../server/base44";
 import ToolQuestion from "./ToolQuestion";
-import { useLiveChat } from "./useLiveChat";
+
+// The four Base44 calls, run on the server. The hook calls them, so the browser never holds a key.
+const backend: ChatBackend = { createApp, openLiveSession, sendMessage, submitToolCallInput };
 
 export default function Chat({ app, onAppCreated, onBuildingChange }: {
   app: App | null;
   onAppCreated: (app: App) => void;
   onBuildingChange: (building: boolean) => void;
 }) {
-  const { messages, status, building, canSend, send } = useLiveChat({ app, onAppCreated });
+  const chat = useChat({ appId: app?.id ?? null, backend, onAppCreated });
   const [prompt, setPrompt] = useState("");
+  const building = chat.status === "building";
+  // Send only when the AI can take a prompt now. After a failed build, a prompt can ask for the fix.
+  const canSend = chat.status === "ready" || chat.status === "error";
 
   useEffect(() => {
     onBuildingChange(building);
   }, [building, onBuildingChange]);
 
+  // The first prompt creates the app; every later one goes to it.
   function submit() {
-    if (!prompt.trim() || !canSend) return;
-    send(prompt);
+    if (!canSend || !prompt.trim()) return;
+    if (app) chat.send(prompt);
+    else chat.create(prompt);
     setPrompt("");
   }
 
@@ -30,21 +38,31 @@ export default function Chat({ app, onAppCreated, onBuildingChange }: {
     <div className="chat">
       <StickToBottom className="chat-scroll" initial="instant">
         <StickToBottom.Content className="chat-messages">
-          {messages.map((m) => (
-            <div key={m.id} className="chat-message">
-              {m.content && (
-                <p className={m.role === "user" ? "chat-user-text" : "chat-assistant-text"}>{m.content}</p>
+          {chat.items.map((item) => (
+            <div key={item.id} className="chat-message">
+              {item.text && item.role === "user" && <p className={userTextClass(item)}>{item.text}</p>}
+              {/* The AI answers in Markdown. */}
+              {item.text && item.role === "assistant" && (
+                <div className="chat-assistant-text">
+                  <Markdown components={{ a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" /> }}>{item.text}</Markdown>
+                </div>
               )}
-              {m.tool_calls?.map((tool) =>
-                tool.status === "waiting_for_user_input" && app ? (
-                  <ToolQuestion key={tool.id} appId={app.id} messageId={m.id!} tool={tool} />
+              {item.steps.map((step) =>
+                step.question ? (
+                  <ToolQuestion key={step.id} question={step.question} />
                 ) : (
-                  <p key={tool.id} className="chat-tool-line">{toolLine(tool)}</p>
+                  <div key={step.id}>
+                    <p className="chat-tool-line">{stepIcon(step)} {step.label}</p>
+                    {/* What the user answered stays after the question closes. */}
+                    {step.answered?.map((answer, i) => (
+                      <p key={i} className="chat-answer">{answer.question}: {[...answer.labels, answer.text].filter(Boolean).join(", ")}</p>
+                    ))}
+                  </div>
                 ),
               )}
             </div>
           ))}
-          {status && <p className="chat-status">{status}</p>}
+          <StatusLine chat={chat} hasApp={!!app} />
         </StickToBottom.Content>
       </StickToBottom>
       <div className="chat-composer">
@@ -60,14 +78,39 @@ export default function Chat({ app, onAppCreated, onBuildingChange }: {
           className="chat-input"
           rows={1}
         />
-        <Button onClick={submit} disabled={!canSend}>Send</Button>
+        <Button onClick={submit} disabled={!canSend || !prompt.trim()}>Send</Button>
       </div>
     </div>
   );
 }
 
-// One tool step as a short line, e.g. "✓ write_file src/pages/Home.jsx".
-function toolLine(tool: ToolCall) {
-  const icon = tool.status === "running" ? "…" : tool.status === "error" ? "✗" : "✓";
-  return `${icon} ${tool.name} ${tool.display?.file_paths?.join(", ") ?? ""}`;
+// A prompt Base44 hasn't confirmed yet shows faded.
+function userTextClass(item: ChatItem) {
+  if (item.pending) return "chat-user-text chat-pending";
+  return "chat-user-text";
+}
+
+function stepIcon(step: ChatStep) {
+  if (step.status === "running") return "…";
+  if (step.status === "waiting") return "?";
+  if (step.status === "error") return "✗";
+  if (step.status === "stopped") return "–";
+  return "✓";
+}
+
+// Tiny's wording for what the hook reports.
+function StatusLine({ chat, hasApp }: { chat: UseChatResult; hasApp: boolean }) {
+  let text = "";
+  if (chat.error) text = chat.error.message;
+  else if (chat.status === "submitted") text = hasApp ? "Sending…" : "Creating app…";
+  else if (chat.status === "waiting") text = "Waiting for your answer";
+  else if (chat.status === "building") text = "Building…";
+  else if (hasApp && chat.connection === "connecting") text = "Loading the conversation…";
+  if (!text) return null;
+  return (
+    <p className="chat-status">
+      {text}
+      {chat.error && <Button size="sm" variant="ghost" onClick={chat.clearError}>Dismiss</Button>}
+    </p>
+  );
 }

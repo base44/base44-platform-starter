@@ -1,4 +1,5 @@
 "use server";
+import type { SocketSession } from "@base44/platform/react";
 
 export type App = { id: string; name: string };
 export type ToolCallAnswer = { toolCallId: string; messageId: string; approve: boolean; extraUserInput?: object };
@@ -29,17 +30,18 @@ export async function listApps(): Promise<App[]> {
     .map(({ id, name }) => ({ id, name }));
 }
 
-export async function openLiveSession(appId: string) {
-  const session = await call("/api/v1/socket-sessions", { body: { app_ids: [appId] } });
-  return { serverUrl: new URL(session.socket_url).origin, sessionToken: session.session_token as string };
+// The body holds only a session token, never the access token, so it goes to the browser unchanged.
+export async function openLiveSession(appId: string): Promise<SocketSession> {
+  return call("/api/v1/socket-sessions", { body: { app_ids: [appId] } });
 }
 
 export async function sendMessage(appId: string, content: string) {
-  await call(`/api/apps/${appId}/chat/message`, { body: { content } });
+  const sent = request(`/api/apps/${appId}/chat/message`, { body: { content } });
+  await waitForRefusal("/chat/message", sent);
 }
 
 export async function submitToolCallInput(appId: string, answer: ToolCallAnswer) {
-  await call(`/api/apps/${appId}/chat/submit-tool-call-input`, {
+  const sent = request(`/api/apps/${appId}/chat/submit-tool-call-input`, {
     body: {
       tool_call_id: answer.toolCallId,
       message_id: answer.messageId,
@@ -48,6 +50,7 @@ export async function submitToolCallInput(appId: string, answer: ToolCallAnswer)
     },
     headers: { ...accessToken, "X-Request-ID": `submit-${answer.toolCallId}` },
   });
+  await waitForRefusal("/chat/submit-tool-call-input", sent);
 }
 
 // A new app has no latest preview until its first build gives it a slug: Base44 answers 400
@@ -62,6 +65,24 @@ export async function getPreviewUrl(appId: string, target: "latest_preview" | "l
   if (!response.ok) throw new Error(`Base44 /api/apps/${appId}/embed-url failed: ${response.status}`);
   const data = await response.json();
   return data.embed_url as string;
+}
+
+// Base44 holds a chat request open for the whole turn, and Next.js runs one server action at a time,
+// so waiting for it would hold every later call. Wait only long enough to catch a refusal.
+async function waitForRefusal(name: string, sent: Promise<Response>) {
+  const timeout = new Promise<null>((resolve) => setTimeout(resolve, 3000, null));
+  const response = await Promise.race([sent, timeout]);
+  if (response === null) {
+    // The caller has moved on, so a later failure can only be logged.
+    sent.then(
+      (late) => {
+        if (!late.ok) console.error(`Base44 ${name} failed: ${late.status}`);
+      },
+      (error) => console.error(`Base44 ${name} failed:`, error),
+    );
+    return;
+  }
+  if (!response.ok) throw new Error(`Base44 ${name} failed: ${response.status}`);
 }
 
 function request(path: string, { body, headers = accessToken }: Options = {}) {
