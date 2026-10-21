@@ -25,7 +25,7 @@
  * id, nor a credential *value* (see `APP_SECRETS`).
  */
 
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse, after, type NextRequest } from "next/server";
 
 import { requireSessionUser } from "@/lib/auth";
 import { errorResponse, jsonError } from "@/lib/apiResponse";
@@ -56,6 +56,12 @@ type Op = {
   headers?: (p: Params) => Record<string, string>;
   /** Override `DEFAULT_TIMEOUT_MS` for actions that wait on a builder turn. */
   timeoutMs?: number;
+  /**
+   * Answer the browser once Base44 has accepted the request, not when the turn
+   * ends — see `answerOnAccept`. Only for actions whose response the browser
+   * doesn't read: it follows the turn over the live session instead.
+   */
+  answersOnAccept?: boolean;
 };
 
 /** Plenty for a CRUD call against the platform REST API. */
@@ -68,8 +74,10 @@ const DEFAULT_TIMEOUT_MS = 30_000;
  * measures at ~28s against a live app, so the 30s default aborted it
  * intermittently and reported it as an upstream fault.
  *
- * Kept well under Vercel's 300s function ceiling so a genuinely hung upstream
- * still fails rather than holding the function open to the platform limit.
+ * Netlify ends a synchronous function at 60s, counting work scheduled with
+ * `after()`, so a turn there is cut at 60s whatever this says. This ceiling is
+ * for hosts with no such limit (`next dev`, a Node server), so that a genuinely
+ * hung upstream still fails.
  */
 const BUILDER_TIMEOUT_MS = 120_000;
 
@@ -144,8 +152,9 @@ const OPS: Record<string, Op> = {
     method: "POST",
     path: (p) => `/api/apps/${str(p.appId)}/chat/message`,
     body: (p) => ({ content: p.content }),
-    // Blocks on a builder turn — see BUILDER_TIMEOUT_MS.
+    // Base44 holds this open for the whole builder turn — see BUILDER_TIMEOUT_MS.
     timeoutMs: BUILDER_TIMEOUT_MS,
+    answersOnAccept: true,
   },
   getPreviewUrl: {
     method: "GET",
@@ -174,8 +183,9 @@ const OPS: Record<string, Op> = {
       extra_user_input: p.extraUserInput ?? {},
       message_id: p.messageId || undefined,
     }),
-    // Resumes the paused builder turn, so it waits on the same LLM work.
+    // Resumes the paused builder turn, so Base44 holds it open just as long.
     timeoutMs: BUILDER_TIMEOUT_MS,
+    answersOnAccept: true,
     // Stable per logical submit so a network-retried POST dedups instead of
     // resuming (and charging) the turn twice.
     headers: (p): Record<string, string> =>
@@ -357,6 +367,36 @@ async function forward(
   }
 }
 
+/** How long a refusal takes to come back. Past it, Base44 has accepted the turn. */
+const REFUSAL_WINDOW_MS = 3_000;
+
+/**
+ * `forward()` for a request Base44 holds open for a whole builder turn. A
+ * refusal comes back within `REFUSAL_WINDOW_MS` and reaches the browser exactly
+ * as `forward()` shapes it; past that, the browser gets `{ ok: true }` and the
+ * turn's progress over the live session.
+ *
+ * The request to Base44 keeps running after the response, under `after()`:
+ * dropping that connection cancels the turn. A failure from then on can only be
+ * logged.
+ */
+async function answerOnAccept(action: string, sent: Promise<unknown>): Promise<unknown> {
+  const accepted = Symbol("accepted");
+  const refusalWindow = new Promise<typeof accepted>((resolve) =>
+    setTimeout(resolve, REFUSAL_WINDOW_MS, accepted),
+  );
+  const answer = await Promise.race([sent, refusalWindow]);
+  if (answer !== accepted) return answer;
+
+  const finished = sent.catch((err: unknown) => {
+    const failed = `[base44/platform] ${action} failed after it was accepted`;
+    if (err instanceof UpstreamFailure) console.error(`${failed}: ${err.response.status}`);
+    else console.error(failed, err);
+  });
+  after(() => finished);
+  return { ok: true };
+}
+
 /**
  * The caller's apps, a page at a time. The workspace is shared by every builder,
  * so its listing is read and filtered by `AppOwnership` until the caller's page is
@@ -454,7 +494,8 @@ export async function POST(req: NextRequest) {
       return jsonError(400, "invalid_request", `Invalid parameters for "${action}"`);
     }
 
-    const data = await forward(action, op, path, body, params, t0);
+    const sent = forward(action, op, path, body, params, t0);
+    const data = await (op.answersOnAccept ? answerOnAccept(action, sent) : sent);
 
     // Ownership is recorded in the same request that creates the app, and never
     // from the browser: a client-written row would let anyone claim any app.

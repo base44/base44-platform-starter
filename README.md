@@ -110,7 +110,8 @@ migrate production. [PREVIEW-DEPLOYS.md](PREVIEW-DEPLOYS.md) has the setup and w
 | `404 not_found` on an app-scoped action | The caller has no `AppOwnership` row for that app. Built before ownership was tracked? Insert the row |
 | `403` on deploy | The integration account isn't an Editor in the workspace |
 | Builds ignore your design system or skills | The token was created in the account's personal workspace. Create it in the white-label workspace |
-| `sendMessage` times out at ~30s | Your own timeout, not Base44's. Build turns need ~120s |
+| `sendMessage` times out at ~30s | Your own timeout, not Base44's. Base44 holds the request open for the whole turn: answer the browser once it's accepted, and keep the request to Base44 running (see `answerOnAccept`) |
+| A build stops with "Processing was interrupted" | The request to Base44 was dropped mid-turn. Netlify ends a function at 60s, including work after the response |
 | A new app doesn't appear in the list | Its `AppOwnership` row was not recorded. The server logs this at create |
 
 ## Stack

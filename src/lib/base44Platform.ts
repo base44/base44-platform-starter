@@ -137,8 +137,8 @@ export const openLiveSession = (appId: string) =>
   call("openLiveSession", { appId }) as Promise<SocketSession>;
 
 /**
- * Sends a builder message. Base44 holds the request open while the turn runs;
- * the chat follows the turn over the live session, not this response.
+ * Sends a builder message. The proxy answers once Base44 has accepted it, not
+ * when the turn ends; the chat follows the turn over the live session.
  */
 export const sendMessage = (appId: string, content: string) =>
   call("sendMessage", { appId, content });
