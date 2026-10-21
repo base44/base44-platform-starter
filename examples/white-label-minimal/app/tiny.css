@@ -56,7 +56,30 @@
   @apply opacity-60;
 }
 .chat-assistant-text {
-  @apply whitespace-pre-wrap;
+  @apply flex flex-col gap-2;
+}
+.chat-assistant-text ul {
+  @apply list-disc pl-5;
+}
+.chat-assistant-text ol {
+  @apply list-decimal pl-5;
+}
+.chat-assistant-text h1,
+.chat-assistant-text h2,
+.chat-assistant-text h3 {
+  @apply font-semibold;
+}
+.chat-assistant-text code {
+  @apply rounded bg-secondary px-1 font-mono text-xs;
+}
+.chat-assistant-text pre {
+  @apply overflow-x-auto rounded bg-secondary p-2;
+}
+.chat-assistant-text pre code {
+  @apply bg-transparent p-0;
+}
+.chat-assistant-text a {
+  @apply underline;
 }
 .chat-tool-line {
   @apply text-xs text-muted-foreground;

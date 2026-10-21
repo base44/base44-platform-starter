@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useBase44Chat, type Base44Chat, type Base44ChatBackend, type ChatItem, type ChatStep } from "@base44/platform/react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import Markdown from "react-markdown";
 import { StickToBottom } from "use-stick-to-bottom";
 import { createApp, openLiveSession, sendMessage, submitToolCallInput, type App } from "../server/base44";
 import ToolQuestion from "./ToolQuestion";
@@ -39,7 +40,13 @@ export default function Chat({ app, onAppCreated, onBuildingChange }: {
         <StickToBottom.Content className="chat-messages">
           {chat.items.map((item) => (
             <div key={item.id} className="chat-message">
-              {item.text && <p className={textClass(item)}>{item.text}</p>}
+              {item.text && item.role === "user" && <p className={userTextClass(item)}>{item.text}</p>}
+              {/* The AI answers in Markdown. */}
+              {item.text && item.role === "assistant" && (
+                <div className="chat-assistant-text">
+                  <Markdown components={{ a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" /> }}>{item.text}</Markdown>
+                </div>
+              )}
               {item.steps.map((step) =>
                 step.question ? (
                   <ToolQuestion key={step.id} question={step.question} />
@@ -78,8 +85,7 @@ export default function Chat({ app, onAppCreated, onBuildingChange }: {
 }
 
 // A prompt Base44 hasn't confirmed yet shows faded.
-function textClass(item: ChatItem) {
-  if (item.role === "assistant") return "chat-assistant-text";
+function userTextClass(item: ChatItem) {
   if (item.pending) return "chat-user-text chat-pending";
   return "chat-user-text";
 }
