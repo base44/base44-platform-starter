@@ -5,7 +5,7 @@
  * a session, so nothing inside the built app changes.
  */
 
-import { accessToken, orgId, platformHost } from "@/lib/base44Config";
+import { orgId, platformHost, workspaceApiKey } from "@/lib/base44Config";
 
 /** What the browser is told. `embedUrl` null means "load the app signed out". */
 export type EmbedSession = {
@@ -45,13 +45,13 @@ export class EmbedError extends Error {
 }
 
 /**
- * The integration account's access token, like every other platform call: it owns
+ * The workspace API key, like every other platform call: its owner owns
  * the apps, so it may provision their users and mint their sign-in tokens. Nothing
  * here is caller-supplied.
  */
 function headers() {
   return {
-    Authorization: `Bearer ${accessToken()}`,
+    Authorization: `Bearer ${workspaceApiKey()}`,
     "X-Active-Workspace-Id": orgId(),
     "Content-Type": "application/json",
   };
