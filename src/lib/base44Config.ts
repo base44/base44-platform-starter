@@ -7,9 +7,9 @@
  *
  * ## The identity model — one account
  *
- * One Base44 account sits behind the whole integration. It owns every app the
- * shell's users build, and its personal access token authenticates every platform
- * call. No shell user has a Base44 identity of their own: Base44 sees one builder,
+ * One Base44 account sits behind the whole integration: the white-label
+ * workspace's owner. It owns every app the shell's users build, and the
+ * workspace API key, which runs as that owner, authenticates every platform call. No shell user has a Base44 identity of their own: Base44 sees one builder,
  * and keeping *our* builders apart — which apps each one may list, edit, deploy —
  * is entirely this shell's job. `AppOwnership` is that record, and the platform
  * proxy refuses an app-scoped call without a row for the caller.
@@ -29,7 +29,7 @@ export class MissingConfigError extends Error {
   code = "bridge_misconfigured";
   constructor(public readonly variable: string) {
     super(
-      `Missing env var ${variable}. The Base44 bridge needs BASE44_ACCESS_TOKEN, ` +
+      `Missing env var ${variable}. The Base44 bridge needs BASE44_WORKSPACE_API_KEY, ` +
         `BASE44_ORG_ID and BASE44_PLATFORM_HOST — see .env.example.`,
     );
     this.name = "MissingConfigError";
@@ -37,26 +37,15 @@ export class MissingConfigError extends Error {
 }
 
 /**
- * The integration account's **personal access token**. Sent as
- * `Authorization: Bearer …` on every Apps API call, so it is the credential
- * behind everything the builder does.
+ * The white-label workspace's `b44k_` **workspace API key**. Sent as the
+ * `api_key` header on every Apps API call, so it is the credential behind
+ * everything the builder does. With Full access it runs as the workspace owner,
+ * contained to the workspace.
  *
- * Create it in the white-label workspace (Builder plan or higher), not the
- * account's personal one, or builds miss the design system, skills and plan set
- * up there. Give it Full access: everything but reading is a write. The account needs
- * the Editor role or higher in that workspace: viewers and guests cannot create
- * apps, and deploy succeeds only for an Editor.
+ * Give it Full access: everything but reading is a write. It also registers the
+ * outbound webhook endpoint (see `webhookKey`).
  */
-export const accessToken = () => required("BASE44_ACCESS_TOKEN");
-
-/**
- * The `b44k_` **workspace API key**. Only for registering the outbound webhook
- * endpoint (see `webhookKey`); every request path uses the access token above.
- * Workspace keys and outbound webhooks need a Business plan or higher.
- *
- * Optional: without it everything works except `npm run webhook:register`.
- */
-export const svcKey = () => required("BASE44_SVC_KEY");
+export const workspaceApiKey = () => required("BASE44_WORKSPACE_API_KEY");
 
 /**
  * The Base44 white-label workspace every app is built in. Sent as
@@ -99,14 +88,14 @@ export const webhookPublicKeys = (): string[] => {
  *
  * Used by `npm run webhook:register` and by nothing on a request path —
  * registration is a deploy-time action, not something a user triggers. Falls
- * back to `BASE44_SVC_KEY` so a single-key deployment works.
+ * back to `BASE44_WORKSPACE_API_KEY` so a single-key deployment works.
  */
-export const webhookKey = () => process.env.BASE44_WEBHOOK_KEY?.trim() || svcKey();
+export const webhookKey = () => process.env.BASE44_WEBHOOK_KEY?.trim() || workspaceApiKey();
 
 /**
  * Values this deployment will install as app secrets on apps it builds. The
- * browser sends names, never values — which is what keeps the access token and
- * the workspace key out of a built app.
+ * browser sends names, never values — which is what keeps the workspace key out
+ * of a built app.
  */
 export const APP_SECRETS: Record<string, () => string> = {
   // Empty since viewer tokens landed: a built app gets its credential from the

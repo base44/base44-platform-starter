@@ -25,8 +25,8 @@ code that goes with it, in two sizes.
    ─────────────────────────                     ──────
    your users, your DB, your login
             │
-            │  one integration account, its access
-            │  token in env, server-side only
+            │  one workspace API key, running as the
+            │  owner, in env, server-side only
             │
             │  user describes an app
             ├──────────────────────────────────► createApp → build → deploy
@@ -54,8 +54,8 @@ enforced.
 
 ## Run it
 
-You need a Base44 white-label workspace, its id and platform host, and an integration account with
-Editor or higher in it whose personal access token was created in that workspace. The
+You need a Base44 white-label workspace, its id and platform host, and a workspace API key
+(`b44k_`) with Full access, created in that workspace. The
 [setup checklist](https://docs.base44.com/developers/white-label/setup-checklist) covers it.
 
 ```bash
@@ -106,10 +106,10 @@ migrate production. [PREVIEW-DEPLOYS.md](PREVIEW-DEPLOYS.md) has the setup and w
 
 | Symptom | Likely cause |
 | --- | --- |
-| `501 bridge_misconfigured` | A `BASE44_*` env var is missing, or Base44 answered `401` to the integration account's token (revoked, expired) |
+| `501 bridge_misconfigured` | A `BASE44_*` env var is missing, or Base44 answered `401` to the workspace API key (revoked, expired) |
 | `404 not_found` on an app-scoped action | The caller has no `AppOwnership` row for that app. Built before ownership was tracked? Insert the row |
-| `403` on deploy | The integration account isn't an Editor in the workspace |
-| Builds ignore your design system or skills | The token was created in the account's personal workspace. Create it in the white-label workspace |
+| `403` on a build call | The workspace key lacks Full access, or the workspace isn't entitled to run keys as the owner |
+| Builds ignore your design system or skills | The key belongs to another workspace than `BASE44_ORG_ID`. Create it in the white-label workspace |
 | `sendMessage` times out at ~30s | Your own timeout, not Base44's. Build turns need ~120s |
 | A new app doesn't appear in the list | Its `AppOwnership` row was not recorded. The server logs this at create |
 
