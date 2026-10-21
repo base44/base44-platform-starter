@@ -94,7 +94,28 @@ function StepRow({ step }) {
       {a.question}: {[...a.labels, a.text].filter(Boolean).join(", ")}
     </p>
   ));
-  return <ToolRow status={step.status} name={step.label} summary={answered?.length ? answered : null} />;
+  return (
+    <ToolRow
+      status={step.status}
+      name={step.label}
+      summary={answered?.length ? answered : null}
+      details={<StepDetails step={step} />}
+    />
+  );
+}
+
+/** What `useChat` keeps of a tool call: the tool, and the files it touched. */
+function StepDetails({ step }) {
+  return (
+    <div className="space-y-1">
+      <p className="font-mono text-foreground">{step.tool}</p>
+      {step.files.length > 0 && (
+        <ul className="font-mono space-y-0.5">
+          {step.files.map((file) => <li key={file} className="break-all">{file}</li>)}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 function MessageBubble({ item }) {
@@ -196,6 +217,10 @@ export default function AppBuilderSidebar({
   const [previewError, setPreviewError] = useState(null);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const messagesEndRef = useRef(null);
+  const conversationRef = useRef(null);
+  // Follow new steps only while the user is at the bottom: a running turn updates
+  // `chat.items` on every live event, and must not pull a reader back down.
+  const followRef = useRef(true);
   const composerInputRef = useRef(null);
 
   // The app the chat is *intended* to be showing. Every awaited refresh checks it
@@ -261,8 +286,18 @@ export default function AppBuilderSidebar({
   const marketState = activeApp ? marketPublishState(activeApp, activeMarketListing, editedSinceDeploy) : "unlisted";
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (followRef.current) messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [chat.items]);
+  // Scrolling up stops following; reaching the bottom again resumes it. The scroll
+  // above only moves down, so an upward move is always the user's.
+  const lastScrollTopRef = useRef(0);
+  const onConversationScroll = () => {
+    const el = conversationRef.current;
+    if (!el) return;
+    if (el.scrollTop < lastScrollTopRef.current) followRef.current = false;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 40) followRef.current = true;
+    lastScrollTopRef.current = el.scrollTop;
+  };
   useEffect(() => {
     if (embedded && open && requestId > 0 && initialAppId == null && buildView === "chat" && builderReady === true) {
       composerInputRef.current?.focus();
@@ -458,6 +493,7 @@ export default function AppBuilderSidebar({
     setError(null);
     // The prompt shows at once as a pending item, so the composer clears now.
     setBuildInput("");
+    followRef.current = true;
     if (activeApp) {
       chat.send(content);
       return;
@@ -693,7 +729,7 @@ export default function AppBuilderSidebar({
                 <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
               </div>
             )}
-            {builderReady === false && embedded && (
+            {builderReady === false && (
               <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
                 <p className="text-sm text-muted-foreground">App building isn't configured on this deployment.</p>
                 <button
@@ -706,11 +742,6 @@ export default function AppBuilderSidebar({
                 >
                   {rechecking ? "Checking…" : "Check again"}
                 </button>
-              </div>
-            )}
-            {builderReady === false && !embedded && (
-              <div className="flex-1 flex items-center justify-center">
-                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
               </div>
             )}
 
@@ -778,7 +809,13 @@ export default function AppBuilderSidebar({
             {/* BUILD MODE — chat */}
             {builderReady === true && buildView === "chat" && (
               <>
-                <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4" role="region" aria-label="Conversation">
+                <div
+                  ref={conversationRef}
+                  onScroll={onConversationScroll}
+                  className="flex-1 overflow-y-auto px-4 py-4 space-y-4"
+                  role="region"
+                  aria-label="Conversation"
+                >
                   {!activeApp && items.length === 0 && (
                     <div className="flex flex-col items-center justify-center h-full gap-3 text-center py-10">
                       <Hammer className="w-8 h-8 text-muted-foreground/40" />
