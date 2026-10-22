@@ -11,13 +11,9 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatDistanceToNow } from "date-fns";
-import Link from "next/link";
-import { Loader2, Plus, Check, Search, Sparkles, Store } from "lucide-react";
+import { Loader2, Plus, Check, Search, Sparkles } from "lucide-react";
 import { listUsableApps } from "@/lib/usableApps";
 import { addAppToMyWidgets } from "@/lib/myWidgets";
-
-/** Above this many apps the list stops being scannable and needs a filter. */
-const SEARCH_THRESHOLD = 5;
 
 /** Both sources; `listUsableApps()` has already resolved each one's URL. */
 function subtitleFor(app) {
@@ -40,10 +36,12 @@ export default function AddWidgetModal({
   const [isLoading, setIsLoading] = useState(false);
   const [adding, setAdding] = useState(null);
   const [query, setQuery] = useState("");
+  const [activeTab, setActiveTab] = useState("built");
 
   useEffect(() => {
     if (!open) return;
     setQuery("");
+    setActiveTab("built");
     setIsLoading(true);
     listUsableApps()
       .then(setApps)
@@ -51,26 +49,24 @@ export default function AddWidgetModal({
       .finally(() => setIsLoading(false));
   }, [open]);
 
+  const tabs = useMemo(() => [
+    { key: "built", label: "My apps", items: apps.filter((app) => app.source !== "market") },
+    { key: "market", label: "Market apps", items: apps.filter((app) => app.source === "market") },
+  ], [apps]);
+
+  const selectedApps = tabs.find((tab) => tab.key === activeTab).items;
   const matches = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (!needle) return apps;
-    return apps.filter((app) =>
+    if (!needle) return selectedApps;
+    return selectedApps.filter((app) =>
       `${app.name || ""} ${app.subtitle || ""}`.toLowerCase().includes(needle),
     );
-  }, [apps, query]);
+  }, [selectedApps, query]);
 
-  // Installed first: the shorter list, and it would otherwise be buried. Headers only
-  // when both kinds are present.
-  const groups = useMemo(() => {
-    const market = matches.filter((a) => a.source === "market");
-    const built = matches.filter((a) => a.source !== "market");
-    return [
-      { key: "market", label: "From the market", items: market },
-      { key: "built", label: "Built by you", items: built },
-    ].filter((g) => g.items.length > 0);
-  }, [matches]);
-
-  const showGroups = groups.length > 1;
+  const selectTab = (key) => {
+    setActiveTab(key);
+    setQuery("");
+  };
 
   const handleAdd = async (app) => {
     setAdding(app.id);
@@ -88,41 +84,46 @@ export default function AddWidgetModal({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-md">
+      {/* Long app descriptions must not set the dialog grid's minimum column width. */}
+      <DialogContent className="max-w-md grid-cols-[minmax(0,1fr)]">
         <DialogHeader>
           <DialogTitle>Add a widget</DialogTitle>
         </DialogHeader>
-        <p className="text-sm text-muted-foreground -mt-2 mb-3">
-          Pin an app to the home page — one you built, or one you installed from the market.
+        <p className="text-sm text-muted-foreground -mt-2">
+          Choose an app to add to your home page.
         </p>
-        {/*
-          Two ways to get an app that is not in the list below. Installing from the
-          market pins it on the spot — the pin *is* the install — so there is nothing
-          to come back here for afterwards.
-        */}
-        <div className="grid grid-cols-2 gap-2 mb-3">
-          <button
-            onClick={() => {
-              onClose();
-              onBuildNew?.();
-            }}
-            className="flex items-center gap-2 px-3 py-2.5 min-h-[44px] border border-dashed border-border rounded-lg text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
-          >
-            <Sparkles className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
-            Build one
-          </button>
-          <Link
-            href="/market"
-            onClick={onClose}
-            className="flex items-center gap-2 px-3 py-2.5 min-h-[44px] border border-dashed border-border rounded-lg text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
-          >
-            <Store className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
-            Browse the market
-          </Link>
+
+        <div role="tablist" aria-label="App source" className="flex min-w-0 border-b border-border">
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              role="tab"
+              id={`add-widget-tab-${tab.key}`}
+              aria-controls="add-widget-panel"
+              aria-selected={activeTab === tab.key}
+              tabIndex={activeTab === tab.key ? 0 : -1}
+              onClick={() => selectTab(tab.key)}
+              onKeyDown={(event) => {
+                if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+                event.preventDefault();
+                const next = tab.key === "built" ? "market" : "built";
+                selectTab(next);
+                document.getElementById(`add-widget-tab-${next}`)?.focus();
+              }}
+              className={`flex-1 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 ${
+                activeTab === tab.key
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {tab.label} <span className="ml-1 text-xs text-muted-foreground">{tab.items.length}</span>
+            </button>
+          ))}
         </div>
 
-        {apps.length > SEARCH_THRESHOLD && (
-          <div className="relative mb-3">
+        <div id="add-widget-panel" role="tabpanel" aria-labelledby={`add-widget-tab-${activeTab}`} className="min-w-0 space-y-3">
+          <div className="relative">
             <Search
               className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
               aria-hidden="true"
@@ -131,89 +132,91 @@ export default function AddWidgetModal({
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search your apps…"
-              aria-label="Search your apps"
+              placeholder={`Search ${activeTab === "built" ? "my apps" : "market apps"}…`}
+              aria-label={`Search ${activeTab === "built" ? "my apps" : "market apps"}`}
               className="w-full pl-9 pr-3 py-2 min-h-[40px] text-sm rounded border border-border bg-background focus:outline-none focus:ring-2 focus:ring-ring/30"
             />
           </div>
-        )}
 
-        {isLoading ? (
-          <div className="flex justify-center py-8">
-            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-          </div>
-        ) : apps.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-8">
-            No apps found. Build one using the Assistant first.
-          </p>
-        ) : matches.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-8">
-            No app matches “{query}”.
-          </p>
-        ) : (
-          <div className="max-h-80 overflow-y-auto rounded border border-border">
-            {groups.map(({ key, label, items }) => (
-              <div key={key}>
-                {/* Grouped, not badged: it is a property of the group, not each row. */}
-                {showGroups && (
-                  <p className="sticky top-0 bg-secondary/70 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground backdrop-blur-sm">
-                    {label} <span className="opacity-60">{items.length}</span>
-                  </p>
-                )}
-                <div className="divide-y divide-border">
-                  {items.map((app) => {
-              const already = existingAppIds.includes(app.id);
-              const busy = adding === app.id;
-              const thumb = app.screenshot;
-              return (
-                <button
-                  key={app.id}
-                  onClick={() => !already && handleAdd(app)}
-                  disabled={already || busy}
-                  aria-label={
-                    already ? `${app.name || "Untitled"} is already on your home page` : undefined
-                  }
-                  className="w-full flex items-center gap-3 px-3 py-2.5 min-h-[56px] hover:bg-secondary/50 transition-colors disabled:opacity-60 text-left"
-                >
-                  {/* 16:10 rather than a square: a screenshot of a widget is wide,
-                      and a 36px square crops it into an unreadable smear. */}
-                  <div className="w-16 h-10 rounded bg-muted flex-shrink-0 overflow-hidden flex items-center justify-center border border-border">
-                    {thumb ? (
-                      <img src={thumb} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      <span className="text-base font-semibold text-muted-foreground">
-                        {(app.name || "?")[0].toUpperCase()}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">
-                      {app.name || "Untitled"}
-                    </p>
-                    <p className="text-xs text-muted-foreground truncate">{subtitleFor(app)}</p>
-                  </div>
-                  {already ? (
-                    <span className="flex items-center gap-1 text-xs text-muted-foreground flex-shrink-0">
-                      <Check className="w-3.5 h-3.5" aria-hidden="true" /> Added
-                    </span>
-                  ) : busy ? (
-                    <span className="flex items-center gap-1 text-xs text-muted-foreground flex-shrink-0">
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> Adding…
-                    </span>
-                  ) : (
-                    <Plus
-                      className="w-4 h-4 text-muted-foreground flex-shrink-0"
-                      aria-hidden="true"
-                    />
-                  )}
-                </button>
-              );
-                  })}
-                </div>
+          {isLoading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" aria-label="Loading apps" />
+            </div>
+          ) : selectedApps.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">
+              {activeTab === "built" ? "You haven’t built any apps yet." : "You haven’t installed any market apps yet."}
+            </p>
+          ) : matches.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">
+              No apps match “{query}”.
+            </p>
+          ) : (
+            <div className="max-h-80 min-w-0 overflow-y-auto overflow-x-hidden rounded border border-border">
+              <div className="divide-y divide-border">
+                {matches.map((app) => {
+                  const already = existingAppIds.includes(app.id);
+                  const busy = adding === app.id;
+                  const thumb = app.screenshot;
+                  return (
+                    <button
+                      key={app.id}
+                      onClick={() => !already && handleAdd(app)}
+                      disabled={already || busy}
+                      aria-label={
+                        already ? `${app.name || "Untitled"} is already on your home page` : undefined
+                      }
+                      className="w-full flex items-center gap-3 px-3 py-2.5 min-h-[56px] hover:bg-secondary/50 transition-colors disabled:opacity-60 text-left"
+                    >
+                      {/* 16:10 rather than a square: a screenshot of a widget is wide,
+                          and a 36px square crops it into an unreadable smear. */}
+                      <div className="w-16 h-10 rounded bg-muted flex-shrink-0 overflow-hidden flex items-center justify-center border border-border">
+                        {thumb ? (
+                          <img src={thumb} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="text-base font-semibold text-muted-foreground">
+                            {(app.name || "?")[0].toUpperCase()}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-foreground truncate">
+                          {app.name || "Untitled"}
+                        </p>
+                        <p className="text-xs text-muted-foreground truncate">{subtitleFor(app)}</p>
+                      </div>
+                      {already ? (
+                        <span className="flex items-center gap-1 text-xs text-muted-foreground flex-shrink-0">
+                          <Check className="w-3.5 h-3.5" aria-hidden="true" /> Added
+                        </span>
+                      ) : busy ? (
+                        <span className="flex items-center gap-1 text-xs text-muted-foreground flex-shrink-0">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> Adding…
+                        </span>
+                      ) : (
+                        <Plus
+                          className="w-4 h-4 text-muted-foreground flex-shrink-0"
+                          aria-hidden="true"
+                        />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
-            ))}
-          </div>
-        )}
+            </div>
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            onClose();
+            onBuildNew?.();
+          }}
+          className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-border px-3 py-2.5 min-h-[44px] text-sm font-medium text-foreground hover:bg-secondary/50 hover:border-foreground/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        >
+          <Sparkles className="w-4 h-4" aria-hidden="true" />
+          Build an app
+        </button>
       </DialogContent>
     </Dialog>
   );
