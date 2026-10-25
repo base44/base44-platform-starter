@@ -99,10 +99,14 @@ function StepRow({ step }) {
       status={step.status}
       name={step.label}
       summary={answered?.length ? answered : null}
-      details={<StepDetails step={step} />}
+      details={addsToLabel(step) ? <StepDetails step={step} /> : null}
     />
   );
 }
+
+// A label like "read_file" or "write_file src/lib/sunny.js" already says everything the details would.
+const addsToLabel = (step) =>
+  !step.label.includes(step.tool) || step.files.some((file) => !step.label.includes(file));
 
 /** What `useChat` keeps of a tool call: the tool, and the files it touched. */
 function StepDetails({ step }) {
