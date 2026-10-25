@@ -2,7 +2,7 @@
  * Manual live checklist for the Base44 bridge.
  *
  * This is NOT part of `npm test` and never will be: it **calls a live Base44
- * workspace** with the real workspace API key. It exists
+ * workspace** with the integration account's real access token. It exists
  * because `scripts/base44-smoke.ts` deliberately never reaches upstream.
  *
  * Usage:
@@ -68,7 +68,7 @@ async function main() {
   }
 
   console.log(`\nLive Base44 bridge check as ${email}`);
-  console.log(`(calls a live workspace with the workspace API key)\n`);
+  console.log(`(calls a live workspace with the integration account's token)\n`);
 
   console.log("1. status — is the bridge configured here?");
   const status = await post({ action: "status" });
@@ -79,11 +79,11 @@ async function main() {
     !/ey[A-Za-z0-9_-]{10}/.test(JSON.stringify(status.body)) && !/b44k_/.test(JSON.stringify(status.body)),
   );
 
-  console.log("\n2. the money test — does the workspace key work on REST?");
+  console.log("\n2. the money test — does the access token work on REST?");
   const apps = await post({ action: "listApps", limit: 5 });
   console.log(`   → ${apps.status} ${safe(apps.body)}`);
   check("listApps is 200", apps.status === 200, `got ${apps.status} ${safe(apps.body)}`);
-  check("...not 501, which would mean Base44 refused the key", apps.status !== 501);
+  check("...not 501, which would mean Base44 refused the token", apps.status !== 501);
   const arr = Array.isArray(apps.body) ? apps.body : [];
   check("...and answers with an array", Array.isArray(apps.body));
   console.log(`   apps this user built: ${arr.length}`);

@@ -110,7 +110,7 @@ Scope matters as much as value. Netlify lets each variable carry a different val
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | as today | same client |
 | `DATABASE_URL`, `DIRECT_URL` | production Neon | the **preview Neon branch** |
 | `NEXT_PUBLIC_BASE44_APP_HOST` | as today | same value |
-| `BASE44_WORKSPACE_API_KEY`, `BASE44_ORG_ID`, `BASE44_PLATFORM_HOST` | as today | optional — see §7 |
+| `BASE44_ACCESS_TOKEN`, `BASE44_SVC_KEY`, `BASE44_ORG_ID`, `BASE44_PLATFORM_HOST` | as today | optional — see §7 |
 
 Then confirm **Build & deploy → Deploy Previews** is enabled for pull requests — it is what
 produces the `deploy-preview-N` URLs the proxy forwards to.

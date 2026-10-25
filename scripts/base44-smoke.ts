@@ -1,9 +1,9 @@
 /**
  * Smoke test for the Base44 bridge (`/api/base44/platform`).
  *
- * This route is the only code holding the workspace API key —
+ * This route is the only code holding the integration account's access token —
  * one credential that owns every app the shell has ever built. So this asserts
- * the boundary rather than the happy path, which needs a real key and builds
+ * the boundary rather than the happy path, which needs a real token and builds
  * real apps in a real workspace (see scripts/base44-live-check.ts).
  *
  * What it pins down:
@@ -16,7 +16,7 @@
  *   4. `AppOwnership` — the only record of who built what — cannot be created or
  *      edited through the generic entity API, so nobody can claim an app by
  *      inserting a row. Reading and deleting your own rows still works.
- *   5. with no `BASE44_WORKSPACE_API_KEY`, the route answers 501 `bridge_misconfigured`
+ *   5. with no `BASE44_ACCESS_TOKEN`, the route answers 501 `bridge_misconfigured`
  *      rather than 500 — and says nothing about the environment
  *   6. a submit's request id is stable per tool call, so a retried POST dedupes
  *      instead of resuming and charging the turn twice
@@ -46,7 +46,7 @@ const APP = `${TAG}-app-1`;
 const NOBODYS_APP = `${TAG}-app-nobody`;
 
 const BASE_URL = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
-const CONFIGURED = Boolean(process.env.BASE44_WORKSPACE_API_KEY);
+const CONFIGURED = Boolean(process.env.BASE44_ACCESS_TOKEN);
 
 let failures = 0;
 
@@ -174,12 +174,12 @@ async function main() {
     (await bad(withSecrets(["OPENAI_API_KEY"]))) === 400,
   );
   check(
-    "...including the workspace key, which must never reach an app",
-    (await bad(withSecrets(["BASE44_WORKSPACE_API_KEY"]))) === 400,
+    "...including the access token, which must never reach an app",
+    (await bad(withSecrets(["BASE44_ACCESS_TOKEN"]))) === 400,
   );
   check(
-    "...and the webhook key",
-    (await bad(withSecrets(["BASE44_WEBHOOK_KEY"]))) === 400,
+    "...and the workspace key",
+    (await bad(withSecrets(["BASE44_SVC_KEY"]))) === 400,
   );
   check(
     "...and inherited keys are not registry hits",
@@ -190,10 +190,10 @@ async function main() {
     (await bad(withSecrets([{ SUNNY_API_TOKEN: "attacker-controlled" }]))) === 400,
   );
   check("...nor a bare object of them", (await bad(withSecrets({ X: "y" }))) === 400);
-  const rejectedSecret = await platform(withSecrets(["BASE44_WORKSPACE_API_KEY"]), USER);
+  const rejectedSecret = await platform(withSecrets(["BASE44_ACCESS_TOKEN"]), USER);
   check(
     "...and the rejection names no value, only names",
-    !JSON.stringify(rejectedSecret.body).includes(process.env.BASE44_WORKSPACE_API_KEY ?? "\0") &&
+    !JSON.stringify(rejectedSecret.body).includes(process.env.BASE44_ACCESS_TOKEN ?? "\0") &&
       !JSON.stringify(rejectedSecret.body).includes("b44k_"),
     JSON.stringify(rejectedSecret.body).slice(0, 140),
   );
@@ -288,10 +288,10 @@ async function main() {
       "...and says nothing about the environment",
       !JSON.stringify(status.body).includes("BASE44_") && !JSON.stringify(status.body).includes("http"),
     );
-    console.log("  ⊘ BASE44_WORKSPACE_API_KEY is set — skipping the misconfiguration checks");
+    console.log("  ⊘ BASE44_ACCESS_TOKEN is set — skipping the misconfiguration checks");
   } else {
     // A missing variable can surface inside a path builder (createApp reads
-    // BASE44_ORG_ID) or inside send(), reading the key. Wherever it fires, the
+    // BASE44_ORG_ID) or inside send(), reading the token. Wherever it fires, the
     // answer must be 501 — not a 400 that blames the caller.
     const noConfig = await platform({ action: "listApps" }, USER);
     check(
