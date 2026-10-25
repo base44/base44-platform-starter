@@ -2,8 +2,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 /**
  * Renders pinned Base44 apps as resizable dashboard widgets.
  *
- * Each built widget is an iframe on its author's tokenized sandbox preview;
- * installed market widgets use the published app with a viewer embed session.
+ * Every widget is an iframe on the published app with a viewer embed session:
+ * a built widget on its author's deployment, an installed one on the listing's.
+ * The live sandbox is for editing and is never booted here.
  *
  * The frame has no session of its own, so `useAppFrameAuth` answers its token request
  * with one scoped to the current viewer. That is what makes an installed app read the
@@ -17,12 +18,11 @@ import React, { useState, useRef, useCallback, useEffect } from "react";
 import { Widget } from "@/lib/entityClient";
 import { useAppFrameAuth } from "@/lib/appFrameAuth";
 import { useEmbedSrc } from "@/lib/embedFrame";
-import { X, Loader2, LayoutGrid, Maximize, Pencil, PlugZap } from "lucide-react";
+import { X, Loader2, LayoutGrid, Maximize, Pencil, PlugZap, Rocket } from "lucide-react";
 import * as platform from "@/lib/base44Platform";
 import AppPreviewModal from "@/components/AppPreviewModal";
-import { useAppRebuildNonce, withNonce, APP_REBUILT } from "@/lib/appRefresh";
+import { announceAppRebuilt, useAppRebuildNonce, withNonce, APP_REBUILT } from "@/lib/appRefresh";
 import { clampFrameHeight, useReportedFrameHeight } from "@/lib/appFrameSize";
-import { useSandboxPreview } from "@/lib/useSandboxPreview";
 
 const MIN_HEIGHT = 160;
 const MAX_HEIGHT = 800;
@@ -86,18 +86,33 @@ function AccessDenied() {
  * sends them to do work that cannot help. A missing env var after a deploy would
  * otherwise look, to every user at once, like their apps had un-built themselves.
  */
-function NoFrame({ reason }) {
+function NoFrame({ reason, onPublish, publishing, publishError }) {
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center px-4">
-      {reason === "unbuilt" ? (
+      {reason === "unpublished" ? (
+        <>
+          <p className="text-xs text-muted-foreground">Widgets show the published app.</p>
+          {onPublish ? (
+            <button
+              onClick={onPublish}
+              disabled={publishing}
+              className="mt-1 flex items-center gap-1.5 text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-60 transition-colors"
+            >
+              {publishing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Rocket className="w-3.5 h-3.5" />}
+              {publishing ? "Publishing…" : "Publish app"}
+            </button>
+          ) : (
+            <p className="text-xs text-muted-foreground">Its author hasn't published it yet.</p>
+          )}
+          {publishError && <p className="text-xs text-destructive">{publishError}</p>}
+        </>
+      ) : reason === "unbuilt" ? (
         <>
           <p className="text-xs text-muted-foreground">This app hasn't been built yet.</p>
           <p className="text-xs text-muted-foreground">
             Build it from the Assistant to embed it here.
           </p>
         </>
-      ) : reason === "preview" ? (
-        <p className="text-xs text-muted-foreground">The app preview could not start. Try again later.</p>
       ) : (
         <>
           <p className="text-xs text-muted-foreground">App previews aren't configured here.</p>
@@ -112,6 +127,7 @@ function NoFrame({ reason }) {
 
 function WidgetFrame({
   widget,
+  app,
   onRemove,
   onUpdate,
   onExpand,
@@ -141,18 +157,31 @@ function WidgetFrame({
       window.removeEventListener("mouseup", h.onUp);
     };
   }, []);
-  // Built widgets use the same tokenized sandbox as the Apps editor. The static
-  // preview host can show Base44's login to an author whose embed mint is refused.
-  // Installed market widgets have no slug and keep the published listing URL.
+  // A built widget is addressed by slug on its author's deployment, and only once
+  // it has one; edits reach it when the author publishes. An installed widget has
+  // no slug and keeps the listing's published URL.
   const rebuildNonce = useAppRebuildNonce(widget.app_id);
-  const { url: sandboxUrl, error: sandboxError } = useSandboxPreview(
-    widget.app_slug ? widget.app_id : null,
-    rebuildNonce,
-  );
-  const baseUrl = widget.app_slug ? sandboxUrl : widget.preview_url || null;
-  const target = widget.app_slug ? "live_preview" : null;
+  const [publishing, setPublishing] = useState(false);
+  const [publishError, setPublishError] = useState(null);
+  const unpublished = Boolean(widget.app_slug && app) && !app.last_deployed_at;
+  const baseUrl = widget.app_slug
+    ? (unpublished ? null : platform.publishedUrl(widget.app_slug))
+    : widget.preview_url || null;
   const plainUrl = withNonce(baseUrl, rebuildNonce);
-  const { src: url } = useEmbedSrc(widget.app_id, plainUrl, rebuildNonce, target);
+  const { src: url } = useEmbedSrc(widget.app_id, plainUrl, rebuildNonce);
+
+  const publish = useCallback(async () => {
+    setPublishing(true);
+    setPublishError(null);
+    try {
+      await platform.deployApp(widget.app_id);
+      announceAppRebuilt(widget.app_id);
+    } catch (err) {
+      setPublishError(err.message || "Could not publish the app.");
+    } finally {
+      setPublishing(false);
+    }
+  }, [widget.app_id]);
   useAppFrameAuth(frameRef, widget.app_id, url, (state) => setAuthDenied(state === "denied"));
 
   // Grow to fit whatever the app says it needs, unless this widget was sized by
@@ -264,7 +293,7 @@ function WidgetFrame({
           )}
           {url && (
             <button
-              onClick={() => onExpand({ title: widget.app_name, url: baseUrl, appId: widget.app_id, target })}
+              onClick={() => onExpand({ title: widget.app_name, url: baseUrl, appId: widget.app_id })}
               title="Open in a bigger view"
               aria-label={`Open ${widget.app_name} in a bigger view`}
               className="w-9 h-9 sm:w-7 sm:h-7 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
@@ -284,13 +313,20 @@ function WidgetFrame({
 
       {/* Body */}
       <div className="relative flex-shrink-0" style={{ height }}>
-        {/* Wait for the author's sandbox URL and its short-lived preview token. */}
-        {!metaReady || (widget.app_slug && !sandboxUrl && !sandboxError) ? (
+        {/* Wait for the app list: it says whether a built widget is published. */}
+        {!metaReady ? (
           <div className="absolute inset-0 flex items-center justify-center">
             <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
           </div>
+        ) : unpublished ? (
+          <NoFrame
+            reason="unpublished"
+            onPublish={canEdit ? publish : null}
+            publishing={publishing}
+            publishError={publishError}
+          />
         ) : !url ? (
-          <NoFrame reason={widget.app_slug ? "preview" : "unbuilt"} />
+          <NoFrame reason={widget.app_slug ? "unconfigured" : "unbuilt"} />
         ) : (
           <>
             {loading && (
@@ -369,7 +405,8 @@ export default function DashboardWidgets({
   const [expanded, setExpanded] = useState(null);
   // Authorship check: `listApps` returns only the apps this user built, so a key
   // here means the pencil is theirs to offer. An installed app is pinned by its
-  // installer and never appears.
+  // installer and never appears. The value is the app itself, for whether it has
+  // been published.
   const [appMeta, setAppMeta] = useState(null);
 
   useEffect(() => {
@@ -380,10 +417,10 @@ export default function DashboardWidgets({
         .then((apps) => {
           if (cancelled) return;
           const map = {};
-          for (const a of apps || []) map[a.id] = true;
+          for (const a of apps || []) map[a.id] = a;
           setAppMeta(map);
         })
-        // Never spin forever: an empty map falls back to the sandbox preview.
+        // Never spin forever: an empty map tries each built widget's published URL.
         .catch(() => {
           if (!cancelled) setAppMeta({});
         });
@@ -442,6 +479,7 @@ export default function DashboardWidgets({
             <WidgetFrame
               key={w.id}
               widget={w}
+              app={appMeta?.[w.app_id] ?? null}
               onRemove={onRemove}
               onUpdate={handleUpdate}
               onExpand={setExpanded}
@@ -458,7 +496,6 @@ export default function DashboardWidgets({
         title={expanded?.title}
         url={expanded?.url}
         appId={expanded?.appId}
-        target={expanded?.target ?? null}
         onClose={() => setExpanded(null)}
       />
     </div>
