@@ -7,7 +7,9 @@ type Options = { body?: object; headers?: Record<string, string> };
 
 const host = process.env.BASE44_PLATFORM_HOST!;
 const workspaceId = process.env.BASE44_WORKSPACE_ID!;
-const workspaceKey = { Authorization: `Bearer ${process.env.BASE44_WORKSPACE_API_KEY}` };
+// A workspace API key works in place of the personal access token.
+const credential = process.env.BASE44_ACCESS_TOKEN ?? process.env.BASE44_WORKSPACE_API_KEY;
+const auth = { Authorization: `Bearer ${credential}` };
 
 const PREVIEW_USER = "viewer@example.com";
 
@@ -30,7 +32,7 @@ export async function listApps(): Promise<App[]> {
     .map(({ id, name }) => ({ id, name }));
 }
 
-// The body holds only a session token, never the workspace key, so it goes to the browser unchanged.
+// The body holds only a session token, never the credential, so it goes to the browser unchanged.
 export async function openLiveSession(appId: string): Promise<SocketSession> {
   return call("/api/v1/socket-sessions", { body: { app_ids: [appId] } });
 }
@@ -48,7 +50,7 @@ export async function submitToolCallInput(appId: string, answer: ToolCallAnswer)
       action: answer.approve ? "approved" : "rejected",
       extra_user_input: answer.extraUserInput ?? {},
     },
-    headers: { ...workspaceKey, "X-Request-ID": `submit-${answer.toolCallId}` },
+    headers: { ...auth, "X-Request-ID": `submit-${answer.toolCallId}` },
   });
   await waitForRefusal("/chat/submit-tool-call-input", sent);
 }
@@ -85,7 +87,7 @@ async function waitForRefusal(name: string, sent: Promise<Response>) {
   if (!response.ok) throw new Error(`Base44 ${name} failed: ${response.status}`);
 }
 
-function request(path: string, { body, headers = workspaceKey }: Options = {}) {
+function request(path: string, { body, headers = auth }: Options = {}) {
   return fetch(`${host}${path}`, {
     method: body ? "POST" : "GET",
     headers: { ...headers, "X-Active-Workspace-Id": workspaceId, "Content-Type": "application/json" },
@@ -93,8 +95,12 @@ function request(path: string, { body, headers = workspaceKey }: Options = {}) {
   });
 }
 
+// The error code names the cause, such as whitelabel_sockets_disabled when live updates aren't on yet.
 async function call(path: string, options?: Options) {
   const response = await request(path, options);
-  if (!response.ok) throw new Error(`Base44 ${path} failed: ${response.status}`);
+  if (!response.ok) {
+    const { error } = await response.json().catch(() => ({}));
+    throw new Error(`Base44 ${path} failed: ${response.status} ${error?.code ?? ""}`.trim());
+  }
   return response.json();
 }
