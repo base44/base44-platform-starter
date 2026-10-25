@@ -94,31 +94,25 @@ function StepRow({ step }) {
       {a.question}: {[...a.labels, a.text].filter(Boolean).join(", ")}
     </p>
   ));
+  const files = unlistedFiles(step);
   return (
     <ToolRow
       status={step.status}
       name={step.label}
       summary={answered?.length ? answered : null}
-      details={addsToLabel(step) ? <StepDetails step={step} /> : null}
+      details={files.length > 0 ? <StepFiles files={files} /> : null}
     />
   );
 }
 
-// A label like "read_file" or "write_file src/lib/sunny.js" already says everything the details would.
-const addsToLabel = (step) =>
-  !step.label.includes(step.tool) || step.files.some((file) => !step.label.includes(file));
+// A step carries only its tool name and files; the tool name is internal ("bash"), so only files are worth unfolding.
+const unlistedFiles = (step) => step.files.filter((file) => !step.label.includes(file));
 
-/** What `useChat` keeps of a tool call: the tool, and the files it touched. */
-function StepDetails({ step }) {
+function StepFiles({ files }) {
   return (
-    <div className="space-y-1">
-      <p className="font-mono text-foreground">{step.tool}</p>
-      {step.files.length > 0 && (
-        <ul className="font-mono space-y-0.5">
-          {step.files.map((file) => <li key={file} className="break-all">{file}</li>)}
-        </ul>
-      )}
-    </div>
+    <ul className="font-mono space-y-0.5">
+      {files.map((file) => <li key={file} className="break-all">{file}</li>)}
+    </ul>
   );
 }
 
