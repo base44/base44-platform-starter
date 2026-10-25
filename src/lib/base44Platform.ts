@@ -2,13 +2,13 @@
  * Browser client for the Base44 app-factory bridge.
  *
  * A thin layer over one server route, `/api/base44/platform` — the allow-listed
- * REST proxy. No credential is ever present here: the workspace API key lives
- * server-side only (see `src/lib/base44Config.ts`), which is
+ * REST proxy. No credential is ever present here: the integration account's
+ * access token lives server-side only (see `src/lib/base44Config.ts`), which is
  * the whole point of routing through the server rather than calling Base44 from
  * the browser.
  *
  * Errors carry `code` so the UI can branch: `bridge_misconfigured` (a deployment
- * with no `BASE44_WORKSPACE_API_KEY`, or one Base44 has stopped accepting) means "the
+ * with no `BASE44_ACCESS_TOKEN`, or one Base44 has stopped accepting) means "the
  * builder is unavailable here", and `not_found` means the caller does not own the
  * app they named.
  */
@@ -54,7 +54,7 @@ const call = (action: string, params?: Json) => post("/api/base44/platform", act
 
 /**
  * True when an error means "no builder on this deployment": the bridge is not
- * configured, or Base44 refused the workspace API key. The UI shows its
+ * configured, or Base44 refused the integration account's token. The UI shows its
  * unavailable state for either.
  */
 export function isBuilderUnavailable(err: unknown): boolean {
