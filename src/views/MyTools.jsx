@@ -53,35 +53,21 @@ function LivePreview({ app }) {
   </div>;
 }
 
-function CardApp({ app }) {
-  const [loaded, setLoaded] = useState(false);
-  const [version, setVersion] = useState(0);
-  const frameRef = useRef(null);
-  const rebuildNonce = useAppRebuildNonce(app.id);
-  const { url, error } = useSandboxPreview(app.id, `${rebuildNonce}:${app.last_git_commit_hash || ""}:${app.status?.state || ""}:${version}`);
-  const { src } = useEmbedSrc(app.id, url, rebuildNonce + version, "live_preview");
-  useAppFrameAuth(frameRef, app.id, src);
-  useEffect(() => { setLoaded(false); }, [src]);
+/**
+ * The app's screenshot, not a running frame: a grid of sandboxes boots one dev
+ * server per card. The live preview is for editing, behind the card's click.
+ */
+function CardApp({ app, onOpen }) {
+  const name = app.name || "Untitled";
+  const screenshot = app.preview_screenshot_url || app.logo_url || null;
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { setFailed(false); }, [screenshot]);
 
-  return <div className="sunny-apps-card-preview" aria-label={`${app.name || "Untitled"} app`}>
-    {!loaded && <div className="sunny-apps-card-loading" role="status">
-      <div className="sunny-apps-card-loading-content">
-        <span>{error || "Loading your app"}</span>
-        {error
-          ? <button onClick={() => setVersion((current) => current + 1)}>Try again</button>
-          : <div className="sunny-apps-card-loading-track" aria-hidden="true"><span /></div>}
-      </div>
-    </div>}
-    {url && <iframe
-      ref={frameRef}
-      key={src}
-      src={src}
-      title={`${app.name || "Untitled"} app`}
-      onLoad={() => setLoaded(true)}
-      style={{ visibility: loaded ? "visible" : "hidden" }}
-      allow="fullscreen"
-    />}
-  </div>;
+  return <button className="sunny-apps-card-preview" aria-label={`Edit ${name}`} onClick={onOpen}>
+    {screenshot && !failed
+      ? <img src={screenshot} alt="" loading="lazy" onError={() => setFailed(true)} />
+      : <span className="sunny-apps-card-initial" aria-hidden="true">{name[0].toUpperCase()}</span>}
+  </button>;
 }
 
 export default function MyTools() {
@@ -210,7 +196,7 @@ export default function MyTools() {
                     <button aria-label={`Remove ${name} from My apps`} title="Remove from My apps only" disabled={Boolean(removing)} onClick={() => void removeApp(app)}><Trash2 size={15} /></button>
                   </div>
                 </header>
-                <CardApp app={app} />
+                <CardApp app={app} onOpen={() => openApp(app)} />
                 <footer className="sunny-apps-card-footer">
                   <span>{marketState === "live" ? "Published and up to date" : marketState === "needs_publish" ? "Changes are in preview until published" : "Preview only"}</span>
                   {marketState === "live"
