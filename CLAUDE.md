@@ -42,8 +42,8 @@ Next.js App Router · TypeScript · Tailwind 4 · Postgres + Prisma · NextAuth 
   *only* module that queries owner-scoped models — never query them raw. This is the single biggest
   correctness risk in the codebase, and ESLint bans by-id `update`/`delete` on those models to keep
   it that way.
-- **One Base44 account builds everything; isolation is the shell's job.** The integration account's
-  personal access token (`BASE44_ACCESS_TOKEN`) authenticates every platform call, so upstream every
+- **One Base44 account builds everything; isolation is the shell's job.** The workspace API key
+  (`BASE44_WORKSPACE_API_KEY`), which runs as the workspace owner, authenticates every platform call, so upstream every
   app has the same owner and Base44 cannot tell builders apart. `AppOwnership` is the only record of
   who built what, `src/lib/appOwnership.ts` is the module that reads it for authorization, and the
   platform proxy checks it before every app-scoped action (404 otherwise, before any upstream call),
@@ -61,7 +61,7 @@ Next.js App Router · TypeScript · Tailwind 4 · Postgres + Prisma · NextAuth 
   `Widget` rows through `entityCrud.ts`; that is idempotent and order-safe, so there is no event
   ledger. `app.deleted.v1` is trash, restorable for 30 days: never touch `AppOwnership` on it — a
   trashed app already drops out of `listApps`, and a restored one comes back on its own.
-- **Server-only secrets** (`BASE44_ACCESS_TOKEN`, `BASE44_SVC_KEY`, workspace id, platform host) live in env and are never
+- **Server-only secrets** (`BASE44_WORKSPACE_API_KEY`, workspace id, platform host) live in env and are never
   shipped to the client, and never caller-supplied — a request-controlled host would be an SSRF and
   a request-controlled workspace id would defeat the tenancy boundary.
 - **`/api/sunny` serves externally-hosted Base44 apps**: CORS `*`, no user session, so it cannot
