@@ -3,8 +3,8 @@
  * API: the endpoints that create and build OTHER apps.
  *
  * Authentication is **one account for the whole integration**: every call carries
- * that account's personal access token, so upstream every app this shell builds
- * has the same owner. Base44 has no idea which shell user built what, and says so
+ * the workspace API key, which runs as the workspace owner, so upstream every app
+ * this shell builds has the same owner. Base44 has no idea which shell user built what, and says so
  * — keeping builders apart is the integration's job. This route does it in two
  * places:
  *
@@ -14,12 +14,12 @@
  *     the caller has that row. `listApps` reads the workspace's apps and keeps
  *     the caller's own — see `listOwnedApps`.
  *
- * Governance stays intact: the token is pinned to the white-label workspace via
+ * Governance stays intact: the key is pinned to the white-label workspace via
  * `X-Active-Workspace-Id` (and `createApp`'s `organization_id`). That workspace is
  * Sunny's alone, so it is the whole boundary upstream.
  *
  * `OPS` below is an **allow-list, and it is the only limit** on what a compromised
- * frontend could reach: the access token can do anything the account can, and
+ * frontend could reach: the workspace key can do anything the owner can, and
  * Base44 enforces no scopes on this REST surface. Keep it tight — never add a
  * passthrough action, and never let the caller supply a path, host or workspace
  * id, nor a credential *value* (see `APP_SECRETS`).
@@ -39,10 +39,10 @@ import {
 import {
   APP_SECRETS,
   MissingConfigError,
-  accessToken,
   orgId,
   platformHost,
   resolveAppSecrets,
+  workspaceApiKey,
 } from "@/lib/base44Config";
 import type { RlsActor } from "@/lib/rls";
 
@@ -202,13 +202,13 @@ const APP_SCOPED = [
 const CLEAN_ID = /^[A-Za-z0-9_-]+$/;
 
 /**
- * The Bearer token says *who* — always the integration account; the workspace
+ * The workspace key says *who* — always the workspace owner; the workspace
  * header says *where*, and Base44 checks permissions against it, not the body.
  */
 function send(path: string, op: Op, body: string | undefined, params: Params) {
   const url = `${platformHost()}${path}`;
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${accessToken()}`,
+    Authorization: `Bearer ${workspaceApiKey()}`,
     "Content-Type": "application/json",
     "X-Active-Workspace-Id": orgId(),
     ...(op.headers?.(params) ?? {}),
@@ -324,13 +324,13 @@ async function forward(
 
   if (upstream.status === 401) {
     // There is no per-user grant to re-mint: the one credential is the
-    // integration account's token, so a 401 means it was revoked or expired.
+    // workspace API key, so a 401 means it was revoked or expired.
     // That is a deployment problem — the same bucket as a missing variable —
     // and nothing the user can fix by retrying, so the UI shows its
-    // unavailable state. (A 403 passes through below: it is the account's
-    // *role* — a non-Editor cannot deploy — and the detail says so.)
+    // unavailable state. (A 403 passes through below: it is the key's
+    // permission, and the detail says so.)
     console.error(
-      `[base44/platform] Base44 refused the integration account's token: ${text.slice(0, 300)}`,
+      `[base44/platform] Base44 refused the workspace API key: ${text.slice(0, 300)}`,
     );
     throw new UpstreamFailure(misconfigured());
   }
@@ -366,7 +366,7 @@ async function forward(
 async function listOwnedApps(actor: RlsActor, params: Params, t0: number): Promise<unknown[]> {
   // Read config first, so an unconfigured deployment is a 501 even for a user
   // who owns nothing.
-  accessToken();
+  workspaceApiKey();
 
   const owned = await ownedAppIds(actor);
   if (owned.size === 0) return [];
@@ -411,7 +411,7 @@ export async function POST(req: NextRequest) {
     // call — so the UI can decide what to render without spending a platform
     // request. A missing variable throws, and the outer handler answers 501.
     if (action === "status") {
-      accessToken();
+      workspaceApiKey();
       orgId();
       platformHost();
       return NextResponse.json({ configured: true });
